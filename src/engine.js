@@ -44,16 +44,16 @@ export function initApp() {
     { key: 'status', label: 'Status', width: 100 },
     { key: 'route', label: 'Route', width: 170 },
     { key: 'origin', label: 'Origin', width: 115 },
-    { key: 'dest', label: 'Dest', width: 115 },
+    { key: 'dest', label: 'Destination', width: 115 },
     { key: 'miles', label: 'Distance', width: 85 },
-    { key: 'pickup', label: 'Pickup', width: 110 },
-    { key: 'delivery', label: 'Delivery', width: 110 },
+    { key: 'pickup', label: 'Pickup date', width: 110 },
+    { key: 'delivery', label: 'Delivery date', width: 110 },
     { key: 'eta', label: 'ETA', width: 70 },
     { key: 'onTime', label: 'On Time', width: 80 },
     { key: 'income', label: 'Income', width: 110 },
     { key: 'driver', label: 'Driver', width: 110 },
-    { key: 'truck', label: 'Truck', width: 105 },
-    { key: 'equipment', label: 'Equipment', width: 100 },
+    { key: 'truck', label: 'Unit', width: 105 },
+    { key: 'equipment', label: 'Trailer', width: 100 },
     { key: 'stops', label: 'Stops', width: 55 },
     { key: 'customer', label: 'Customer', width: 120 }
   ];
@@ -64,8 +64,8 @@ export function initApp() {
   const ROUTE_COLS_DEFS = [
     { key: 'driver', label: 'Driver', width: 150 },
     { key: 'unit', label: 'Unit', width: 90 },
-    { key: 'route', label: 'Route', width: 130 },
-    { key: 'route_span', label: 'Lane span', width: 190 },
+    { key: 'route', label: 'Route name', width: 130 },
+    { key: 'route_span', label: 'Route plan', width: 190 },
     { key: 'status', label: 'Status', width: 110 },
     { key: 'health', label: 'Health', width: 120 },
     { key: 'lanes', label: 'Lanes', width: 'minmax(160px, 1fr)' },
@@ -90,15 +90,15 @@ export function initApp() {
     { key: 'status', label: 'Status', type: 'enum', options: LOAD_STATUS_OPTIONS },
     { key: 'route', label: 'Route', type: 'text' },
     { key: 'origin', label: 'Origin', type: 'text' },
-    { key: 'dest', label: 'Dest', type: 'text' },
+    { key: 'dest', label: 'Destination', type: 'text' },
     { key: 'miles', label: 'Distance (mi)', type: 'number' },
     { key: 'pickup', label: 'Pickup date', type: 'date' },
     { key: 'delivery', label: 'Delivery date', type: 'date' },
     { key: 'onTime', label: 'On Time', type: 'enum', options: ON_TIME_OPTIONS },
     { key: 'income', label: 'Income', type: 'number' },
     { key: 'driver', label: 'Driver', type: 'text' },
-    { key: 'truck', label: 'Truck', type: 'text' },
-    { key: 'equipment', label: 'Equipment', type: 'text' },
+    { key: 'truck', label: 'Unit', type: 'text' },
+    { key: 'equipment', label: 'Trailer', type: 'text' },
     { key: 'stops', label: 'Stops', type: 'number' },
     { key: 'customer', label: 'Customer', type: 'text' }
   ];
@@ -286,7 +286,7 @@ export function initApp() {
   }
   function dayKey(d) { const [m, dd, y] = d.split('/'); return y + m + dd; }
   function isoToKey(iso) { return iso ? iso.replace(/-/g, '') : ''; }
-  function routeOf(id) { return ROUTES.find(r => r.id === id); }
+  function routeOf(id) { return ROUTES.find(r => r.id === id) || { id: '', name: 'Not assigned', driver: 'Unassigned', trailer: '--', unit: '--', dispatcher: '--', status: '--', dateStart: '--', dateEnd: '--', equipment: '--' }; }
   function loadsOf(id) { return LOADS.filter(l => l.route === id); }
   function routeDhMiles(r) {
     const ls = loadsOf(r.id);
@@ -1411,13 +1411,15 @@ export function initApp() {
       const cells = {
         id: el('div', { style: { padding: '13px 8px 13px 0', fontWeight: '800', fontSize: '12.5px' } }, [l.id]),
         status: el('div', { style: { padding: '13px 8px 13px 0' } }, [pill(l.status, st[0], st[1])]),
-        route: el('div', { style: { padding: '13px 8px 13px 0' } }, [
-          el('div', {
-            onclick: e => { e.stopPropagation(); setState({ view: 'routes', openRoute: r.id, openLoad: null }); },
-            style: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#7BCBCB', fontWeight: '700', fontSize: '12px', cursor: 'pointer', borderBottom: '1px dashed rgba(123,203,203,.4)' }
-          }, [iconEl('route'), routeNameShort]),
-          el('div', { style: { color: '#6B7373', fontSize: '10.5px', marginTop: '2px' } }, ['Leg ' + idx + ' of ' + loadsOf(l.route).length])
-        ]),
+        route: r.id
+          ? el('div', { style: { padding: '13px 8px 13px 0' } }, [
+              el('div', {
+                onclick: e => { e.stopPropagation(); setState({ view: 'routes', openRoute: r.id, openLoad: null }); },
+                style: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#7BCBCB', fontWeight: '700', fontSize: '12px', cursor: 'pointer', borderBottom: '1px dashed rgba(123,203,203,.4)' }
+              }, [iconEl('route'), routeNameShort]),
+              el('div', { style: { color: '#6B7373', fontSize: '10.5px', marginTop: '2px' } }, ['Leg ' + idx + ' of ' + loadsOf(l.route).length])
+            ])
+          : el('div', { style: { padding: '13px 8px 13px 0', color: '#6B7373', fontWeight: '600', fontSize: '12px', fontStyle: 'italic' } }, ['Not assigned']),
         origin: el('div', { style: { padding: '13px 8px 13px 0', color: '#7BCBCB', fontWeight: '600', fontSize: '12.5px' } }, [l.origin]),
         dest: el('div', { style: { padding: '13px 8px 13px 0', color: '#7BCBCB', fontWeight: '600', fontSize: '12.5px' } }, [l.dest]),
         miles: el('div', { style: { padding: '13px 8px 13px 0', fontWeight: '700', fontSize: '12.5px' } }, [l.miles.toLocaleString('en-US') + ' mi']),
@@ -1724,7 +1726,7 @@ export function initApp() {
       const rowMain = el('div', {
         class: 'row-hoverable',
         onclick: () => setState({ openRoute: r.id, detailLanesExpanded: false }),
-        style: { display: 'grid', gridTemplateColumns: gridTemplate, alignItems: 'center', padding: '0 20px', cursor: 'pointer', borderLeft: '4px solid ' + accent, background: expanded ? 'rgba(39,167,103,.06)' : 'transparent' }
+        style: { display: 'grid', gridTemplateColumns: gridTemplate, alignItems: 'center', padding: '0 20px', cursor: 'pointer', background: expanded ? 'rgba(39,167,103,.06)' : 'transparent' }
       }, cols.map(c => cells[c.key]).concat([
         el('div', {
           title: 'Peek lanes',
@@ -1819,20 +1821,16 @@ export function initApp() {
       const inc = stats.reduce((a, x) => a + x.income, 0);
       const effectiveRpm = totalMiles ? inc / totalMiles : 0;
       const dhPct = totalMiles ? dhMiles / totalMiles * 100 : 0;
-      const totalMissed = stats.reduce((a, x) => a + x.missedSavings, 0);
-      const totalDeviation = stats.reduce((a, x) => a + x.routeDeviation, 0);
-      const totalFuel = stats.reduce((a, x) => a + x.fuelExcess, 0);
-      const avgAdherence = routes.length ? stats.reduce((a, x) => a + x.planAdherence, 0) / routes.length : 0;
-      cols = 8;
+      const totalLoads = stats.reduce((a, x) => a + x.loads.length, 0);
+      const loadedRpm = loadedMiles ? inc / loadedMiles : 0;
+      cols = 6;
       kpis = [
+        { label: 'Total loads', value: String(totalLoads), color: '#FBFBFB' },
         { label: 'Income total', value: money(inc), color: '#3FC281' },
         { label: 'Total miles', value: totalMiles.toLocaleString('en-US') + ' mi', color: '#FBFBFB' },
-        { label: 'Effective RPM', value: '$' + effectiveRpm.toFixed(2), color: '#7BCBCB' },
-        { label: '% DH miles', value: dhPct.toFixed(1) + '%', color: '#ABABAB' },
-        { label: 'Total missed savings', value: money(totalMissed), color: '#8B939B' },
-        { label: 'Excess miles cost', value: money(totalDeviation), color: '#FBB303' },
-        { label: 'Fuel missed savings', value: money(totalFuel), color: '#FBB303' },
-        { label: 'Plan adherence', value: Math.round(avgAdherence) + '%', color: avgAdherence >= 85 ? '#3FC281' : avgAdherence >= 70 ? '#FBB303' : '#EB4343' }
+        { label: 'DH miles', value: dhMiles.toLocaleString('en-US') + ' mi (' + dhPct.toFixed(1) + '%)', color: '#ABABAB' },
+        { label: 'Loaded RPM', value: '$' + loadedRpm.toFixed(2), color: '#7BCBCB' },
+        { label: 'Effective RPM', value: '$' + effectiveRpm.toFixed(2), color: '#7BCBCB' }
       ];
     }
     const wrap = el('div', { style: { flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(' + cols + ', 1fr)', gap: '1px', padding: '14px 20px', background: '#060C11', borderTop: '1px solid rgba(255,255,255,.07)' } });
