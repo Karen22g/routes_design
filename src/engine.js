@@ -131,7 +131,7 @@ export function initApp() {
 
   const OPERATORS = {
     text: [{ v: 'contains', label: 'contains' }, { v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }],
-    text_identity: [{ v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }, { v: 'in', label: 'in' }, { v: 'is_in', label: 'is in' }],
+    text_identity: [{ v: 'is_in', label: 'is in' }, { v: 'not_in', label: 'is not' }],
     number: [{ v: 'eq', label: 'is' }, { v: 'neq', label: 'is not' }, { v: 'gt', label: 'greater than' }, { v: 'lt', label: 'less than' }, { v: 'between', label: 'between' }],
     date: [{ v: 'on', label: 'on' }, { v: 'before', label: 'before' }, { v: 'after', label: 'after' }, { v: 'between', label: 'between' }],
     enum: [{ v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }, { v: 'in', label: 'in' }, { v: 'not_in', label: 'not in' }]
