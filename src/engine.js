@@ -1431,28 +1431,57 @@ export function initApp() {
 
       let valueInputs;
       if (f.type === 'enum' && isMulti) {
+        const allOpts = f.options || [];
         const selected = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
-        const checkboxes = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
-        (f.options || []).forEach(o => {
-          const checked = selected.includes(o);
-          checkboxes.appendChild(el('label', {
-            style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', fontSize: '12.5px', color: '#FBFBFB' },
-            class: 'hoverable'
-          }, [
-            el('input', {
-              type: 'checkbox', checked: checked,
-              onchange: e2 => {
-                let sel = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
-                if (e2.target.checked) { if (!sel.includes(o)) sel.push(o); }
-                else { sel = sel.filter(x => x !== o); }
-                setState({ filterPanel: Object.assign({}, draft, { value: sel.join(',') }) });
-              },
-              style: { accentColor: '#27A767' }
-            }),
-            o
-          ]));
+        const isOpen = !!draft._comboOpen;
+        const searchKey = draft._search || '';
+        const comboWrap = el('div', { style: { position: 'relative' } });
+        const inputBox = el('div', {
+          onclick: e2 => { e2.stopPropagation(); if (!isOpen) setState({ filterPanel: Object.assign({}, draft, { _comboOpen: true, _search: '' }) }); },
+          style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px', padding: '5px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', cursor: 'text', minHeight: '32px' }
         });
-        valueInputs = [checkboxes];
+        if (isOpen) {
+          selected.forEach(v => {
+            inputBox.appendChild(el('div', { style: { display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', background: '#1E2E3A', border: '1px solid rgba(39,167,103,.3)', borderRadius: '4px', fontSize: '11px', fontWeight: '700', color: '#3FC281', whiteSpace: 'nowrap' } }, [
+              v,
+              el('span', { onclick: ev => { ev.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { value: selected.filter(x => x !== v).join(','), _comboOpen: true, _search: '' }) }); }, style: { cursor: 'pointer', color: '#EB4343', fontWeight: '800', fontSize: '12px', marginLeft: '2px' } }, ['×'])
+            ]));
+          });
+          const inlineInput = el('input', {
+            type: 'text', value: searchKey, placeholder: selected.length ? '' : 'Search...',
+            onclick: e2 => e2.stopPropagation(),
+            oninput: e2 => setState({ filterPanel: Object.assign({}, draft, { _search: e2.target.value, _comboOpen: true }) }),
+            onkeydown: e2 => { if (e2.key === 'Backspace' && !searchKey && selected.length) { e2.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { value: selected.slice(0, -1).join(','), _comboOpen: true, _search: '' }) }); } },
+            style: { flex: '1', minWidth: '40px', background: 'transparent', border: 'none', outline: 'none', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12px', padding: '0' }
+          });
+          inputBox.appendChild(inlineInput);
+          requestAnimationFrame(() => { inlineInput.focus(); inlineInput.setSelectionRange(inlineInput.value.length, inlineInput.value.length); });
+        } else if (selected.length > 0) {
+          inputBox.appendChild(el('div', { style: { display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', background: '#1E2E3A', border: '1px solid rgba(39,167,103,.3)', borderRadius: '4px', fontSize: '11px', fontWeight: '700', color: '#3FC281', whiteSpace: 'nowrap' } }, [
+            selected[0],
+            el('span', { onclick: ev => { ev.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { value: selected.slice(1).join(',') }) }); }, style: { cursor: 'pointer', color: '#EB4343', fontWeight: '800', fontSize: '12px', marginLeft: '2px' } }, ['×'])
+          ]));
+          if (selected.length > 1) inputBox.appendChild(el('div', { style: { fontSize: '11px', fontWeight: '700', color: '#8B939B' } }, ['+' + (selected.length - 1)]));
+          inputBox.appendChild(el('div', { style: { flex: '1' } }));
+        } else {
+          inputBox.appendChild(el('span', { style: { fontSize: '12px', color: '#6B7373' } }, ['Search...']));
+          inputBox.appendChild(el('div', { style: { flex: '1' } }));
+        }
+        inputBox.appendChild(el('div', { onclick: e2 => { e2.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { _comboOpen: !isOpen, _search: '' }) }); }, style: { fontSize: '10px', color: '#8B939B', marginLeft: '4px', cursor: 'pointer', flexShrink: '0' } }, [isOpen ? '▲' : '▼']));
+        comboWrap.appendChild(inputBox);
+        if (isOpen) {
+          const dropdown = el('div', { onclick: e2 => e2.stopPropagation(), style: { position: 'absolute', top: 'calc(100% + 4px)', left: '0', right: '0', zIndex: '100', background: '#131F27', border: '1px solid rgba(255,255,255,.12)', borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,.5)', padding: '6px', maxHeight: '200px', overflowY: 'auto' } });
+          const filtered = allOpts.filter(o => !searchKey || o.toLowerCase().includes(searchKey.toLowerCase()));
+          filtered.forEach(o => {
+            const checked = selected.includes(o);
+            dropdown.appendChild(el('label', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', fontSize: '12.5px', color: '#FBFBFB' } }, [
+              el('input', { type: 'checkbox', checked: checked, onchange: e2 => { let sel = selected.slice(); if (e2.target.checked) { if (!sel.includes(o)) sel.push(o); } else { sel = sel.filter(x => x !== o); } setState({ filterPanel: Object.assign({}, draft, { value: sel.join(','), _comboOpen: true, _search: '' }) }); }, style: { accentColor: '#27A767' } }),
+              o
+            ]));
+          });
+          comboWrap.appendChild(dropdown);
+        }
+        valueInputs = [comboWrap];
       } else if (f.type === 'enum') {
         valueInputs = [el('select', {
           value: draft.value,
@@ -1462,48 +1491,57 @@ export function initApp() {
       } else if (f.type === 'text_identity') {
         const uniqueVals = uniqueFieldValues(view, f.key);
         const selected = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
+        const isOpen = !!draft._comboOpen;
         const searchKey = draft._search || '';
-        const tagsWrap = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: selected.length ? '8px' : '0' } });
-        selected.forEach(v => {
-          tagsWrap.appendChild(el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', background: '#1E2E3A', border: '1px solid rgba(39,167,103,.3)', borderRadius: '6px', fontSize: '11.5px', fontWeight: '700', color: '#3FC281' } }, [
-            v,
-            el('span', {
-              onclick: () => {
-                const sel2 = selected.filter(x => x !== v);
-                setState({ filterPanel: Object.assign({}, draft, { value: sel2.join(','), _search: draft._search || '' }) });
-              },
-              style: { cursor: 'pointer', color: '#EB4343', fontWeight: '800', fontSize: '13px', lineHeight: '1', marginLeft: '2px' }
-            }, ['×'])
+        const comboWrap = el('div', { style: { position: 'relative' } });
+        const inputBox = el('div', {
+          onclick: e2 => { e2.stopPropagation(); if (!isOpen) setState({ filterPanel: Object.assign({}, draft, { _comboOpen: true, _search: '' }) }); },
+          style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px', padding: '5px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', cursor: 'text', minHeight: '32px' }
+        });
+        if (isOpen) {
+          selected.forEach(v => {
+            inputBox.appendChild(el('div', { style: { display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', background: '#1E2E3A', border: '1px solid rgba(39,167,103,.3)', borderRadius: '4px', fontSize: '11px', fontWeight: '700', color: '#3FC281', whiteSpace: 'nowrap' } }, [
+              v,
+              el('span', { onclick: ev => { ev.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { value: selected.filter(x => x !== v).join(','), _comboOpen: true, _search: '' }) }); }, style: { cursor: 'pointer', color: '#EB4343', fontWeight: '800', fontSize: '12px', marginLeft: '2px' } }, ['×'])
+            ]));
+          });
+          const inlineInput = el('input', {
+            type: 'text', value: searchKey, placeholder: selected.length ? '' : 'Search...',
+            onclick: e2 => e2.stopPropagation(),
+            oninput: e2 => setState({ filterPanel: Object.assign({}, draft, { _search: e2.target.value, _comboOpen: true }) }),
+            onkeydown: e2 => { if (e2.key === 'Backspace' && !searchKey && selected.length) { e2.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { value: selected.slice(0, -1).join(','), _comboOpen: true, _search: '' }) }); } },
+            style: { flex: '1', minWidth: '40px', background: 'transparent', border: 'none', outline: 'none', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12px', padding: '0' }
+          });
+          inputBox.appendChild(inlineInput);
+          requestAnimationFrame(() => { inlineInput.focus(); inlineInput.setSelectionRange(inlineInput.value.length, inlineInput.value.length); });
+        } else if (selected.length > 0) {
+          inputBox.appendChild(el('div', { style: { display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', background: '#1E2E3A', border: '1px solid rgba(39,167,103,.3)', borderRadius: '4px', fontSize: '11px', fontWeight: '700', color: '#3FC281', whiteSpace: 'nowrap' } }, [
+            selected[0],
+            el('span', { onclick: ev => { ev.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { value: selected.slice(1).join(',') }) }); }, style: { cursor: 'pointer', color: '#EB4343', fontWeight: '800', fontSize: '12px', marginLeft: '2px' } }, ['×'])
           ]));
-        });
-        const searchInput = el('input', {
-          type: 'text', value: searchKey, placeholder: 'Search...',
-          oninput: e => setState({ filterPanel: Object.assign({}, draft, { _search: e.target.value, _idListOpen: true }) }),
-          onfocus: () => { if (!draft._idListOpen) setState({ filterPanel: Object.assign({}, draft, { _idListOpen: true }) }); },
-          style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px', marginBottom: '8px' }
-        });
-        const checkboxes = el('div', { class: 'ef-scroll', style: { maxHeight: '180px', overflowY: 'auto', display: draft._idListOpen ? 'flex' : 'none', flexDirection: 'column', gap: '2px' } });
-        const filtered = uniqueVals.filter(v => !searchKey || v.toLowerCase().includes(searchKey.toLowerCase()));
-        filtered.forEach(v => {
-          const checked = selected.includes(v);
-          checkboxes.appendChild(el('label', {
-            style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', fontSize: '12.5px', color: '#FBFBFB' },
-            class: 'hoverable'
-          }, [
-            el('input', {
-              type: 'checkbox', checked: checked,
-              onchange: e2 => {
-                let sel = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
-                if (e2.target.checked) { if (!sel.includes(v)) sel.push(v); }
-                else { sel = sel.filter(x => x !== v); }
-                setState({ filterPanel: Object.assign({}, draft, { value: sel.join(','), _search: draft._search || '', _idListOpen: true }) });
-              },
-              style: { accentColor: '#27A767' }
-            }),
-            v
-          ]));
-        });
-        valueInputs = [tagsWrap, searchInput, checkboxes];
+          if (selected.length > 1) inputBox.appendChild(el('div', { style: { fontSize: '11px', fontWeight: '700', color: '#8B939B' } }, ['+' + (selected.length - 1)]));
+          inputBox.appendChild(el('div', { style: { flex: '1' } }));
+        } else {
+          inputBox.appendChild(el('span', { style: { fontSize: '12px', color: '#6B7373' } }, ['Search...']));
+          inputBox.appendChild(el('div', { style: { flex: '1' } }));
+        }
+        inputBox.appendChild(el('div', { onclick: e2 => { e2.stopPropagation(); setState({ filterPanel: Object.assign({}, draft, { _comboOpen: !isOpen, _search: '' }) }); }, style: { fontSize: '10px', color: '#8B939B', marginLeft: '4px', cursor: 'pointer', flexShrink: '0' } }, [isOpen ? '▲' : '▼']));
+        comboWrap.appendChild(inputBox);
+        if (isOpen) {
+          const dropdown = el('div', { onclick: e2 => e2.stopPropagation(), style: { position: 'absolute', top: 'calc(100% + 4px)', left: '0', right: '0', zIndex: '100', background: '#131F27', border: '1px solid rgba(255,255,255,.12)', borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,.5)', padding: '6px' } });
+          const listWrap = el('div', { class: 'ef-scroll', style: { maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' } });
+          const filtered = uniqueVals.filter(v => !searchKey || v.toLowerCase().includes(searchKey.toLowerCase()));
+          filtered.forEach(v => {
+            const checked = selected.includes(v);
+            listWrap.appendChild(el('label', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', fontSize: '12.5px', color: '#FBFBFB' } }, [
+              el('input', { type: 'checkbox', checked: checked, onchange: e2 => { let sel = selected.slice(); if (e2.target.checked) { if (!sel.includes(v)) sel.push(v); } else { sel = sel.filter(x => x !== v); } setState({ filterPanel: Object.assign({}, draft, { value: sel.join(','), _comboOpen: true, _search: '' }) }); }, style: { accentColor: '#27A767' } }),
+              v
+            ]));
+          });
+          dropdown.appendChild(listWrap);
+          comboWrap.appendChild(dropdown);
+        }
+        valueInputs = [comboWrap];
       } else {
         const inputType = f.type === 'date' ? 'date' : (f.type === 'number' ? 'number' : 'text');
         const mk = (val, key2, placeholder) => el('input', {
@@ -1585,86 +1623,99 @@ export function initApp() {
     var inputCSS = 'width:100%;padding:7px 8px;background:#0E1820;border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#FBFBFB;font:400 12.5px '+F+';box-sizing:border-box';
     var inputType = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
     var _isMultiOp = f.operator === 'in' || f.operator === 'not_in' || f.operator === 'is_in';
-    if (field.type === 'enum' && _isMultiOp) {
-      checkboxWrap = document.createElement('div');
-      checkboxWrap.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+    if ((field.type === 'enum' && _isMultiOp) || field.type === 'text_identity') {
+      var _allOpts = field.type === 'text_identity' ? uniqueFieldValues(view, f.key) : (field.options || []);
       var _selVals = (f.value || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
-      (field.options || []).forEach(function(o) {
-        var lbl = document.createElement('label');
-        lbl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font:400 12.5px '+F+';color:#FBFBFB';
-        var cb = document.createElement('input');
-        cb.type = 'checkbox'; cb.checked = _selVals.includes(o); cb.style.accentColor = '#27A767';
-        cb.dataset.optVal = o;
-        lbl.appendChild(cb); lbl.appendChild(document.createTextNode(o));
-        checkboxWrap.appendChild(lbl);
-      });
-      portal.appendChild(checkboxWrap);
+      var _comboOpen = false;
+      var _comboSearch = '';
+      var _comboWrap = document.createElement('div');
+      _comboWrap.style.cssText = 'position:relative';
+      var _inputBox = document.createElement('div');
+      _inputBox.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:5px 8px;background:#0E1820;border:1px solid rgba(255,255,255,.12);border-radius:6px;cursor:text;min-height:32px';
+      var _dropdown = document.createElement('div');
+      _dropdown.style.cssText = 'display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:100;background:#131F27;border:1px solid rgba(255,255,255,.12);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);padding:6px';
+      _dropdown.addEventListener('click', function(e3) { e3.stopPropagation(); });
+      var _inlineInput = document.createElement('input');
+      _inlineInput.type = 'text';
+      _inlineInput.style.cssText = 'flex:1;min-width:40px;background:transparent;border:none;outline:none;color:#FBFBFB;font:400 12px '+F+';padding:0';
+      _inlineInput.addEventListener('click', function(e3) { e3.stopPropagation(); if (!_comboOpen) { _comboOpen = true; _dropdown.style.display = 'block'; _renderComboBox(); _renderComboList(); } });
+      _inlineInput.addEventListener('input', function() { _comboSearch = _inlineInput.value; if (!_comboOpen) { _comboOpen = true; _dropdown.style.display = 'block'; _renderComboBox(); } _renderComboList(); });
+      _inlineInput.addEventListener('keydown', function(e3) { if (e3.key === 'Backspace' && !_comboSearch && _selVals.length) { e3.stopPropagation(); _selVals.pop(); valInput.value = _selVals.join(','); _renderComboBox(); _renderComboList(); } });
+      var _listWrap = document.createElement('div');
+      _listWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto';
+      _dropdown.appendChild(_listWrap);
+      _comboWrap.appendChild(_inputBox);
+      _comboWrap.appendChild(_dropdown);
       valInput = { value: f.value || '' };
+      function _makeChip(v, removable) {
+        var chip = document.createElement('div');
+        chip.style.cssText = 'display:flex;align-items:center;gap:3px;padding:2px 6px;background:#1E2E3A;border:1px solid rgba(39,167,103,.3);border-radius:4px;font:700 11px '+F+';color:#3FC281;white-space:nowrap';
+        chip.textContent = v;
+        if (removable) {
+          var x = document.createElement('span');
+          x.textContent = '×'; x.style.cssText = 'cursor:pointer;color:#EB4343;font-weight:800;font-size:12px;margin-left:2px';
+          x.addEventListener('click', function(e3) { e3.stopPropagation(); var idx = _selVals.indexOf(v); if (idx >= 0) _selVals.splice(idx, 1); valInput.value = _selVals.join(','); _renderComboBox(); _renderComboList(); _inlineInput.focus(); });
+          chip.appendChild(x);
+        }
+        return chip;
+      }
+      function _renderComboBox() {
+        _inputBox.innerHTML = '';
+        if (_comboOpen) {
+          _selVals.forEach(function(v) { _inputBox.appendChild(_makeChip(v, true)); });
+          _inlineInput.value = _comboSearch;
+          _inlineInput.placeholder = _selVals.length ? '' : 'Search...';
+          _inputBox.appendChild(_inlineInput);
+        } else if (_selVals.length > 0) {
+          _inputBox.appendChild(_makeChip(_selVals[0], true));
+          if (_selVals.length > 1) { var plus = document.createElement('div'); plus.style.cssText = 'font:700 11px '+F+';color:#8B939B'; plus.textContent = '+' + (_selVals.length - 1); _inputBox.appendChild(plus); }
+          var spacer = document.createElement('div'); spacer.style.flex = '1'; _inputBox.appendChild(spacer);
+        } else {
+          var ph = document.createElement('span'); ph.style.cssText = 'font:400 12px '+F+';color:#6B7373'; ph.textContent = 'Search...'; _inputBox.appendChild(ph);
+          var spacer = document.createElement('div'); spacer.style.flex = '1'; _inputBox.appendChild(spacer);
+        }
+        var chev = document.createElement('div'); chev.style.cssText = 'font-size:10px;color:#8B939B;margin-left:4px;flex-shrink:0;cursor:pointer'; chev.textContent = _comboOpen ? '▲' : '▼';
+        chev.addEventListener('click', function(e3) { e3.stopPropagation(); _comboOpen = !_comboOpen; _dropdown.style.display = _comboOpen ? 'block' : 'none'; _comboSearch = ''; _renderComboBox(); if (_comboOpen) { _renderComboList(); _inlineInput.focus(); } });
+        _inputBox.appendChild(chev);
+      }
+      function _renderComboList() {
+        _listWrap.innerHTML = '';
+        var filtered = _allOpts.filter(function(v) { return !_comboSearch || v.toLowerCase().indexOf(_comboSearch.toLowerCase()) >= 0; });
+        filtered.forEach(function(v) {
+          var lbl = document.createElement('label');
+          lbl.className = 'hoverable';
+          lbl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font:400 12.5px '+F+';color:#FBFBFB';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox'; cb.checked = _selVals.indexOf(v) >= 0; cb.style.accentColor = '#27A767';
+          cb.addEventListener('change', function() {
+            var idx = _selVals.indexOf(v);
+            if (cb.checked) { if (idx === -1) _selVals.push(v); } else { if (idx >= 0) _selVals.splice(idx, 1); }
+            valInput.value = _selVals.join(',');
+            _comboSearch = ''; _inlineInput.value = '';
+            _renderComboBox();
+            _renderComboList();
+            _inlineInput.focus();
+          });
+          lbl.appendChild(cb); lbl.appendChild(document.createTextNode(v));
+          _listWrap.appendChild(lbl);
+        });
+      }
+      _inputBox.addEventListener('click', function(e3) {
+        e3.stopPropagation();
+        if (!_comboOpen) { _comboOpen = true; _dropdown.style.display = 'block'; _comboSearch = ''; _renderComboBox(); _renderComboList(); _inlineInput.focus(); }
+      });
+      _renderComboBox();
+      _renderComboList();
+      document.addEventListener('click', function _closeCombo(e3) {
+        if (!_comboWrap.contains(e3.target)) { _comboOpen = false; _comboSearch = ''; _dropdown.style.display = 'none'; _renderComboBox(); document.removeEventListener('click', _closeCombo); }
+      });
+      portal.appendChild(_comboWrap);
     } else if (field.type === 'enum') {
       valInput = document.createElement('select');
       valInput.style.cssText = inputCSS;
       var emptyOpt = document.createElement('option'); emptyOpt.value = ''; emptyOpt.textContent = '— select —'; valInput.appendChild(emptyOpt);
       (field.options || []).forEach(function(o) { var opt = document.createElement('option'); opt.value = o; opt.textContent = o; if (o === f.value) opt.selected = true; valInput.appendChild(opt); });
       portal.appendChild(valInput);
-    } else if (field.type === 'text_identity') {
-      var _uVals = uniqueFieldValues(view, f.key);
-      var _selValsId = (f.value || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
-      var _idTagsWrap = document.createElement('div');
-      _idTagsWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:' + (_selValsId.length ? '8px' : '0');
-      function _renderIdTags() {
-        _idTagsWrap.innerHTML = '';
-        _selValsId.forEach(function(v) {
-          var tag = document.createElement('div');
-          tag.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 8px;background:#1E2E3A;border:1px solid rgba(39,167,103,.3);border-radius:6px;font:700 11.5px '+F+';color:#3FC281';
-          tag.textContent = v;
-          var xBtn = document.createElement('span');
-          xBtn.textContent = '×';
-          xBtn.style.cssText = 'cursor:pointer;color:#EB4343;font-weight:800;font-size:13px;line-height:1;margin-left:2px';
-          xBtn.addEventListener('click', function() {
-            var idx = _selValsId.indexOf(v);
-            if (idx >= 0) _selValsId.splice(idx, 1);
-            valInput.value = _selValsId.join(',');
-            _renderIdTags();
-            _renderIdCheckboxes(_searchInput.value);
-            _idTagsWrap.style.marginBottom = _selValsId.length ? '8px' : '0';
-          });
-          tag.appendChild(xBtn);
-          _idTagsWrap.appendChild(tag);
-        });
-      }
-      _renderIdTags();
-      portal.appendChild(_idTagsWrap);
-      var _idListWrap = document.createElement('div');
-      var _searchInput = document.createElement('input');
-      _searchInput.type = 'text'; _searchInput.placeholder = 'Search...';
-      _searchInput.style.cssText = inputCSS + ';margin-bottom:8px';
-      _searchInput.addEventListener('focus', function() { _idListWrap.style.display = 'flex'; });
-      portal.appendChild(_searchInput);
-      _idListWrap.style.cssText = 'display:none;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto';
-      valInput = { value: f.value || '' };
-      function _renderIdCheckboxes(filter) {
-        _idListWrap.innerHTML = '';
-        var filtered = _uVals.filter(function(v) { return !filter || v.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
-        filtered.forEach(function(v) {
-          var lbl2 = document.createElement('label');
-          lbl2.className = 'hoverable';
-          lbl2.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font:400 12.5px '+F+';color:#FBFBFB';
-          var cb2 = document.createElement('input');
-          cb2.type = 'checkbox'; cb2.checked = _selValsId.indexOf(v) >= 0; cb2.style.accentColor = '#27A767';
-          cb2.addEventListener('change', function() {
-            var idx = _selValsId.indexOf(v);
-            if (cb2.checked) { if (idx === -1) _selValsId.push(v); }
-            else { if (idx >= 0) _selValsId.splice(idx, 1); }
-            valInput.value = _selValsId.join(',');
-            _renderIdTags();
-            _idTagsWrap.style.marginBottom = _selValsId.length ? '8px' : '0';
-          });
-          lbl2.appendChild(cb2); lbl2.appendChild(document.createTextNode(v));
-          _idListWrap.appendChild(lbl2);
-        });
-      }
-      _searchInput.addEventListener('input', function() { _idListWrap.style.display = 'flex'; _renderIdCheckboxes(_searchInput.value); });
-      portal.appendChild(_idListWrap);
     } else {
       valInput = document.createElement('input');
       valInput.type = inputType; valInput.value = f.value || '';
