@@ -5,33 +5,33 @@ export function initApp() {
   // Data
   // ---------------------------------------------------------------------
   const ROUTES = [
-    { id: 'R-2601', name: 'Houston_Chicago_2026-07-29', dateStart: 'Jul 29 / 2026', dateEnd: 'Jul 31 / 2026', status: 'In progress', driver: 'Marcus Bell', trailer: 'Van', unit: 'UNT-118', dispatcher: 'karen', routeDeviation: 87, fuelExcess: 173, planAdherence: 84 },
-    { id: 'R-2602', name: 'Dallas_Atlanta_2026-07-29', dateStart: 'Jul 29 / 2026', dateEnd: 'Jul 31 / 2026', status: 'Planned', driver: 'Unassigned', trailer: 'Van', unit: 'Unassigned', dispatcher: 'karen', routeDeviation: 45, fuelExcess: 95, planAdherence: 91 },
-    { id: 'R-2603', name: 'Laredo_Memphis_2026-07-18', dateStart: 'Jul 18 / 2026', dateEnd: 'Jul 31 / 2026', status: 'In progress', driver: 'Dana Ortiz', trailer: 'Reefer', unit: 'UNT-204', dispatcher: 'karen', routeDeviation: 122, fuelExcess: 214, planAdherence: 78 },
-    { id: 'R-2604', name: 'Phoenix_Newark_2026-07-01', dateStart: 'Jul 01 / 2026', dateEnd: 'Aug 12 / 2026', status: 'In progress', driver: 'Eli Novak', trailer: 'Reefer', unit: 'UNT-077', dispatcher: 'angie', routeDeviation: 195, fuelExcess: 340, planAdherence: 71 },
-    { id: 'R-2605', name: 'Fresno_Denver_2026-07-01', dateStart: 'Jul 01 / 2026', dateEnd: 'Jul 07 / 2026', status: 'Planned', driver: 'Unassigned', trailer: 'Reefer', unit: 'Unassigned', dispatcher: 'angie', routeDeviation: 210, fuelExcess: 390, planAdherence: 68 },
-    { id: 'R-2606', name: 'Savannah_Tampa_2026-06-22', dateStart: 'Jun 22 / 2026', dateEnd: 'Jun 28 / 2026', status: 'Completed', driver: 'Rosa Kim', trailer: 'Van', unit: 'UNT-311', dispatcher: 'karen', routeDeviation: 35, fuelExcess: 65, planAdherence: 96 }
+    { id: 'R-2601', name: 'Houston_Chicago_2026-07-29', dateStart: 'Jul 29 / 2026', dateEnd: 'Jul 31 / 2026', status: 'In progress', driver: 'Marcus Bell', trailer: 'TRK-118', equipmentType: 'Van', unit: 'UNT-118', dispatcher: 'karen', routeDeviation: 87, fuelExcess: 173, planAdherence: 84 },
+    { id: 'R-2602', name: 'Dallas_Atlanta_2026-07-29', dateStart: 'Jul 29 / 2026', dateEnd: 'Jul 31 / 2026', status: 'Planned', driver: 'Unassigned', trailer: 'TRK-205', equipmentType: 'Van', unit: 'Unassigned', dispatcher: 'karen', routeDeviation: 45, fuelExcess: 95, planAdherence: 91 },
+    { id: 'R-2603', name: 'Laredo_Memphis_2026-07-18', dateStart: 'Jul 18 / 2026', dateEnd: 'Jul 31 / 2026', status: 'In progress', driver: 'Dana Ortiz', trailer: 'TRK-884', equipmentType: 'Reefer', unit: 'UNT-204', dispatcher: 'karen', routeDeviation: 122, fuelExcess: 214, planAdherence: 78 },
+    { id: 'R-2604', name: 'Phoenix_Newark_2026-07-01', dateStart: 'Jul 01 / 2026', dateEnd: 'Aug 12 / 2026', status: 'In progress', driver: 'Eli Novak', trailer: 'TRK-077', equipmentType: 'Reefer', unit: 'UNT-077', dispatcher: 'angie', routeDeviation: 195, fuelExcess: 340, planAdherence: 71 },
+    { id: 'R-2605', name: 'Fresno_Denver_2026-07-01', dateStart: 'Jul 01 / 2026', dateEnd: 'Jul 07 / 2026', status: 'Planned', driver: 'Unassigned', trailer: 'TRK-310', equipmentType: 'Reefer', unit: 'Unassigned', dispatcher: 'angie', routeDeviation: 210, fuelExcess: 390, planAdherence: 68 },
+    { id: 'R-2606', name: 'Savannah_Tampa_2026-06-22', dateStart: 'Jun 22 / 2026', dateEnd: 'Jun 28 / 2026', status: 'Completed', driver: 'Rosa Kim', trailer: 'TRK-311', equipmentType: 'Van', unit: 'UNT-311', dispatcher: 'karen', routeDeviation: 35, fuelExcess: 65, planAdherence: 96 }
   ];
 
   const LOADS = [
-    { id: 'ef-4a7dc58', route: 'R-2601', origin: 'Houston, TX', dest: 'Memphis, TN', miles: 588, income: 1111, status: 'In Transit', pickup: '07/29/2026', pickupTime: '08:00 - 12:00', delivery: '07/30/2026', deliveryTime: '06:00 - 10:00', customer: 'Averitt', eta: '09:42', onTime: 'On time', stops: 2, truck: 'ext_tr_123', equipment: 'Van 53' },
-    { id: 'ef-9b21fe0', route: 'R-2601', origin: 'Memphis, TN', dest: 'Chicago, IL', miles: 530, income: 1180, status: 'Booked', pickup: '07/30/2026', pickupTime: '14:00 - 18:00', delivery: '07/31/2026', deliveryTime: '08:00 - 12:00', customer: 'CH Robinson', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_123', equipment: 'Van 53' },
-    { id: 'ef-77c04aa', route: 'R-2601', origin: 'Chicago, IL', dest: 'Houston, TX', miles: 355, income: 523, status: 'Offer', pickup: '07/31/2026', pickupTime: '10:00 - 14:00', delivery: '08/01/2026', deliveryTime: '09:00 - 13:00', customer: 'TQL', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_123', equipment: 'Van 53' },
-    { id: 'ef-1d55b3c', route: 'R-2602', origin: 'Dallas, TX', dest: 'Shreveport, LA', miles: 190, income: 420, status: 'Booked', pickup: '07/29/2026', pickupTime: '07:00 - 11:00', delivery: '07/29/2026', deliveryTime: '15:00 - 19:00', customer: 'Werner', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'Van 53' },
-    { id: 'ef-6e0aa41', route: 'R-2602', origin: 'Shreveport, LA', dest: 'Atlanta, GA', miles: 990, income: 2180, status: 'Unbooked', pickup: '07/30/2026', pickupTime: '06:00 - 10:00', delivery: '07/31/2026', deliveryTime: '12:00 - 16:00', customer: '--', eta: '--', onTime: '--', stops: 2, truck: '--', equipment: 'Van 53' },
-    { id: 'ef-2f8c110', route: 'R-2603', origin: 'Laredo, TX', dest: 'San Antonio, TX', miles: 157, income: 480, status: 'Delivered', pickup: '07/18/2026', pickupTime: '05:00 - 09:00', delivery: '07/18/2026', deliveryTime: '13:00 - 17:00', customer: 'Sysco', eta: '13:10', onTime: 'On time', stops: 1, truck: 'ext_tr_884', equipment: 'Reefer' },
-    { id: 'ef-30bb907', route: 'R-2603', origin: 'San Antonio, TX', dest: 'Little Rock, AR', miles: 620, income: 1620, status: 'In Transit', pickup: '07/25/2026', pickupTime: '08:00 - 12:00', delivery: '07/26/2026', deliveryTime: '07:00 - 11:00', customer: 'Kroger', eta: '10:05', onTime: 'Late 40m', stops: 2, truck: 'ext_tr_884', equipment: 'Reefer' },
-    { id: 'ef-58d4e22', route: 'R-2603', origin: 'Little Rock, AR', dest: 'Memphis, TN', miles: 840, income: 900, status: 'Booked', pickup: '07/30/2026', pickupTime: '09:00 - 13:00', delivery: '07/31/2026', deliveryTime: '10:00 - 14:00', customer: 'Nestlé', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_884', equipment: 'Reefer' },
-    { id: 'ef-c1290fb', route: 'R-2604', origin: 'Phoenix, AZ', dest: 'Albuquerque, NM', miles: 420, income: 1050, status: 'Delivered', pickup: '07/01/2026', pickupTime: '06:00 - 10:00', delivery: '07/02/2026', deliveryTime: '08:00 - 12:00', customer: 'PepsiCo', eta: '11:20', onTime: 'On time', stops: 1, truck: 'ext_tr_077', equipment: 'Reefer' },
-    { id: 'ef-b7743d5', route: 'R-2604', origin: 'Albuquerque, NM', dest: 'Kansas City, MO', miles: 790, income: 2100, status: 'In Transit', pickup: '07/22/2026', pickupTime: '07:00 - 11:00', delivery: '07/23/2026', deliveryTime: '09:00 - 13:00', customer: 'Tyson', eta: '12:48', onTime: 'On time', stops: 3, truck: 'ext_tr_077', equipment: 'Reefer' },
-    { id: 'ef-a0f6612', route: 'R-2604', origin: 'Kansas City, MO', dest: 'Columbus, OH', miles: 640, income: 1690, status: 'Dispatched', pickup: '08/02/2026', pickupTime: '05:00 - 09:00', delivery: '08/03/2026', deliveryTime: '10:00 - 14:00', customer: 'Cardinal', eta: '--', onTime: '--', stops: 2, truck: 'ext_tr_077', equipment: 'Reefer' },
-    { id: 'ef-e3d1908', route: 'R-2604', origin: 'Columbus, OH', dest: 'Newark, NJ', miles: 552, income: 1580, status: 'Unbooked', pickup: '08/08/2026', pickupTime: '08:00 - 12:00', delivery: '08/09/2026', deliveryTime: '06:00 - 10:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_077', equipment: 'Reefer' },
-    { id: 'ef-cc80f47', route: 'R-2605', origin: 'Fresno, CA', dest: 'Las Vegas, NV', miles: 410, income: 1240, status: 'Unbooked', pickup: '07/01/2026', pickupTime: '04:00 - 08:00', delivery: '07/02/2026', deliveryTime: '07:00 - 11:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'Reefer' },
-    { id: 'ef-38a5c6e', route: 'R-2605', origin: 'Las Vegas, NV', dest: 'Salt Lake City, UT', miles: 1180, income: 2980, status: 'Unbooked', pickup: '07/04/2026', pickupTime: '06:00 - 10:00', delivery: '07/05/2026', deliveryTime: '12:00 - 16:00', customer: '--', eta: '--', onTime: '--', stops: 2, truck: '--', equipment: 'Reefer' },
-    { id: 'ef-70e2d13', route: 'R-2605', origin: 'Salt Lake City, UT', dest: 'Denver, CO', miles: 1680, income: 2577, status: 'Unbooked', pickup: '07/06/2026', pickupTime: '09:00 - 13:00', delivery: '07/07/2026', deliveryTime: '08:00 - 12:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'Reefer' },
-    { id: 'ef-91ffb08', route: 'R-2606', origin: 'Savannah, GA', dest: 'Jacksonville, FL', miles: 140, income: 610, status: 'Paid', pickup: '06/22/2026', pickupTime: '07:00 - 11:00', delivery: '06/22/2026', deliveryTime: '14:00 - 18:00', customer: 'Publix', eta: '15:02', onTime: 'On time', stops: 1, truck: 'ext_tr_311', equipment: 'Van 53' },
-    { id: 'ef-4b6a2c9', route: 'R-2606', origin: 'Jacksonville, FL', dest: 'Tampa, FL', miles: 200, income: 720, status: 'Invoiced', pickup: '06/24/2026', pickupTime: '08:00 - 12:00', delivery: '06/24/2026', deliveryTime: '16:00 - 20:00', customer: 'Publix', eta: '17:30', onTime: 'On time', stops: 1, truck: 'ext_tr_311', equipment: 'Van 53' },
-    { id: 'ef-05fa8b1', route: 'R-2606', origin: 'Tampa, FL', dest: 'Savannah, GA', miles: 1142, income: 1980, status: 'Canceled', pickup: '06/26/2026', pickupTime: '06:00 - 10:00', delivery: '06/28/2026', deliveryTime: '09:00 - 13:00', customer: 'Publix', eta: '--', onTime: '--', stops: 2, truck: 'ext_tr_311', equipment: 'Van 53' }
+    { id: 'ef-4a7dc58', route: 'R-2601', origin: 'Houston, TX', dest: 'Memphis, TN', miles: 588, income: 1111, status: 'In Transit', pickup: '07/29/2026', pickupTime: '08:00 - 12:00', delivery: '07/30/2026', deliveryTime: '06:00 - 10:00', customer: 'Averitt', eta: '09:42', onTime: 'On time', stops: 2, truck: 'ext_tr_123', equipment: 'TRK-118', equipmentType: 'Van' },
+    { id: 'ef-9b21fe0', route: 'R-2601', origin: 'Memphis, TN', dest: 'Chicago, IL', miles: 530, income: 1180, status: 'Booked', pickup: '07/30/2026', pickupTime: '14:00 - 18:00', delivery: '07/31/2026', deliveryTime: '08:00 - 12:00', customer: 'CH Robinson', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_123', equipment: 'TRK-118', equipmentType: 'Van' },
+    { id: 'ef-77c04aa', route: 'R-2601', origin: 'Chicago, IL', dest: 'Houston, TX', miles: 355, income: 523, status: 'Offer', pickup: '07/31/2026', pickupTime: '10:00 - 14:00', delivery: '08/01/2026', deliveryTime: '09:00 - 13:00', customer: 'TQL', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_123', equipment: 'TRK-118', equipmentType: 'Van' },
+    { id: 'ef-1d55b3c', route: 'R-2602', origin: 'Dallas, TX', dest: 'Shreveport, LA', miles: 190, income: 420, status: 'Booked', pickup: '07/29/2026', pickupTime: '07:00 - 11:00', delivery: '07/29/2026', deliveryTime: '15:00 - 19:00', customer: 'Werner', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'TRK-205', equipmentType: 'Van' },
+    { id: 'ef-6e0aa41', route: 'R-2602', origin: 'Shreveport, LA', dest: 'Atlanta, GA', miles: 990, income: 2180, status: 'Unbooked', pickup: '07/30/2026', pickupTime: '06:00 - 10:00', delivery: '07/31/2026', deliveryTime: '12:00 - 16:00', customer: '--', eta: '--', onTime: '--', stops: 2, truck: '--', equipment: 'TRK-205', equipmentType: 'Van' },
+    { id: 'ef-2f8c110', route: 'R-2603', origin: 'Laredo, TX', dest: 'San Antonio, TX', miles: 157, income: 480, status: 'Delivered', pickup: '07/18/2026', pickupTime: '05:00 - 09:00', delivery: '07/18/2026', deliveryTime: '13:00 - 17:00', customer: 'Sysco', eta: '13:10', onTime: 'On time', stops: 1, truck: 'ext_tr_884', equipment: 'TRK-884', equipmentType: 'Reefer' },
+    { id: 'ef-30bb907', route: 'R-2603', origin: 'San Antonio, TX', dest: 'Little Rock, AR', miles: 620, income: 1620, status: 'In Transit', pickup: '07/25/2026', pickupTime: '08:00 - 12:00', delivery: '07/26/2026', deliveryTime: '07:00 - 11:00', customer: 'Kroger', eta: '10:05', onTime: 'Late 40m', stops: 2, truck: 'ext_tr_884', equipment: 'TRK-884', equipmentType: 'Reefer' },
+    { id: 'ef-58d4e22', route: 'R-2603', origin: 'Little Rock, AR', dest: 'Memphis, TN', miles: 840, income: 900, status: 'Booked', pickup: '07/30/2026', pickupTime: '09:00 - 13:00', delivery: '07/31/2026', deliveryTime: '10:00 - 14:00', customer: 'Nestlé', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_884', equipment: 'TRK-884', equipmentType: 'Reefer' },
+    { id: 'ef-c1290fb', route: 'R-2604', origin: 'Phoenix, AZ', dest: 'Albuquerque, NM', miles: 420, income: 1050, status: 'Delivered', pickup: '07/01/2026', pickupTime: '06:00 - 10:00', delivery: '07/02/2026', deliveryTime: '08:00 - 12:00', customer: 'PepsiCo', eta: '11:20', onTime: 'On time', stops: 1, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
+    { id: 'ef-b7743d5', route: 'R-2604', origin: 'Albuquerque, NM', dest: 'Kansas City, MO', miles: 790, income: 2100, status: 'In Transit', pickup: '07/22/2026', pickupTime: '07:00 - 11:00', delivery: '07/23/2026', deliveryTime: '09:00 - 13:00', customer: 'Tyson', eta: '12:48', onTime: 'On time', stops: 3, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
+    { id: 'ef-a0f6612', route: 'R-2604', origin: 'Kansas City, MO', dest: 'Columbus, OH', miles: 640, income: 1690, status: 'Dispatched', pickup: '08/02/2026', pickupTime: '05:00 - 09:00', delivery: '08/03/2026', deliveryTime: '10:00 - 14:00', customer: 'Cardinal', eta: '--', onTime: '--', stops: 2, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
+    { id: 'ef-e3d1908', route: 'R-2604', origin: 'Columbus, OH', dest: 'Newark, NJ', miles: 552, income: 1580, status: 'Unbooked', pickup: '08/08/2026', pickupTime: '08:00 - 12:00', delivery: '08/09/2026', deliveryTime: '06:00 - 10:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
+    { id: 'ef-cc80f47', route: 'R-2605', origin: 'Fresno, CA', dest: 'Las Vegas, NV', miles: 410, income: 1240, status: 'Unbooked', pickup: '07/01/2026', pickupTime: '04:00 - 08:00', delivery: '07/02/2026', deliveryTime: '07:00 - 11:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'TRK-310', equipmentType: 'Reefer' },
+    { id: 'ef-38a5c6e', route: 'R-2605', origin: 'Las Vegas, NV', dest: 'Salt Lake City, UT', miles: 1180, income: 2980, status: 'Unbooked', pickup: '07/04/2026', pickupTime: '06:00 - 10:00', delivery: '07/05/2026', deliveryTime: '12:00 - 16:00', customer: '--', eta: '--', onTime: '--', stops: 2, truck: '--', equipment: 'TRK-310', equipmentType: 'Reefer' },
+    { id: 'ef-70e2d13', route: 'R-2605', origin: 'Salt Lake City, UT', dest: 'Denver, CO', miles: 1680, income: 2577, status: 'Unbooked', pickup: '07/06/2026', pickupTime: '09:00 - 13:00', delivery: '07/07/2026', deliveryTime: '08:00 - 12:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'TRK-310', equipmentType: 'Reefer' },
+    { id: 'ef-91ffb08', route: '', origin: 'Savannah, GA', dest: 'Jacksonville, FL', miles: 140, income: 610, status: 'Paid', pickup: '06/22/2026', pickupTime: '07:00 - 11:00', delivery: '06/22/2026', deliveryTime: '14:00 - 18:00', customer: 'Publix', eta: '15:02', onTime: 'On time', stops: 1, truck: 'ext_tr_311', equipment: 'TRK-311', equipmentType: 'Van' },
+    { id: 'ef-4b6a2c9', route: 'R-2606', origin: 'Jacksonville, FL', dest: 'Tampa, FL', miles: 200, income: 720, status: 'Invoiced', pickup: '06/24/2026', pickupTime: '08:00 - 12:00', delivery: '06/24/2026', deliveryTime: '16:00 - 20:00', customer: 'Publix', eta: '17:30', onTime: 'On time', stops: 1, truck: 'ext_tr_311', equipment: 'TRK-311', equipmentType: 'Van' },
+    { id: 'ef-05fa8b1', route: 'R-2606', origin: 'Tampa, FL', dest: 'Savannah, GA', miles: 1142, income: 1980, status: 'Canceled', pickup: '06/26/2026', pickupTime: '06:00 - 10:00', delivery: '06/28/2026', deliveryTime: '09:00 - 13:00', customer: 'Publix', eta: '--', onTime: '--', stops: 2, truck: 'ext_tr_311', equipment: 'TRK-311', equipmentType: 'Van' }
   ];
 
   const LOAD_TABS = ['All Loads', 'On The Road', 'Offer', 'Booked', 'Assigned', 'Dispatched', 'In Transit', 'Delivered', 'Invoiced', 'Paid', 'Canceled'];
@@ -42,19 +42,19 @@ export function initApp() {
   const LOAD_COLS_DEFS = [
     { key: 'id', label: 'Load ID', width: 105 },
     { key: 'status', label: 'Status', width: 100 },
-    { key: 'route', label: 'Route', width: 170 },
+    { key: 'route', label: 'Related route', width: 170 },
     { key: 'origin', label: 'Origin', width: 115 },
     { key: 'dest', label: 'Destination', width: 115 },
     { key: 'miles', label: 'Distance', width: 85 },
     { key: 'pickup', label: 'Pickup date', width: 110 },
     { key: 'delivery', label: 'Delivery date', width: 110 },
-    { key: 'eta', label: 'ETA', width: 70 },
     { key: 'onTime', label: 'On Time', width: 80 },
     { key: 'income', label: 'Income', width: 110 },
     { key: 'driver', label: 'Driver', width: 110 },
     { key: 'truck', label: 'Unit', width: 105 },
     { key: 'equipment', label: 'Trailer', width: 100 },
-    { key: 'stops', label: 'Stops', width: 55 },
+    { key: 'equipmentType', label: 'Equipment type', width: 100 },
+    { key: 'stops', label: 'Stops count', width: 70 },
     { key: 'customer', label: 'Customer', width: 120 }
   ];
   const LOAD_COLS_BY_KEY = {};
@@ -69,26 +69,28 @@ export function initApp() {
     { key: 'status', label: 'Status', width: 110 },
     { key: 'health', label: 'Health', width: 120 },
     { key: 'lanes', label: 'Lanes', width: 'minmax(160px, 1fr)' },
-    { key: 'income', label: 'Est. income', width: 130 },
+    { key: 'equipmentType', label: 'Equipment type', width: 110 },
+    { key: 'income', label: 'Income', width: 130 },
     { key: 'miles', label: 'Total miles', width: 90 },
     { key: 'trailer', label: 'Trailer', width: 90 },
     { key: 'dispatcher', label: 'Dispatcher', width: 140 }
   ];
   const ROUTE_COLS_BY_KEY = {};
   ROUTE_COLS_DEFS.forEach(c => { ROUTE_COLS_BY_KEY[c.key] = c; });
-  const ROUTE_SORT_KEY = { route: 'name', route_span: 'name', status: 'status', health: 'healthScore', lanes: 'laneCount', income: 'income', miles: 'miles', driver: 'driver', trailer: 'trailer', unit: 'unit', dispatcher: 'dispatcher' };
+  const ROUTE_SORT_KEY = { route: 'name', route_span: 'name', status: 'status', health: 'healthScore', lanes: 'laneCount', income: 'income', miles: 'miles', driver: 'driver', trailer: 'trailer', unit: 'unit', dispatcher: 'dispatcher', equipmentType: 'equipmentType' };
 
   // ---------------------------------------------------------------------
   // Generic "Filter" fields (field picker -> operator + value -> Apply)
   // ---------------------------------------------------------------------
   const LOAD_STATUS_OPTIONS = ['Offer', 'Booked', 'Assigned', 'Dispatched', 'In Transit', 'Delivered', 'Invoiced', 'Paid', 'Canceled', 'Unbooked'];
-  const ON_TIME_OPTIONS = ['On time', 'Late', '--'];
+  const ON_TIME_OPTIONS = ['On time', 'Late'];
   const ROUTE_STATUS_OPTIONS = ['In progress', 'Planned', 'Completed'];
 
+  const LOAD_EQUIPMENT_OPTIONS = ['Reefer', 'Van', 'Flatbed'];
   const LOAD_FIELDS = [
     { key: 'id', label: 'Load ID', type: 'text' },
     { key: 'status', label: 'Status', type: 'enum', options: LOAD_STATUS_OPTIONS },
-    { key: 'route', label: 'Route', type: 'text' },
+    { key: 'route', label: 'Related route', type: 'text' },
     { key: 'origin', label: 'Origin', type: 'text' },
     { key: 'dest', label: 'Destination', type: 'text' },
     { key: 'miles', label: 'Distance (mi)', type: 'number' },
@@ -96,45 +98,54 @@ export function initApp() {
     { key: 'delivery', label: 'Delivery date', type: 'date' },
     { key: 'onTime', label: 'On Time', type: 'enum', options: ON_TIME_OPTIONS },
     { key: 'income', label: 'Income', type: 'number' },
-    { key: 'driver', label: 'Driver', type: 'text' },
-    { key: 'truck', label: 'Unit', type: 'text' },
-    { key: 'equipment', label: 'Trailer', type: 'text' },
-    { key: 'stops', label: 'Stops', type: 'number' },
+    { key: 'driver', label: 'Driver', type: 'text_identity' },
+    { key: 'truck', label: 'Unit', type: 'text_identity' },
+    { key: 'equipment', label: 'Trailer', type: 'text_identity' },
+    { key: 'equipmentType', label: 'Equipment type', type: 'enum', options: LOAD_EQUIPMENT_OPTIONS },
+    { key: 'stops', label: 'Stops count', type: 'number' },
     { key: 'customer', label: 'Customer', type: 'text' }
   ];
   const LOAD_FIELDS_BY_KEY = {};
   LOAD_FIELDS.forEach(f => { LOAD_FIELDS_BY_KEY[f.key] = f; });
 
+  const ROUTE_HEALTH_OPTIONS = ['Critical', 'Attention', 'Healthy'];
+  const ROUTE_EQUIPMENT_OPTIONS = ['Reefer', 'Van', 'Flatbed'];
   const ROUTE_FIELDS = [
     { key: 'name', label: 'Route name', type: 'text' },
     { key: 'status', label: 'Status', type: 'enum', options: ROUTE_STATUS_OPTIONS },
+    { key: 'health', label: 'Health', type: 'enum', options: ROUTE_HEALTH_OPTIONS },
     { key: 'dateStart', label: 'Start date', type: 'date' },
     { key: 'dateEnd', label: 'End date', type: 'date' },
-    { key: 'driver', label: 'Driver', type: 'text' },
-    { key: 'trailer', label: 'Trailer', type: 'text' },
-    { key: 'unit', label: 'Unit', type: 'text' },
-    { key: 'dispatcher', label: 'Dispatcher', type: 'text' },
+    { key: 'origin', label: 'Origin', type: 'text' },
+    { key: 'destination', label: 'Destination', type: 'text' },
+    { key: 'driver', label: 'Driver', type: 'text_identity' },
+    { key: 'trailer', label: 'Trailer', type: 'text_identity' },
+    { key: 'unit', label: 'Unit', type: 'text_identity' },
+    { key: 'dispatcher', label: 'Dispatcher', type: 'text_identity' },
+    { key: 'equipmentType', label: 'Equipment type', type: 'enum', options: ROUTE_EQUIPMENT_OPTIONS },
     { key: 'miles', label: 'Total miles', type: 'number' },
-    { key: 'income', label: 'Estimated income', type: 'number' },
-    { key: 'laneCount', label: 'Lanes', type: 'number' }
+    { key: 'income', label: 'Income', type: 'number' }
   ];
   const ROUTE_FIELDS_BY_KEY = {};
   ROUTE_FIELDS.forEach(f => { ROUTE_FIELDS_BY_KEY[f.key] = f; });
 
   const OPERATORS = {
-    text: [{ v: 'contains', label: 'contains (case insensitive)' }, { v: 'equals', label: 'equals' }, { v: 'starts', label: 'starts with' }, { v: 'not_contains', label: 'does not contain' }],
-    number: [{ v: 'eq', label: '=' }, { v: 'gt', label: 'greater than' }, { v: 'lt', label: 'less than' }, { v: 'between', label: 'between' }],
+    text: [{ v: 'contains', label: 'contains' }, { v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }],
+    text_identity: [{ v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }, { v: 'in', label: 'in' }, { v: 'is_in', label: 'is in' }],
+    number: [{ v: 'eq', label: 'is' }, { v: 'neq', label: 'is not' }, { v: 'gt', label: 'greater than' }, { v: 'lt', label: 'less than' }, { v: 'between', label: 'between' }],
     date: [{ v: 'on', label: 'on' }, { v: 'before', label: 'before' }, { v: 'after', label: 'after' }, { v: 'between', label: 'between' }],
-    enum: [{ v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }]
+    enum: [{ v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }, { v: 'in', label: 'in' }, { v: 'not_in', label: 'not in' }]
   };
-  function defaultOperator(type) { return OPERATORS[type][0].v; }
+  function defaultOperator(type) { return (OPERATORS[type] || OPERATORS.text)[0].v; }
 
   const LOAD_FIELD_GETTERS = {
     id: l => l.id, status: l => l.status, route: l => routeOf(l.route).name,
     origin: l => l.origin, dest: l => l.dest, miles: l => l.miles,
     pickup: l => dayKey(l.pickup), delivery: l => dayKey(l.delivery),
     onTime: l => l.onTime, income: l => l.income, driver: l => routeOf(l.route).driver,
-    truck: l => l.truck, equipment: l => l.equipment, stops: l => l.stops, customer: l => l.customer
+    truck: l => l.truck, equipment: l => l.equipment,
+    equipmentType: l => l.equipmentType || '',
+    stops: l => l.stops, customer: l => l.customer
   };
   function keyFromPretty(s) {
     const m = s.match(/^(\w{3}) (\d{2}) \/ (\d{4})$/);
@@ -144,9 +155,13 @@ export function initApp() {
   }
   const ROUTE_FIELD_GETTERS = {
     name: r => r.name, status: r => r.status,
+    health: r => { const h = routeStats(r).healthScore; return h === 0 ? 'Critical' : h === 1 ? 'Attention' : 'Healthy'; },
     dateStart: r => keyFromPretty(r.dateStart), dateEnd: r => keyFromPretty(r.dateEnd),
+    origin: r => { const ls = loadsOf(r.id); return ls.length ? ls[0].origin : ''; },
+    destination: r => { const ls = loadsOf(r.id); return ls.length ? ls[ls.length - 1].dest : ''; },
     driver: r => r.driver, trailer: r => r.trailer, unit: r => r.unit, dispatcher: r => r.dispatcher,
-    miles: r => routeStats(r).miles, income: r => routeStats(r).income, laneCount: r => routeStats(r).loads.length
+    equipmentType: r => r.equipmentType || '',
+    miles: r => routeStats(r).miles, income: r => routeStats(r).income
   };
 
   function matchesFilter(type, value, filter) {
@@ -156,9 +171,18 @@ export function initApp() {
       if (!needle) return true;
       const v = String(value || '').toLowerCase();
       if (op === 'contains') return v.includes(needle);
-      if (op === 'equals') return v === needle;
-      if (op === 'starts') return v.startsWith(needle);
-      if (op === 'not_contains') return !v.includes(needle);
+      if (op === 'is') return v === needle;
+      if (op === 'is_not') return v !== needle;
+      return true;
+    }
+    if (type === 'text_identity') {
+      const raw = String(filter.value || '');
+      if (!raw.trim()) return true;
+      const v = String(value || '').toLowerCase();
+      const list = raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      if (list.length === 0) return true;
+      if (op === 'is' || op === 'in' || op === 'is_in') return list.includes(v);
+      if (op === 'is_not') return !list.includes(v);
       return true;
     }
     if (type === 'number') {
@@ -172,6 +196,7 @@ export function initApp() {
       if (filter.value === '' || filter.value === undefined) return true;
       const n = Number(filter.value);
       if (op === 'eq') return v === n;
+      if (op === 'neq') return v !== n;
       if (op === 'gt') return v > n;
       if (op === 'lt') return v < n;
       return true;
@@ -192,6 +217,13 @@ export function initApp() {
     }
     if (type === 'enum') {
       if (!filter.value) return true;
+      if (op === 'in' || op === 'not_in') {
+        const list = String(filter.value).split(',').map(s => s.trim()).filter(Boolean);
+        if (!list.length) return true;
+        const isLate = list.includes('Late');
+        const matched = list.some(item => item === 'Late' ? String(value).startsWith('Late') : value === item);
+        return op === 'in' ? matched : !matched;
+      }
       const isLate = filter.value === 'Late';
       const match = isLate ? String(value).startsWith('Late') : value === filter.value;
       if (op === 'is') return match;
@@ -207,8 +239,11 @@ export function initApp() {
   function filterChipLabel(field, filter) {
     const opLabel = operatorLabel(field.type, filter.operator);
     if (filter.operator === 'between') return field.label + ' ' + opLabel + ' ' + (filter.value || '…') + ' - ' + (filter.value2 || '…');
-    if (field.type === 'text') return field.label + ' ' + opLabel + ': "' + filter.value + '"';
-    if (field.type === 'enum') return field.label + (filter.operator === 'is_not' ? ' ≠ ' : ': ') + filter.value;
+    if (field.type === 'text' || field.type === 'text_identity') return field.label + ' ' + opLabel + ' "' + filter.value + '"';
+    if (field.type === 'enum') {
+      if (filter.operator === 'in' || filter.operator === 'not_in') return field.label + ' ' + opLabel + ' ' + filter.value;
+      return field.label + (filter.operator === 'is_not' ? ' ≠ ' : ': ') + filter.value;
+    }
     return field.label + ' ' + opLabel + ' ' + filter.value;
   }
 
@@ -254,6 +289,7 @@ export function initApp() {
     routeColumnOrder: ROUTE_COLS_DEFS.map(c => c.key),
     routeHiddenCols: new Set(),
     openPopover: null, // null | 'loadColumns' | 'routeColumns' | 'filter'
+    openDatePicker: null, // null | 'pickup' | 'delivery'
     filterPanel: null, // null | {step:'fields'} | {step:'edit', key, operator, value, value2}
     loadFilters: [],
     routeFilters: [],
@@ -286,7 +322,7 @@ export function initApp() {
   }
   function dayKey(d) { const [m, dd, y] = d.split('/'); return y + m + dd; }
   function isoToKey(iso) { return iso ? iso.replace(/-/g, '') : ''; }
-  function routeOf(id) { return ROUTES.find(r => r.id === id) || { id: '', name: 'Not assigned', driver: 'Unassigned', trailer: '--', unit: '--', dispatcher: '--', status: '--', dateStart: '--', dateEnd: '--', equipment: '--' }; }
+  function routeOf(id) { return ROUTES.find(r => r.id === id) || { id: '', name: 'No route', driver: 'Unassigned', trailer: '--', unit: '--', dispatcher: '--', status: '--', dateStart: '--', dateEnd: '--', equipment: '--' }; }
   function loadsOf(id) { return LOADS.filter(l => l.route === id); }
   function routeDhMiles(r) {
     const ls = loadsOf(r.id);
@@ -432,9 +468,12 @@ export function initApp() {
     chevLeft: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>',
     funnel: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 9v6l-4 2v-8Z"></path></svg>',
     fieldList: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="4" cy="6" r="1"></circle><circle cx="4" cy="12" r="1"></circle><circle cx="4" cy="18" r="1"></circle><path d="M9 6h11M9 12h11M9 18h11"></path></svg>',
-    eye: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+    eye: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
+    download: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+    save: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>',
+    refresh: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>'
   };
-  const FIELD_TYPE_ICON = { text: null, date: 'calendar', number: 'fieldList', enum: 'fieldList' };
+  const FIELD_TYPE_ICON = { text: null, text_identity: 'fieldList', date: 'calendar', number: 'fieldList', enum: 'fieldList' };
   function fieldTypeIcon(type) {
     if (type === 'text') return el('span', { style: { display: 'inline-block', width: '13px', textAlign: 'center', fontWeight: '800', fontStyle: 'italic', fontSize: '12px', color: '#8B939B' } }, ['T']);
     return iconEl(FIELD_TYPE_ICON[type] || 'fieldList', { color: '#8B939B' });
@@ -455,9 +494,14 @@ export function initApp() {
   // Global popover close-on-outside-click
   // ---------------------------------------------------------------------
   document.addEventListener('click', function (e) {
-    if (!state.openPopover) return;
-    const openContainer = document.querySelector('[data-popover="' + state.openPopover + '"]');
-    if (openContainer && !openContainer.contains(e.target)) setState({ openPopover: null, filterPanel: null });
+    if (state.openPopover) {
+      const openContainer = document.querySelector('[data-popover="' + state.openPopover + '"]');
+      if (openContainer && !openContainer.contains(e.target)) setState({ openPopover: null, filterPanel: null });
+    }
+    if (state.openDatePicker) {
+      const dpContainer = document.querySelector('[data-datepicker="' + state.openDatePicker + '"]');
+      if (dpContainer && !dpContainer.contains(e.target)) setState({ openDatePicker: null });
+    }
   }, true);
 
   let dragColKey = null;
@@ -991,19 +1035,36 @@ export function initApp() {
     const container = el('div', { style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } });
 
     // ---- header row (static) ----
-    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '16px', padding: '16px 20px', background: '#101B23', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
+    const queryKey = isLoads ? 'loadQuery' : 'routeQuery';
+    const searchBar = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: '#131F27', border: '1px solid rgba(255,255,255,.1)', borderRadius: '8px', width: '320px', flexShrink: '1', minWidth: '120px' } }, [
+      iconEl('search'),
+      el('input', {
+        type: 'text', value: s[queryKey], placeholder: isLoads ? 'Search by ID, route, city, customer...' : 'Search by name, driver, city...',
+        oninput: e => setState({ [queryKey]: e.target.value, page: 1 }),
+        style: { flex: '1', background: 'transparent', border: 'none', outline: 'none', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px', minWidth: '0' }
+      })
+    ]);
+
+    const refreshBtn = el('div', {
+      class: 'hoverable',
+      style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 13px', border: '1px solid rgba(255,255,255,.1)', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' }
+    }, [
+      iconEl('refresh'),
+      el('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } }, [
+        el('div', { style: { fontSize: '12px', fontWeight: '800', color: '#FBFBFB', lineHeight: '1' } }, ['Refresh']),
+        el('div', { style: { fontSize: '10px', color: '#6B7373', lineHeight: '1' } }, ['DataTruck · Updated 3 min ago'])
+      ])
+    ]);
+
+    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', background: '#101B23', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
       el('div', { style: { fontSize: '19px', fontWeight: '800', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } }, [isLoads ? 'My Loads' : 'Routes']),
+      el('div', { style: { flex: '1' } }),
+      searchBar,
       el('div', { style: { flex: '1' } }),
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', border: '1px solid rgba(255,255,255,.1)', borderRadius: '999px', color: '#ABABAB', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' } }, [
         iconEl('clock'), 'Results: ' + (isLoads ? visibleLoads().length : visibleRoutes().length)
       ]),
-      ...(isLoads ? [el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 13px', border: '1px solid rgba(255,255,255,.1)', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', background: 'rgba(39,167,103,.06)' } }, [
-        el('div', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#27A767', boxShadow: '0 0 6px #27A767', flexShrink: '0' } }),
-        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } }, [
-          el('div', { style: { fontSize: '12px', fontWeight: '800', color: '#7BCBCB', lineHeight: '1' } }, ['Sync loads']),
-          el('div', { style: { fontSize: '10px', color: '#6B7373', lineHeight: '1' } }, ['DataTruck · 3 min ago'])
-        ])
-      ])] : []),
+      refreshBtn,
       el('div', {
         class: 'hoverable',
         onclick: isLoads ? null : () => setState({ showCreateRoute: true }),
@@ -1038,19 +1099,177 @@ export function initApp() {
       }, [label]));
     });
 
-    const rightTools = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0 8px 12px' } });
     if (isLoads) {
-      rightTools.appendChild(filterButton('loads'));
-      rightTools.appendChild(columnsButton('loadColumns', 'columnOrder', 'hiddenCols', LOAD_COLS_BY_KEY));
+      const line1 = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'stretch', gap: '4px', padding: '0 20px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
+        viewTabs, statusTabsWrap
+      ]);
+      container.appendChild(line1);
+
+      const dateBtn = (label, key) => {
+        const filtersKey = 'loadFilters';
+        const existing = s[filtersKey].find(x => x.key === key);
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const parseLocal = s2 => { const p = s2.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); };
+        const fmtShort = d => MONTHS[d.getMonth()] + ' ' + String(d.getDate()).padStart(2, '0');
+        const hasRange = existing && existing.value && existing.value2;
+        const btnLabel = hasRange ? fmtShort(parseLocal(existing.value)) + ' – ' + fmtShort(parseLocal(existing.value2)) : label;
+        const wrapper = el('div', { 'data-datepicker': key, style: { position: 'relative' } });
+        const btn = el('div', {
+          class: 'hoverable',
+          onclick: e => {
+            e.stopPropagation();
+            const cur = s.openDatePicker;
+            setState({ openDatePicker: cur === key ? null : key, _datePickStart: existing ? existing.value : null, _datePickEnd: existing ? existing.value2 : null, _datePickMonth: null });
+          },
+          style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', border: hasRange ? '1px solid #27A767' : '1px solid rgba(255,255,255,.1)', borderRadius: '8px', color: hasRange ? '#3FC281' : '#E3E6E8', fontWeight: '700', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }
+        }, [iconEl('calendar'), btnLabel]);
+        wrapper.appendChild(btn);
+
+        if (s.openDatePicker === key) {
+          const baseMonth = s._datePickMonth != null ? s._datePickMonth : new Date().getMonth();
+          const baseYear = s._datePickYear != null ? s._datePickYear : new Date().getFullYear();
+          const pickStart = s._datePickStart || null;
+          const pickEnd = s._datePickEnd || null;
+          const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+          const presets = [
+            { label: 'This Week', fn: () => { const n = new Date(); const d = n.getDay(); const s2 = new Date(n); s2.setDate(n.getDate()-d); const e2 = new Date(s2); e2.setDate(s2.getDate()+6); return [s2,e2]; }},
+            { label: 'Last Week', fn: () => { const n = new Date(); const d = n.getDay(); const s2 = new Date(n); s2.setDate(n.getDate()-d-7); const e2 = new Date(s2); e2.setDate(s2.getDate()+6); return [s2,e2]; }},
+            { label: 'Current Month', fn: () => { const n = new Date(); return [new Date(n.getFullYear(),n.getMonth(),1), new Date(n.getFullYear(),n.getMonth()+1,0)]; }},
+            { label: 'Last Month', fn: () => { const n = new Date(); return [new Date(n.getFullYear(),n.getMonth()-1,1), new Date(n.getFullYear(),n.getMonth(),0)]; }},
+            { label: 'This Year', fn: () => { const y = new Date().getFullYear(); return [new Date(y,0,1), new Date(y,11,31)]; }},
+            { label: 'Last Year', fn: () => { const y = new Date().getFullYear()-1; return [new Date(y,0,1), new Date(y,11,31)]; }},
+          ];
+          const toISO = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+          const applyRange = (d1, d2) => {
+            const v1 = toISO(d1), v2 = toISO(d2);
+            const list2 = s[filtersKey].filter(x => x.key !== key);
+            list2.push({ key: key, operator: 'between', value: v1, value2: v2 });
+            setState({ [filtersKey]: list2, openDatePicker: null, page: 1 });
+          };
+
+          const presetList = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', borderRight: '1px solid rgba(255,255,255,.07)', padding: '12px', minWidth: '120px' } });
+          presets.forEach(p => {
+            presetList.appendChild(el('div', {
+              class: 'hoverable',
+              onclick: e2 => { e2.stopPropagation(); const r = p.fn(); applyRange(r[0], r[1]); },
+              style: { padding: '7px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', color: '#FBFBFB', cursor: 'pointer', whiteSpace: 'nowrap' }
+            }, [p.label]));
+          });
+          presetList.appendChild(el('div', {
+            class: 'hoverable',
+            onclick: e2 => {
+              e2.stopPropagation();
+              const list2 = s[filtersKey].filter(x => x.key !== key);
+              setState({ [filtersKey]: list2, openDatePicker: null, page: 1 });
+            },
+            style: { padding: '7px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', color: '#EB4343', cursor: 'pointer', marginTop: '6px' }
+          }, ['Reset']));
+
+          const cellStyle = 'width:32px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;';
+          const makeCell = (dayNum, iso, dimmed) => {
+            const isStart = pickStart === iso;
+            const isEnd = pickEnd === iso;
+            const inRange = pickStart && pickEnd && iso >= pickStart && iso <= pickEnd;
+            let bg = 'transparent', col = dimmed ? '#3B4A4A' : '#C9CED2', radius = '4px', fw = '600';
+            if (isStart || isEnd) { bg = 'rgba(39,167,103,.35)'; col = '#FBFBFB'; fw = '800'; radius = '6px'; }
+            else if (inRange) { bg = 'rgba(39,167,103,.1)'; col = '#8BC8A8'; radius = '0'; }
+            return el('div', {
+              onclick: dimmed ? null : e2 => {
+                e2.stopPropagation();
+                if (!pickStart || (pickStart && pickEnd)) {
+                  setState({ _datePickStart: iso, _datePickEnd: null, _datePickMonth: baseMonth, _datePickYear: baseYear });
+                } else {
+                  const st = iso < pickStart ? iso : pickStart;
+                  const en = iso < pickStart ? pickStart : iso;
+                  applyRange(parseLocal(st), parseLocal(en));
+                }
+              },
+              style: Object.assign({ width: '32px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: fw, color: col, background: bg, borderRadius: radius, cursor: dimmed ? 'default' : 'pointer' })
+            }, [String(dayNum)]);
+          };
+          const buildMonth = (yr, mo) => {
+            const grid = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '0' } });
+            const dayRow = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', justifyItems: 'center' } });
+            DAYS.forEach(d => dayRow.appendChild(el('div', { style: { width: '32px', textAlign: 'center', fontSize: '10px', fontWeight: '700', color: '#6B7373', padding: '4px 0' } }, [d])));
+            grid.appendChild(dayRow);
+            const first = new Date(yr, mo, 1);
+            const startDay = first.getDay();
+            const daysInMonth = new Date(yr, mo + 1, 0).getDate();
+            const prevMonthDays = new Date(yr, mo, 0).getDate();
+            const cells = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', justifyItems: 'center', rowGap: '2px' } });
+            for (let i = startDay - 1; i >= 0; i--) {
+              const d = prevMonthDays - i;
+              const pmo = mo === 0 ? 11 : mo - 1;
+              const pyr = mo === 0 ? yr - 1 : yr;
+              cells.appendChild(makeCell(d, toISO(new Date(pyr, pmo, d)), true));
+            }
+            for (let d = 1; d <= daysInMonth; d++) {
+              cells.appendChild(makeCell(d, toISO(new Date(yr, mo, d)), false));
+            }
+            const totalCells = startDay + daysInMonth;
+            const trailing = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+            for (let d = 1; d <= trailing; d++) {
+              const nmo = mo === 11 ? 0 : mo + 1;
+              const nyr = mo === 11 ? yr + 1 : yr;
+              cells.appendChild(makeCell(d, toISO(new Date(nyr, nmo, d)), true));
+            }
+            grid.appendChild(cells);
+            return grid;
+          };
+
+          const mo2 = baseMonth === 11 ? 0 : baseMonth + 1;
+          const yr2 = baseMonth === 11 ? baseYear + 1 : baseYear;
+          const navRow = el('div', { style: { display: 'flex', alignItems: 'center', padding: '12px 16px 0 16px' } }, [
+            el('div', { class: 'hoverable', onclick: e2 => { e2.stopPropagation(); setState({ _datePickMonth: baseMonth === 0 ? 11 : baseMonth - 1, _datePickYear: baseMonth === 0 ? baseYear - 1 : baseYear }); }, style: { cursor: 'pointer', color: '#8B939B', fontSize: '16px', padding: '4px 8px' } }, ['<']),
+            el('div', { style: { flex: '1', textAlign: 'center', fontSize: '13px', fontWeight: '800', color: '#FBFBFB' } }, [MONTHS[baseMonth] + ' ' + baseYear]),
+            el('div', { style: { width: '40px' } }),
+            el('div', { style: { flex: '1', textAlign: 'center', fontSize: '13px', fontWeight: '800', color: '#FBFBFB' } }, [MONTHS[mo2] + ' ' + yr2]),
+            el('div', { class: 'hoverable', onclick: e2 => { e2.stopPropagation(); setState({ _datePickMonth: mo2, _datePickYear: yr2 }); }, style: { cursor: 'pointer', color: '#8B939B', fontSize: '16px', padding: '4px 8px' } }, ['>']),
+          ]);
+          const calsWrap = el('div', { style: { display: 'flex', gap: '24px', padding: '8px 16px 16px 16px' } }, [
+            buildMonth(baseYear, baseMonth), buildMonth(yr2, mo2)
+          ]);
+          const calPanel = el('div', { style: { display: 'flex', flexDirection: 'column' } }, [navRow, calsWrap]);
+
+          const popover = el('div', {
+            onclick: e2 => e2.stopPropagation(),
+            style: { position: 'absolute', top: 'calc(100% + 6px)', left: '0', zIndex: '30', display: 'flex', background: '#101B23', border: '1px solid rgba(255,255,255,.12)', borderRadius: '12px', boxShadow: '0 12px 32px rgba(0,0,0,.6)' }
+          }, [presetList, calPanel]);
+          wrapper.appendChild(popover);
+        }
+
+        return wrapper;
+      };
+
+      const exportBtn = el('div', {
+        class: 'hoverable',
+        style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', border: '1px solid rgba(255,255,255,.12)', borderRadius: '8px', cursor: 'pointer', color: '#7BCBCB', fontWeight: '700', fontSize: '12px', whiteSpace: 'nowrap' }
+      }, [iconEl('download'), 'Export']);
+      const saveViewBtn = el('div', {
+        class: 'hoverable',
+        style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', border: '1px solid rgba(255,255,255,.12)', borderRadius: '8px', cursor: 'pointer', color: '#C9CED2', fontWeight: '700', fontSize: '12px', whiteSpace: 'nowrap' }
+      }, [iconEl('save'), 'Save view']);
+
+      const leftTools = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+        filterButton('loads'), dateBtn('Pickup Date', 'pickup'), dateBtn('Delivery Date', 'delivery')
+      ]);
+      const rightTools = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+        exportBtn, saveViewBtn, columnsButton('loadColumns', 'columnOrder', 'hiddenCols', LOAD_COLS_BY_KEY)
+      ]);
+      const line2 = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
+        leftTools, rightTools
+      ]);
+      container.appendChild(line2);
     } else {
+      const rightTools = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0 8px 12px' } });
       rightTools.appendChild(filterButton('routes'));
       rightTools.appendChild(columnsButton('routeColumns', 'routeColumnOrder', 'routeHiddenCols', ROUTE_COLS_BY_KEY));
-    }
 
-    const filterBar = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'stretch', gap: '4px', padding: '0 20px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
-      viewTabs, statusTabsWrap, rightTools
-    ]);
-    container.appendChild(filterBar);
+      const filterBar = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'stretch', gap: '4px', padding: '0 20px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
+        viewTabs, statusTabsWrap, rightTools
+      ]);
+      container.appendChild(filterBar);
+    }
 
     const chips = filterChipsRow(isLoads ? 'loads' : 'routes');
     if (chips) container.appendChild(chips);
@@ -1139,7 +1358,20 @@ export function initApp() {
     return wrap;
   }
 
-  // ---- generic "Filter" button: field picker -> operator + value -> Apply ----
+  function uniqueFieldValues(view, fieldKey) {
+    const getters = view === 'loads' ? LOAD_FIELD_GETTERS : ROUTE_FIELD_GETTERS;
+    const data = view === 'loads' ? LOADS : ROUTES;
+    const getter = getters[fieldKey];
+    if (!getter) return [];
+    const seen = new Set();
+    data.forEach(item => {
+      const v = String(getter(item) || '').trim();
+      if (v && v !== '--' && v !== 'Unassigned') seen.add(v);
+    });
+    return Array.from(seen).sort();
+  }
+
+  // ---- generic "Filter" button: field list + edit panel side by side ----
   function filterButton(view) {
     const s = state;
     const open = s.openPopover === 'filter';
@@ -1149,68 +1381,145 @@ export function initApp() {
 
     const btn = el('div', {
       class: 'hoverable',
-      onclick: e => { e.stopPropagation(); setState({ openPopover: open ? null : 'filter', filterPanel: open ? null : { step: 'fields' } }); },
+      onclick: e => { e.stopPropagation(); setState({ openPopover: open ? null : 'filter', filterPanel: open ? null : { editKey: null } }); },
       style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '7px 12px', border: (s[filtersKey].length ? '1px solid #27A767' : '1px solid rgba(255,255,255,.1)'), borderRadius: '8px', color: s[filtersKey].length ? '#3FC281' : '#E3E6E8', fontWeight: '700', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }
     }, [iconEl('funnel'), 'Filter', iconEl('chevDown')]);
 
     const wrap = el('div', { 'data-popover': 'filter', style: { position: 'relative' } }, [btn]);
     if (!open || !s.filterPanel) return wrap;
 
-    if (s.filterPanel.step === 'fields') {
-      const list = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '1px', maxHeight: '380px', overflowY: 'auto' } });
-      fields.forEach(f => {
-        const existing = s[filtersKey].find(x => x.key === f.key);
-        list.appendChild(el('div', {
-          class: 'hoverable',
-          onclick: () => setState({ filterPanel: { step: 'edit', key: f.key, operator: existing ? existing.operator : defaultOperator(f.type), value: existing ? existing.value : '', value2: existing ? existing.value2 : '' } }),
-          style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '6px', cursor: 'pointer', color: existing ? '#3FC281' : '#FBFBFB' }
-        }, [fieldTypeIcon(f.type), el('span', { style: { fontSize: '12.5px', fontWeight: '700' } }, [f.label])]));
-      });
-      const panel = el('div', {
-        onclick: e => e.stopPropagation(),
-        style: { position: 'absolute', top: '38px', right: '0', zIndex: '20', background: '#17242E', border: '1px solid rgba(255,255,255,.12)', borderRadius: '10px', padding: '12px', boxShadow: '0 8px 24px rgba(0,0,0,.4)', width: '250px' }
-      }, [
-        el('div', { style: { fontSize: '15px', fontWeight: '800', padding: '2px 6px 10px' } }, ['Filter']),
-        list
-      ]);
-      wrap.appendChild(panel);
-    } else if (s.filterPanel.step === 'edit') {
-      const f = fieldsByKey[s.filterPanel.key];
-      const draft = s.filterPanel;
-      const ops = OPERATORS[f.type];
+    const fp = s.filterPanel;
+    const list = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '1px', maxHeight: '380px', overflowY: 'auto' } });
+    fields.forEach(f => {
+      const existing = s[filtersKey].find(x => x.key === f.key);
+      const selected = fp.editKey === f.key;
+      list.appendChild(el('div', {
+        class: 'hoverable',
+        onclick: () => {
+          const ex = s[filtersKey].find(x => x.key === f.key);
+          setState({ filterPanel: { editKey: f.key, operator: ex ? ex.operator : defaultOperator(f.type), value: ex ? ex.value : '', value2: ex ? ex.value2 : '' } });
+        },
+        style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '6px', cursor: 'pointer', color: existing ? '#3FC281' : '#FBFBFB', background: selected ? 'rgba(255,255,255,.06)' : 'transparent' }
+      }, [fieldTypeIcon(f.type), el('span', { style: { fontSize: '12.5px', fontWeight: '700' } }, [f.label])]));
+    });
+
+    const fieldListPanel = el('div', {
+      onclick: e => e.stopPropagation(),
+      style: { background: '#17242E', border: '1px solid rgba(255,255,255,.12)', borderRadius: '10px', padding: '12px', width: '220px', flexShrink: '0' }
+    }, [
+      el('div', { style: { fontSize: '15px', fontWeight: '800', padding: '2px 6px 10px' } }, ['Filter']),
+      list
+    ]);
+
+    const container = el('div', {
+      onclick: e => e.stopPropagation(),
+      style: Object.assign({ position: 'absolute', top: '38px', zIndex: '20', display: 'flex', alignItems: 'flex-start', gap: '6px', boxShadow: '0 8px 24px rgba(0,0,0,.4)' }, view === 'loads' ? { left: '0' } : { right: '0' })
+    }, []);
+
+    if (fp.editKey) {
+      const f = fieldsByKey[fp.editKey];
+      const draft = fp;
+      const ops = OPERATORS[f.type] || OPERATORS.text;
       const isBetween = draft.operator === 'between';
+      const isMulti = draft.operator === 'in' || draft.operator === 'not_in' || draft.operator === 'is_in';
 
       const opSelect = el('select', {
         value: draft.operator,
-        onchange: e => setState({ filterPanel: Object.assign({}, draft, { operator: e.target.value }) }),
+        onchange: e => setState({ filterPanel: Object.assign({}, draft, { operator: e.target.value, value: '' }) }),
         style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px', marginBottom: '10px' }
-      }, ops.map(o => el('option', { value: o.v }, [o.label])));
+      }, ops.map(o => el('option', { value: o.v, selected: o.v === draft.operator }, [o.label])));
 
       let valueInputs;
-      if (f.type === 'enum') {
+      if (f.type === 'enum' && isMulti) {
+        const selected = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
+        const checkboxes = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
+        (f.options || []).forEach(o => {
+          const checked = selected.includes(o);
+          checkboxes.appendChild(el('label', {
+            style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', fontSize: '12.5px', color: '#FBFBFB' },
+            class: 'hoverable'
+          }, [
+            el('input', {
+              type: 'checkbox', checked: checked,
+              onchange: e2 => {
+                let sel = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
+                if (e2.target.checked) { if (!sel.includes(o)) sel.push(o); }
+                else { sel = sel.filter(x => x !== o); }
+                setState({ filterPanel: Object.assign({}, draft, { value: sel.join(',') }) });
+              },
+              style: { accentColor: '#27A767' }
+            }),
+            o
+          ]));
+        });
+        valueInputs = [checkboxes];
+      } else if (f.type === 'enum') {
         valueInputs = [el('select', {
           value: draft.value,
           onchange: e => setState({ filterPanel: Object.assign({}, draft, { value: e.target.value }) }),
           style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px' }
-        }, [el('option', { value: '' }, ['— select —'])].concat(f.options.map(o => el('option', { value: o }, [o]))))];
+        }, [el('option', { value: '' }, ['— select —'])].concat(f.options.map(o => el('option', { value: o, selected: o === draft.value }, [o]))))];
+      } else if (f.type === 'text_identity') {
+        const uniqueVals = uniqueFieldValues(view, f.key);
+        const selected = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
+        const searchKey = draft._search || '';
+        const tagsWrap = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: selected.length ? '8px' : '0' } });
+        selected.forEach(v => {
+          tagsWrap.appendChild(el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', background: '#1E2E3A', border: '1px solid rgba(39,167,103,.3)', borderRadius: '6px', fontSize: '11.5px', fontWeight: '700', color: '#3FC281' } }, [
+            v,
+            el('span', {
+              onclick: () => {
+                const sel2 = selected.filter(x => x !== v);
+                setState({ filterPanel: Object.assign({}, draft, { value: sel2.join(','), _search: draft._search || '' }) });
+              },
+              style: { cursor: 'pointer', color: '#EB4343', fontWeight: '800', fontSize: '13px', lineHeight: '1', marginLeft: '2px' }
+            }, ['×'])
+          ]));
+        });
+        const searchInput = el('input', {
+          type: 'text', value: searchKey, placeholder: 'Search...',
+          oninput: e => setState({ filterPanel: Object.assign({}, draft, { _search: e.target.value, _idListOpen: true }) }),
+          onfocus: () => { if (!draft._idListOpen) setState({ filterPanel: Object.assign({}, draft, { _idListOpen: true }) }); },
+          style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px', marginBottom: '8px' }
+        });
+        const checkboxes = el('div', { class: 'ef-scroll', style: { maxHeight: '180px', overflowY: 'auto', display: draft._idListOpen ? 'flex' : 'none', flexDirection: 'column', gap: '2px' } });
+        const filtered = uniqueVals.filter(v => !searchKey || v.toLowerCase().includes(searchKey.toLowerCase()));
+        filtered.forEach(v => {
+          const checked = selected.includes(v);
+          checkboxes.appendChild(el('label', {
+            style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', fontSize: '12.5px', color: '#FBFBFB' },
+            class: 'hoverable'
+          }, [
+            el('input', {
+              type: 'checkbox', checked: checked,
+              onchange: e2 => {
+                let sel = (draft.value || '').split(',').map(s2 => s2.trim()).filter(Boolean);
+                if (e2.target.checked) { if (!sel.includes(v)) sel.push(v); }
+                else { sel = sel.filter(x => x !== v); }
+                setState({ filterPanel: Object.assign({}, draft, { value: sel.join(','), _search: draft._search || '', _idListOpen: true }) });
+              },
+              style: { accentColor: '#27A767' }
+            }),
+            v
+          ]));
+        });
+        valueInputs = [tagsWrap, searchInput, checkboxes];
       } else {
         const inputType = f.type === 'date' ? 'date' : (f.type === 'number' ? 'number' : 'text');
         const mk = (val, key2, placeholder) => el('input', {
-          type: inputType, value: val, placeholder: placeholder || '',
+          type: inputType, value: val, placeholder: placeholder || (isMulti ? 'comma-separated' : ''),
           oninput: e => setState({ filterPanel: Object.assign({}, draft, { [key2]: e.target.value }) }),
           style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px' }
         });
         valueInputs = isBetween
-          ? [mk(draft.value, 'value', 'desde'), el('div', { style: { height: '8px' } }), mk(draft.value2, 'value2', 'hasta')]
+          ? [mk(draft.value, 'value', 'from'), el('div', { style: { height: '8px' } }), mk(draft.value2, 'value2', 'to')]
           : [mk(draft.value, 'value')];
       }
 
-      const panel = el('div', {
-        onclick: e => e.stopPropagation(),
-        style: { position: 'absolute', top: '38px', right: '0', zIndex: '21', background: '#17242E', border: '1px solid rgba(255,255,255,.12)', borderRadius: '10px', padding: '14px', boxShadow: '0 8px 24px rgba(0,0,0,.4)', width: '230px' }
+      const editPanel = el('div', {
+        style: { background: '#17242E', border: '1px solid rgba(255,255,255,.12)', borderRadius: '10px', padding: '14px', width: '220px', flexShrink: '0' }
       }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' } }, [
-          el('span', { class: 'hoverable', onclick: () => setState({ filterPanel: { step: 'fields' } }), style: { display: 'flex', cursor: 'pointer', color: '#8B939B', borderRadius: '4px' }, html: ICON.chevLeft }),
           el('div', { style: { flex: '1', fontSize: '13.5px', fontWeight: '800' } }, [f.label]),
           el('div', {
             onclick: () => {
@@ -1226,10 +1535,14 @@ export function initApp() {
         s[filtersKey].some(x => x.key === f.key) ? el('div', {
           onclick: () => setState({ [filtersKey]: s[filtersKey].filter(x => x.key !== f.key), openPopover: null, filterPanel: null, page: 1 }),
           style: { marginTop: '10px', fontSize: '11.5px', fontWeight: '800', color: '#EB4343', cursor: 'pointer', textAlign: 'center' }
-        }, ['Quitar filtro']) : null
+        }, ['Remove filter']) : null
       ]);
-      wrap.appendChild(panel);
+
+      container.appendChild(editPanel);
     }
+
+    container.insertBefore(fieldListPanel, container.firstChild);
+    wrap.appendChild(container);
     return wrap;
   }
 
@@ -1268,15 +1581,90 @@ export function initApp() {
     });
     portal.appendChild(opSel);
     // Value inputs
-    var valInput, val2Input, val2Wrap;
+    var valInput, val2Input, val2Wrap, checkboxWrap;
     var inputCSS = 'width:100%;padding:7px 8px;background:#0E1820;border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#FBFBFB;font:400 12.5px '+F+';box-sizing:border-box';
     var inputType = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
-    if (field.type === 'enum') {
+    var _isMultiOp = f.operator === 'in' || f.operator === 'not_in' || f.operator === 'is_in';
+    if (field.type === 'enum' && _isMultiOp) {
+      checkboxWrap = document.createElement('div');
+      checkboxWrap.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+      var _selVals = (f.value || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
+      (field.options || []).forEach(function(o) {
+        var lbl = document.createElement('label');
+        lbl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font:400 12.5px '+F+';color:#FBFBFB';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = _selVals.includes(o); cb.style.accentColor = '#27A767';
+        cb.dataset.optVal = o;
+        lbl.appendChild(cb); lbl.appendChild(document.createTextNode(o));
+        checkboxWrap.appendChild(lbl);
+      });
+      portal.appendChild(checkboxWrap);
+      valInput = { value: f.value || '' };
+    } else if (field.type === 'enum') {
       valInput = document.createElement('select');
       valInput.style.cssText = inputCSS;
       var emptyOpt = document.createElement('option'); emptyOpt.value = ''; emptyOpt.textContent = '— select —'; valInput.appendChild(emptyOpt);
       (field.options || []).forEach(function(o) { var opt = document.createElement('option'); opt.value = o; opt.textContent = o; if (o === f.value) opt.selected = true; valInput.appendChild(opt); });
       portal.appendChild(valInput);
+    } else if (field.type === 'text_identity') {
+      var _uVals = uniqueFieldValues(view, f.key);
+      var _selValsId = (f.value || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
+      var _idTagsWrap = document.createElement('div');
+      _idTagsWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:' + (_selValsId.length ? '8px' : '0');
+      function _renderIdTags() {
+        _idTagsWrap.innerHTML = '';
+        _selValsId.forEach(function(v) {
+          var tag = document.createElement('div');
+          tag.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 8px;background:#1E2E3A;border:1px solid rgba(39,167,103,.3);border-radius:6px;font:700 11.5px '+F+';color:#3FC281';
+          tag.textContent = v;
+          var xBtn = document.createElement('span');
+          xBtn.textContent = '×';
+          xBtn.style.cssText = 'cursor:pointer;color:#EB4343;font-weight:800;font-size:13px;line-height:1;margin-left:2px';
+          xBtn.addEventListener('click', function() {
+            var idx = _selValsId.indexOf(v);
+            if (idx >= 0) _selValsId.splice(idx, 1);
+            valInput.value = _selValsId.join(',');
+            _renderIdTags();
+            _renderIdCheckboxes(_searchInput.value);
+            _idTagsWrap.style.marginBottom = _selValsId.length ? '8px' : '0';
+          });
+          tag.appendChild(xBtn);
+          _idTagsWrap.appendChild(tag);
+        });
+      }
+      _renderIdTags();
+      portal.appendChild(_idTagsWrap);
+      var _idListWrap = document.createElement('div');
+      var _searchInput = document.createElement('input');
+      _searchInput.type = 'text'; _searchInput.placeholder = 'Search...';
+      _searchInput.style.cssText = inputCSS + ';margin-bottom:8px';
+      _searchInput.addEventListener('focus', function() { _idListWrap.style.display = 'flex'; });
+      portal.appendChild(_searchInput);
+      _idListWrap.style.cssText = 'display:none;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto';
+      valInput = { value: f.value || '' };
+      function _renderIdCheckboxes(filter) {
+        _idListWrap.innerHTML = '';
+        var filtered = _uVals.filter(function(v) { return !filter || v.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
+        filtered.forEach(function(v) {
+          var lbl2 = document.createElement('label');
+          lbl2.className = 'hoverable';
+          lbl2.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font:400 12.5px '+F+';color:#FBFBFB';
+          var cb2 = document.createElement('input');
+          cb2.type = 'checkbox'; cb2.checked = _selValsId.indexOf(v) >= 0; cb2.style.accentColor = '#27A767';
+          cb2.addEventListener('change', function() {
+            var idx = _selValsId.indexOf(v);
+            if (cb2.checked) { if (idx === -1) _selValsId.push(v); }
+            else { if (idx >= 0) _selValsId.splice(idx, 1); }
+            valInput.value = _selValsId.join(',');
+            _renderIdTags();
+            _idTagsWrap.style.marginBottom = _selValsId.length ? '8px' : '0';
+          });
+          lbl2.appendChild(cb2); lbl2.appendChild(document.createTextNode(v));
+          _idListWrap.appendChild(lbl2);
+        });
+      }
+      _searchInput.addEventListener('input', function() { _idListWrap.style.display = 'flex'; _renderIdCheckboxes(_searchInput.value); });
+      portal.appendChild(_idListWrap);
     } else {
       valInput = document.createElement('input');
       valInput.type = inputType; valInput.value = f.value || '';
@@ -1294,7 +1682,7 @@ export function initApp() {
     // Remove link
     var removeBtn = document.createElement('div');
     removeBtn.style.cssText = 'margin-top:10px;font:800 11.5px '+F+';color:#EB4343;cursor:pointer;text-align:center';
-    removeBtn.textContent = 'Quitar filtro';
+    removeBtn.textContent = 'Remove filter';
     removeBtn.addEventListener('click', function() {
       setState({ [filtersKey]: state[filtersKey].filter(function(x) { return x.key !== f.key; }), page: 1 });
       portal.remove(); _chipFilterPortal = null;
@@ -1302,7 +1690,15 @@ export function initApp() {
     portal.appendChild(removeBtn);
     // Apply
     applyBtn.addEventListener('click', function() {
-      var newVal = valInput.value;
+      var newVal;
+      if (checkboxWrap) {
+        var cbs = checkboxWrap.querySelectorAll('input[type=checkbox]');
+        var sel = [];
+        cbs.forEach(function(cb) { if (cb.checked) sel.push(cb.dataset.optVal); });
+        newVal = sel.join(',');
+      } else {
+        newVal = valInput.value;
+      }
       var newVal2 = val2Input ? val2Input.value : '';
       var list2 = state[filtersKey].filter(function(x) { return x.key !== f.key; });
       if (newVal !== '') list2.push({ key: f.key, operator: opSel.value, value: newVal, value2: newVal2 });
@@ -1419,7 +1815,7 @@ export function initApp() {
               }, [iconEl('route'), routeNameShort]),
               el('div', { style: { color: '#6B7373', fontSize: '10.5px', marginTop: '2px' } }, ['Leg ' + idx + ' of ' + loadsOf(l.route).length])
             ])
-          : el('div', { style: { padding: '13px 8px 13px 0', color: '#6B7373', fontWeight: '600', fontSize: '12px', fontStyle: 'italic' } }, ['Not assigned']),
+          : el('div', { style: { padding: '13px 8px 13px 0', color: '#6B7373', fontWeight: '600', fontSize: '12px', fontStyle: 'italic' } }, ['No route']),
         origin: el('div', { style: { padding: '13px 8px 13px 0', color: '#7BCBCB', fontWeight: '600', fontSize: '12.5px' } }, [l.origin]),
         dest: el('div', { style: { padding: '13px 8px 13px 0', color: '#7BCBCB', fontWeight: '600', fontSize: '12.5px' } }, [l.dest]),
         miles: el('div', { style: { padding: '13px 8px 13px 0', fontWeight: '700', fontSize: '12.5px' } }, [l.miles.toLocaleString('en-US') + ' mi']),
@@ -1442,6 +1838,7 @@ export function initApp() {
         ]),
         truck: el('div', { style: { padding: '13px 8px 13px 0', color: '#ABABAB', fontSize: '11.5px', fontFamily: "'JetBrains Mono', monospace" } }, [l.truck]),
         equipment: el('div', { style: { padding: '13px 8px 13px 0', color: '#ABABAB', fontSize: '11.5px' } }, [l.equipment]),
+        equipmentType: el('div', { style: { padding: '13px 8px 13px 0', color: '#ABABAB', fontSize: '11.5px' } }, [l.equipmentType || '']),
         stops: el('div', { style: { padding: '13px 8px 13px 0', fontWeight: '700', fontSize: '12.5px' } }, [String(l.stops)]),
         customer: el('div', { style: { padding: '13px 8px 13px 0', color: '#C9CED2', fontSize: '12px' } }, [l.customer])
       };
@@ -1673,7 +2070,7 @@ export function initApp() {
           const estPftHigh = Math.round(incUpper * 0.38);
           const cell = el('div', { style: { padding: '12px 8px 12px 0', cursor: 'default' } }, [
             el('div', { style: { fontWeight: '800', color: '#3FC281', fontSize: incFontSize } }, [incDisplay]),
-            el('div', { style: { color: '#6B7373', fontSize: '10.5px' } }, ['Estimated income'])
+            el('div', { style: { color: '#6B7373', fontSize: '10.5px' } }, ['Income'])
           ]);
           let _incTip = null;
           cell.addEventListener('mouseenter', function() {
@@ -1720,6 +2117,10 @@ export function initApp() {
             el('div', { style: { fontWeight: '700', fontSize: '11.5px' } }, [r.dispatcher]),
             el('div', { style: { color: '#6B7373', fontSize: '10.5px' } }, ['Dispatcher'])
           ])
+        ]),
+        equipmentType: el('div', { style: { padding: '12px 8px 12px 0' } }, [
+          el('div', { style: { fontWeight: '700', fontSize: '11.5px' } }, [r.equipmentType || '']),
+          el('div', { style: { color: '#6B7373', fontSize: '10.5px' } }, ['Equipment'])
         ])
       };
 
@@ -1825,7 +2226,7 @@ export function initApp() {
       const loadedRpm = loadedMiles ? inc / loadedMiles : 0;
       cols = 6;
       kpis = [
-        { label: 'Total loads', value: String(totalLoads), color: '#FBFBFB' },
+        { label: 'Total routes', value: String(routes.length), color: '#FBFBFB' },
         { label: 'Income total', value: money(inc), color: '#3FC281' },
         { label: 'Total miles', value: totalMiles.toLocaleString('en-US') + ' mi', color: '#FBFBFB' },
         { label: 'DH miles', value: dhMiles.toLocaleString('en-US') + ' mi (' + dhPct.toFixed(1) + '%)', color: '#ABABAB' },
@@ -2548,7 +2949,7 @@ export function initApp() {
     togText.style.cssText = 'flex:1;min-width:0';
     togText.innerHTML =
       '<div style="font:700 12px '+F+';color:#FBFBFB;margin-bottom:2px">Auto-add from My Loads</div>' +
-      '<div style="font:400 10px '+F+';color:#6B7373;line-height:1.5">When syncing, automatically add matching loads from My Loads into empty Unbooked lanes.</div>';
+      '<div style="font:400 10px '+F+';color:#6B7373;line-height:1.5">When refreshing, automatically add matching loads from My Loads into empty Unbooked lanes.</div>';
     var _arOn = !!_autoAddFromLoads[rId];
     var togTrack = document.createElement('div');
     togTrack.style.cssText = 'width:44px;height:24px;border-radius:999px;background:'+(_arOn?'#27A767':'rgba(255,255,255,.12)')+';position:relative;cursor:pointer;flex-shrink:0;transition:background .2s';
@@ -2769,7 +3170,7 @@ export function initApp() {
     var html =
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="'+(nothingChanged?'#6B7373':'#3FC281')+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>' +
-        '<span style="font:800 12px '+F+';color:#FBFBFB">TMS Sync complete</span>' +
+        '<span style="font:800 12px '+F+';color:#FBFBFB">Refresh complete</span>' +
         '<button id="_ef-sn-x" style="margin-left:auto;background:none;border:none;color:#6B7373;cursor:pointer;font-size:13px;padding:0">✕</button>' +
       '</div>' +
       (nothingChanged
@@ -2891,10 +3292,10 @@ export function initApp() {
     var resultsBadge = document.createElement('div');
     resultsBadge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:0 12px;height:34px;border-radius:8px;background:#101B23;border:1px solid rgba(255,255,255,.1);font:700 12px '+F+';color:#8B939B;flex-shrink:0;white-space:nowrap';
     resultsBadge.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B7373" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span id="_ef-ll-rcount">Results: 2</span>';
-    // Sync button
+    // Refresh button
     var syncBtn = document.createElement('div');
-    syncBtn.style.cssText = 'display:flex;align-items:center;gap:7px;padding:0 12px;height:34px;border-radius:8px;border:1px solid rgba(39,167,103,.3);background:rgba(39,167,103,.08);cursor:pointer;flex-shrink:0';
-    syncBtn.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#27A767;flex:none"></span><span style="font:700 12px '+F+';color:#27A767">Sync loads</span><span style="font:400 11px '+F+';color:#6B7373;border-left:1px solid rgba(255,255,255,.1);padding-left:7px;margin-left:2px">DataTruck · 3 min ago</span>';
+    syncBtn.style.cssText = 'display:flex;align-items:center;gap:7px;padding:0 12px;height:34px;border-radius:999px;border:1px solid rgba(255,255,255,.1);cursor:pointer;flex-shrink:0';
+    syncBtn.innerHTML = ICON.refresh + '<div style="display:flex;flex-direction:column;gap:2px"><span style="font:800 12px '+F+';color:#FBFBFB;line-height:1">Refresh</span><span style="font:400 10px '+F+';color:#6B7373;line-height:1">DataTruck · Updated 3 min ago</span></div>';
     // Close
     var closeX = document.createElement('button');
     closeX.style.cssText = 'width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:#8B939B;border:1px solid rgba(255,255,255,.1);background:none;font-size:14px;flex-shrink:0';
@@ -4219,18 +4620,15 @@ export function initApp() {
     var _syncPillEl = (function() {
         var rId = routeId;
         var F = 'Nunito,system-ui';
-        var done = !!_syncDone[rId];
         var _hasRebuild = !!(_rebuildLoads[rId] && _rebuildLoads[rId].length);
         var wrap = document.createElement('div');
         wrap.style.cssText = 'position:relative;display:flex;align-items:center;margin:6px 0';
         var leftPart = document.createElement('div');
-        leftPart.style.cssText = 'padding:6px 10px;display:flex;align-items:center;gap:5px;font:700 12px '+F+';border:1px solid;border-right:none;border-radius:999px 0 0 999px;' + (done ? 'border-color:rgba(255,255,255,.1);color:#3B4A4A;cursor:default;opacity:.5;background:transparent' : 'border-color:rgba(39,167,103,.4);color:#27A767;cursor:pointer;background:rgba(39,167,103,.07)');
-        leftPart.innerHTML = done
-          ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3FC281" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Synced</span>'
-          : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg><span>Sync TMS</span>';
-        if (!done) leftPart.addEventListener('click', function() { _syncTMS(rId, leftPart); });
+        leftPart.style.cssText = 'padding:6px 10px;display:flex;align-items:center;gap:6px;font:700 12px '+F+';border:1px solid rgba(255,255,255,.1);border-right:none;border-radius:999px 0 0 999px;cursor:pointer;color:#FBFBFB';
+        leftPart.innerHTML = ICON.refresh + '<div style="display:flex;flex-direction:column;gap:2px"><span style="font:800 12px '+F+';color:#FBFBFB;line-height:1">Refresh</span><span style="font:400 10px '+F+';color:#6B7373;line-height:1">DataTruck · Updated 3 min ago</span></div>';
+        leftPart.addEventListener('click', function() { _syncTMS(rId, leftPart); });
         var rightPart = document.createElement('div');
-        rightPart.style.cssText = 'padding:6px 8px;border:1px solid rgba(39,167,103,.4);border-left:1px solid rgba(39,167,103,.2);border-radius:0 999px 999px 0;display:flex;align-items:center;cursor:pointer;color:#27A767;background:rgba(39,167,103,.07)';
+        rightPart.style.cssText = 'padding:6px 8px;border:1px solid rgba(255,255,255,.1);border-left:1px solid rgba(255,255,255,.07);border-radius:0 999px 999px 0;display:flex;align-items:center;cursor:pointer;color:#8B939B';
         rightPart.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>';
         function _closeDrop() {
           var ex = document.getElementById('_ef-sync-drop'); if (ex) ex.remove();
@@ -4247,7 +4645,7 @@ export function initApp() {
           togSection.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07)';
           var togText = document.createElement('div');
           togText.style.cssText = 'flex:1;min-width:0';
-          togText.innerHTML = '<div style="font:700 12px '+F+';color:#FBFBFB;margin-bottom:2px">Auto-add from My Loads</div><div style="font:400 10.5px '+F+';color:#6B7373;line-height:1.4">When syncing, add matching loads from My Loads into empty Unbooked lanes.</div>';
+          togText.innerHTML = '<div style="font:700 12px '+F+';color:#FBFBFB;margin-bottom:2px">Auto-add from My Loads</div><div style="font:400 10.5px '+F+';color:#6B7373;line-height:1.4">When refreshing, add matching loads from My Loads into empty Unbooked lanes.</div>';
           var _arOn = !!_autoAddFromLoads[rId];
           var togTrack = document.createElement('div');
           togTrack.style.cssText = 'width:44px;height:24px;border-radius:999px;background:'+(_arOn?'#27A767':'rgba(255,255,255,.12)')+';position:relative;cursor:pointer;flex-shrink:0;transition:background .2s';
