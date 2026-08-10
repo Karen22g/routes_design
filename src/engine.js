@@ -533,7 +533,7 @@ export function initApp() {
     // Lane map modal is managed imperatively via _doRenderLaneMap() — survives re-renders
   }
 
-  window.crCloseModal = function () { setState({ showCreateRoute: false }); };
+  window.crCloseModal = function () { var t = document.getElementById('cr-global-tip'); if (t) t.remove(); setState({ showCreateRoute: false }); };
 
   window.crContinueModal = function () {
     // Read mode
@@ -695,6 +695,27 @@ export function initApp() {
     forecast.style.display = originInput.value.trim() ? '' : 'none';
   };
 
+  window.crShowTip = function (el) {
+    var tip = document.getElementById('cr-global-tip');
+    if (!tip) return;
+    var text = el.getAttribute('data-tip') || '';
+    tip.textContent = text;
+    tip.style.display = 'block';
+    var r = el.getBoundingClientRect();
+    var w = 230;
+    var x = r.left;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    var y = r.bottom + 6;
+    y = Math.max(8, Math.min(y, window.innerHeight - 120));
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    tip.style.width = w + 'px';
+  };
+  window.crHideTip = function () {
+    var tip = document.getElementById('cr-global-tip');
+    if (tip) tip.style.display = 'none';
+  };
+
   window.crSetMode = function (mode, btn) {
     document.querySelectorAll('.cr-assign-btn').forEach(b => b.classList.remove('cr-active'));
     btn.classList.add('cr-active');
@@ -743,15 +764,40 @@ export function initApp() {
     }
 
     driverSelect.innerHTML = '<option selected>' + unit.driver + '</option>';
-    originInput.value = unit.city;
-    originInput.classList.add('cr-filled');
-    originSource.style.display = 'flex';
     routeName.value = sel.value + '_' + unit.driver.split(' ')[1] + '_2026-07-30';
     window.crApplyTrailer('assign', unit);
-    window.crUpdateForecastVisibility();
 
-    if (unit.hasLoads) tmsBlock.classList.add('cr-visible');
-    else tmsBlock.classList.remove('cr-visible');
+    if (unit.hasLoads) {
+      tmsBlock.classList.add('cr-visible');
+      // Pre-select all load cards
+      tmsBlock.querySelectorAll('.cr-load-card').forEach(function(card) {
+        card.classList.add('cr-on');
+        var cb = card.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = true;
+      });
+      // Origin = destination of last suggested load
+      var cards = tmsBlock.querySelectorAll('.cr-load-card');
+      var lastCard = cards[cards.length - 1];
+      var lastDest = '';
+      if (lastCard) {
+        var routeEl = lastCard.querySelector('.cr-load-route');
+        if (routeEl) {
+          var txt = routeEl.textContent;
+          var arrow = txt.indexOf('→');
+          lastDest = arrow >= 0 ? txt.substring(arrow + 1).trim() : '';
+        }
+      }
+      originInput.value = lastDest || unit.city;
+      originInput.classList.add('cr-filled');
+      originSource.style.display = 'none';
+    } else {
+      tmsBlock.classList.remove('cr-visible');
+      originInput.value = unit.city;
+      originInput.classList.add('cr-filled');
+      originSource.style.display = 'flex';
+    }
+
+    window.crUpdateForecastVisibility();
   };
 
   window.crToggleLoad = function (card) {
@@ -870,12 +916,14 @@ export function initApp() {
       </button>
     </div>
 
-    <div class="cr-modal-body">
+    <div class="cr-modal-toggle-wrap">
       <div class="cr-assign-toggle">
         <button class="cr-assign-btn cr-active" data-mode="free" onclick="crSetMode('free', this)">Any unit</button>
         <button class="cr-assign-btn" data-mode="assign" onclick="crSetMode('assign', this)">Assign unit</button>
       </div>
+    </div>
 
+    <div class="cr-modal-body">
       <div id="cr-cabin-row" class="cr-row cr-row-2" style="display:none">
         <div class="cr-field">
           <div class="cr-field-label">Unit <span style="color:#EB4343">*</span></div>
@@ -896,7 +944,12 @@ export function initApp() {
 
       <div class="cr-tms-block" id="cr-tms-block">
         <div class="cr-tms-title">
-          <span>Pending TMS loads</span>
+          <span class="cr-tms-title-group">
+            <span>Loads in This Truck Cycle</span>
+            <span class="cr-tms-tooltip-wrap" data-tip="Shows the loads associated with your truck’s current operating cycle. Use them to optimize the rest of the cycle." onmouseenter="crShowTip(this)" onmouseleave="crHideTip()">
+              <svg class="cr-tms-tooltip-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
+          </span>
           <span class="cr-count">2 loads</span>
         </div>
         <div class="cr-load-card" onclick="crToggleLoad(this)">
@@ -904,7 +957,7 @@ export function initApp() {
           <div class="cr-load-body">
             <div class="cr-load-route-row">
               <div class="cr-load-route">Houston, TX<span class="cr-arr">→</span>Dallas, TX</div>
-              <span class="cr-status-pill" style="background:rgba(39,167,103,.14);color:#3FC281">Booked</span>
+              <span class="cr-status-pill" style="background:rgba(39,167,103,.2);color:#6BD59E">Delivered</span>
             </div>
             <div class="cr-load-meta">Pickup 07/31/2026 · 277 mi · TMS-4412 · FreightQuote · TRK-1042</div>
           </div>
@@ -915,9 +968,9 @@ export function initApp() {
           <div class="cr-load-body">
             <div class="cr-load-route-row">
               <div class="cr-load-route">Dallas, TX<span class="cr-arr">→</span>Memphis, TN</div>
-              <span class="cr-status-pill" style="background:rgba(251,179,3,.14);color:#FBB303">Offer</span>
+              <span class="cr-status-pill" style="background:rgba(123,203,203,.16);color:#7BCBCB">In Transit</span>
             </div>
-            <div class="cr-load-meta">Pickup 08/01/2026 · 277 mi · TMS-4398 · Echo Global · Unassigned</div>
+            <div class="cr-load-meta">Pickup 08/01/2026 · 277 mi · TMS-4398 · Echo Global · TRK-1042</div>
           </div>
           <div class="cr-load-price">$980</div>
         </div>
@@ -1003,18 +1056,15 @@ export function initApp() {
     <div class="cr-forecast" id="cr-forecast" style="display:none">
       <div class="cr-forecast-section-lbl">Estimates for these search parameters</div>
       <div class="cr-forecast-grid">
-        <div class="cr-forecast-item"><div class="cr-forecast-val">$1,200–$2,400</div><div class="cr-forecast-lbl">Est. income</div></div>
-        <div class="cr-forecast-item"><div class="cr-forecast-val">$380–$1.9k</div><div class="cr-forecast-lbl">Est. profit</div></div>
-        <div class="cr-forecast-item"><div class="cr-forecast-val">1–4 days</div><div class="cr-forecast-lbl">Est. duration</div></div>
-        <div class="cr-forecast-item" style="position:relative">
+        <div class="cr-forecast-item">
           <div class="cr-forecast-val" style="color:#27A767;display:flex;align-items:center;gap:5px">72%
-            <span class="cr-match-info" onmouseenter="this.closest('.cr-forecast-item').querySelector('.cr-match-tip').style.display='block'" onmouseleave="this.closest('.cr-forecast-item').querySelector('.cr-match-tip').style.display='none'" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;border:1px solid rgba(255,255,255,.25);color:#8B939B;font:700 9px Nunito,system-ui;cursor:default;flex-shrink:0;line-height:1">?</span>
+            <span class="cr-match-info" data-tip="Probability of finding a route matching your parameters. Higher scores indicate more available routes under current market conditions." onmouseenter="crShowTip(this)" onmouseleave="crHideTip()" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;border:1px solid rgba(255,255,255,.25);color:#8B939B;font:700 9px Nunito,system-ui;cursor:default;flex-shrink:0;line-height:1">?</span>
           </div>
-          <div class="cr-forecast-lbl">Match probability</div>
-          <div class="cr-match-tip" style="display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:30;background:#17242E;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:11px 13px;width:210px;font:400 11.5px Nunito,system-ui;color:#C9CED2;line-height:1.5;box-shadow:0 8px 28px rgba(0,0,0,.5);pointer-events:none;white-space:normal">
-            Probability that we will find an available load matching your lane parameters (origin, destination, equipment, dates). A higher score means more supply in the market right now.
-          </div>
+          <div class="cr-forecast-lbl">Match</div>
         </div>
+        <div class="cr-forecast-item"><div class="cr-forecast-val">$1,200–$2,400</div><div class="cr-forecast-lbl">Income</div></div>
+        <div class="cr-forecast-item"><div class="cr-forecast-val">$380–$1.9k</div><div class="cr-forecast-lbl">Profit</div></div>
+        <div class="cr-forecast-item"><div class="cr-forecast-val">1–4 days</div><div class="cr-forecast-lbl">Duration</div></div>
       </div>
     </div>
 
@@ -1025,6 +1075,13 @@ export function initApp() {
 </div>`;
 
   function renderCreateRouteModal() {
+    var existingTip = document.getElementById('cr-global-tip');
+    if (existingTip) existingTip.remove();
+    var tipEl = document.createElement('div');
+    tipEl.id = 'cr-global-tip';
+    tipEl.style.cssText = 'display:none;position:fixed;z-index:99999;background:#17242E;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:10px 12px;font:400 11.5px Nunito,system-ui;color:#C9CED2;line-height:1.5;box-shadow:0 8px 28px rgba(0,0,0,.5);pointer-events:none;white-space:normal;word-wrap:break-word';
+    document.body.appendChild(tipEl);
+
     const overlay = el('div', { style: { position: 'fixed', inset: '0', zIndex: '50', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' } });
     overlay.appendChild(el('div', { onclick: () => window.crCloseModal(), style: { position: 'absolute', inset: '0', background: 'rgba(6,12,17,.65)' } }));
     const modalHost = el('div', { style: { position: 'relative', width: '100%', maxWidth: '520px' }, html: CREATE_ROUTE_MODAL_HTML });
@@ -4914,7 +4971,11 @@ export function initApp() {
                   var insertIdx = LOADS.findIndex(function(l){ return l.route===rId; });
                   if (insertIdx>=0) LOADS.splice(insertIdx,0,newLd); else LOADS.push(newLd);
                   _rebuildLoads[rId].splice(capturedLi,1);
-                  if (_rebuildLoads[rId].length===0) delete _rebuildLoads[rId];
+                  if (_rebuildLoads[rId].length===0) {
+                    delete _rebuildLoads[rId];
+                    var _dotEl = document.getElementById('_ef-sync-dot-' + rId);
+                    if (_dotEl) _dotEl.style.display = 'none';
+                  }
                   _closeDrop();
                   var _loadsNow = loadsOf(rId);
                   var _newIdx = _loadsNow.findIndex(function(l){ return l.id===newLd.id; });
@@ -4934,6 +4995,11 @@ export function initApp() {
           setTimeout(function() { document.addEventListener('click', _closeDrop); }, 0);
         }
         rightPart.addEventListener('click', function(e) { e.stopPropagation(); _renderSyncDrop(); });
+        rightPart.style.position = 'relative';
+        var _dot = document.createElement('div');
+        _dot.id = '_ef-sync-dot-' + rId;
+        _dot.style.cssText = 'position:absolute;top:-3px;right:2px;width:8px;height:8px;border-radius:50%;background:#FBB303;border:2px solid #0D141B;pointer-events:none;display:' + (_hasRebuild ? 'block' : 'none');
+        rightPart.appendChild(_dot);
         wrap.appendChild(leftPart); wrap.appendChild(rightPart);
         return wrap;
     })();
@@ -5314,6 +5380,20 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '10 de agosto, 1:11pm',
+          items: [
+            'El formulario de creación de ruta (modal "Create Route") ahora tiene altura máxima fija y scroll interno — el toggle y el botón de acción siempre son visibles',
+            'El componente "Loads in This Truck Cycle" muestra las cargas sugeridas preseleccionadas por defecto al elegir una unidad con ciclo activo',
+            'El campo de origen se pre-rellena automáticamente con el destino de la última carga sugerida del ciclo',
+            'El tooltip del ícono ⓘ junto al título "Loads in This Truck Cycle" ahora aparece correctamente sin ser cortado por el contenedor',
+            'El ícono ⓘ del título quedó pegado al texto, con el contador de cargas alineado al extremo derecho',
+            'La sección de estimados reordenó sus métricas: Match, Est. income, Est. profit, Est. duration',
+            'El label "Match probability" se abrevió a "Match" y su tooltip tiene un texto más claro',
+            'El botón de Refresh se eliminó de la vista de Routes — solo aparece en My Loads',
+            'El dropdown de Refresh muestra un punto naranja cuando hay cargas del ciclo pendientes de considerar; desaparece al agregar todas',
+          ]
+        },
         {
           date: '10 de agosto, 11:30am',
           items: [
