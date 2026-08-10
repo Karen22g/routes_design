@@ -2494,14 +2494,15 @@ export function initApp() {
       const totalMiles = loadedMiles + dhMiles;
       const effectiveRpm = totalMiles ? inc / totalMiles : 0;
       const loadedRpm = loadedMiles ? inc / loadedMiles : 0;
+      const dhPct = totalMiles ? dhMiles / totalMiles * 100 : 0;
       cols = 6;
       kpis = [
         { label: 'Total loads', value: String(loads.length), color: '#FBFBFB' },
-        { label: 'Income total', value: money(inc), color: '#3FC281' },
+        { label: 'Total income', value: money(inc), color: '#3FC281' },
         { label: 'Total miles', value: loadedMiles.toLocaleString('en-US') + ' mi', color: '#FBFBFB' },
+        { label: 'DH miles', value: dhMiles.toLocaleString('en-US') + ' mi (' + dhPct.toFixed(1) + '%)', color: '#ABABAB' },
         { label: 'Effective RPM', value: '$' + effectiveRpm.toFixed(2), color: '#7BCBCB' },
-        { label: 'Loaded RPM', value: '$' + loadedRpm.toFixed(2), color: '#7BCBCB' },
-        { label: 'Total DH miles', value: dhMiles.toLocaleString('en-US') + ' mi', color: '#ABABAB' }
+        { label: 'Loaded RPM', value: '$' + loadedRpm.toFixed(2), color: '#7BCBCB' }
       ];
     } else {
       const routes = visibleRoutes();
@@ -2517,11 +2518,11 @@ export function initApp() {
       cols = 6;
       kpis = [
         { label: 'Total routes', value: String(routes.length), color: '#FBFBFB' },
-        { label: 'Income total', value: money(inc), color: '#3FC281' },
+        { label: 'Total income', value: money(inc), color: '#3FC281' },
         { label: 'Total miles', value: totalMiles.toLocaleString('en-US') + ' mi', color: '#FBFBFB' },
         { label: 'DH miles', value: dhMiles.toLocaleString('en-US') + ' mi (' + dhPct.toFixed(1) + '%)', color: '#ABABAB' },
-        { label: 'Loaded RPM', value: '$' + loadedRpm.toFixed(2), color: '#7BCBCB' },
-        { label: 'Effective RPM', value: '$' + effectiveRpm.toFixed(2), color: '#7BCBCB' }
+        { label: 'Effective RPM', value: '$' + effectiveRpm.toFixed(2), color: '#7BCBCB' },
+        { label: 'Loaded RPM', value: '$' + loadedRpm.toFixed(2), color: '#7BCBCB' }
       ];
     }
     const wrap = el('div', { style: { flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(' + cols + ', 1fr)', gap: '1px', padding: '14px 20px', background: '#060C11', borderTop: '1px solid rgba(255,255,255,.07)' } });
