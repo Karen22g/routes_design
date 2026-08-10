@@ -112,7 +112,6 @@ export function initApp() {
   const ROUTE_EQUIPMENT_OPTIONS = ['Reefer', 'Van', 'Flatbed'];
   const ROUTE_FIELDS = [
     { key: 'name', label: 'Route name', type: 'text' },
-    { key: 'status', label: 'Status', type: 'enum', options: ROUTE_STATUS_OPTIONS },
     { key: 'health', label: 'Health', type: 'enum', options: ROUTE_HEALTH_OPTIONS },
     { key: 'dateStart', label: 'Start date', type: 'date' },
     { key: 'dateEnd', label: 'End date', type: 'date' },
@@ -133,7 +132,7 @@ export function initApp() {
     text: [{ v: 'contains', label: 'contains' }, { v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }],
     text_identity: [{ v: 'is_in', label: 'is in' }, { v: 'not_in', label: 'is not' }],
     number: [{ v: 'eq', label: 'is' }, { v: 'neq', label: 'is not' }, { v: 'gt', label: 'greater than' }, { v: 'lt', label: 'less than' }, { v: 'between', label: 'between' }],
-    date: [{ v: 'on', label: 'on' }, { v: 'before', label: 'before' }, { v: 'after', label: 'after' }, { v: 'between', label: 'between' }],
+    date: [{ v: 'between', label: 'between' }, { v: 'before', label: 'before' }, { v: 'after', label: 'after' }, { v: 'today', label: 'today' }],
     enum: [{ v: 'is', label: 'is' }, { v: 'is_not', label: 'is not' }, { v: 'in', label: 'in' }, { v: 'not_in', label: 'not in' }]
   };
   function defaultOperator(type) { return (OPERATORS[type] || OPERATORS.text)[0].v; }
@@ -213,6 +212,7 @@ export function initApp() {
       if (op === 'on') return value === k;
       if (op === 'before') return value < k;
       if (op === 'after') return value > k;
+      if (op === 'today') { const t = new Date(); const tk = String(t.getFullYear()) + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0'); return value === tk; }
       return true;
     }
     if (type === 'enum') {
@@ -236,13 +236,16 @@ export function initApp() {
     const found = (OPERATORS[type] || []).find(o => o.v === op);
     return found ? found.label : op;
   }
+  function statusDisplayLabel(v) { return v === 'In Transit' ? 'On The Road' : v; }
   function filterChipLabel(field, filter) {
     const opLabel = operatorLabel(field.type, filter.operator);
+    if (filter.operator === 'today') return field.label + ' is today';
     if (filter.operator === 'between') return field.label + ' ' + opLabel + ' ' + (filter.value || '…') + ' - ' + (filter.value2 || '…');
     if (field.type === 'text' || field.type === 'text_identity') return field.label + ' ' + opLabel + ' "' + filter.value + '"';
     if (field.type === 'enum') {
-      if (filter.operator === 'in' || filter.operator === 'not_in') return field.label + ' ' + opLabel + ' ' + filter.value;
-      return field.label + (filter.operator === 'is_not' ? ' ≠ ' : ': ') + filter.value;
+      const displayVal = filter.key === 'status' ? filter.value.split(',').map(statusDisplayLabel).join(',') : filter.value;
+      if (filter.operator === 'in' || filter.operator === 'not_in') return field.label + ' ' + opLabel + ' ' + displayVal;
+      return field.label + (filter.operator === 'is_not' ? ' ≠ ' : ': ') + displayVal;
     }
     return field.label + ' ' + opLabel + ' ' + filter.value;
   }
@@ -280,6 +283,8 @@ export function initApp() {
     expanded: null,
     page: 1,
     rows: 10,
+    routePage: 1,
+    routeRows: 10,
     routeFilterIds: null,
     openLoad: null,
     openRoute: null,
@@ -1064,7 +1069,7 @@ export function initApp() {
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', border: '1px solid rgba(255,255,255,.1)', borderRadius: '999px', color: '#ABABAB', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' } }, [
         iconEl('clock'), 'Results: ' + (isLoads ? visibleLoads().length : visibleRoutes().length)
       ]),
-      refreshBtn,
+      isLoads ? refreshBtn : null,
       el('div', {
         class: 'hoverable',
         onclick: isLoads ? null : () => setState({ showCreateRoute: true }),
@@ -1094,7 +1099,16 @@ export function initApp() {
     const statusTabsWrap = el('div', { class: 'ef-scroll', style: { flex: '1', display: 'flex', alignItems: 'center', gap: '2px', overflowX: 'auto' } });
     tabsSrc.forEach(label => {
       statusTabsWrap.appendChild(el('div', {
-        onclick: () => setState(isLoads ? { loadTab: label, page: 1, routeFilterIds: label === 'All Loads' ? null : s.routeFilterIds } : { routeTab: label }),
+        onclick: () => {
+          const isAll = label === 'All' || label === 'All Loads';
+          if (isLoads) {
+            const existing = (state.loadFilters || []).filter(f => f.key !== 'status');
+            const newFilters = isAll ? existing : existing.concat([{ key: 'status', operator: 'is', value: label === 'On The Road' ? 'In Transit' : label }]);
+            setState({ loadTab: label, page: 1, routeFilterIds: isAll ? null : s.routeFilterIds, loadFilters: newFilters });
+          } else {
+            setState({ routeTab: label, routePage: 1 });
+          }
+        },
         style: { padding: '12px 11px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '12.5px', fontWeight: '700', color: label === curTab ? ACTIVE : MUTED, boxShadow: line(label === curTab) }
       }, [label]));
     });
@@ -1281,17 +1295,28 @@ export function initApp() {
     if (isLoads) {
       scrollRegion.appendChild(renderLoadsTable());
     } else {
-      const routes = visibleRoutes();
-      if (routes.length === 0) {
-        scrollRegion.appendChild(el('div', { style: { padding: '60px 20px', textAlign: 'center', color: '#6B7373', fontSize: '13px', fontWeight: '600' } }, ['Nothing matches these filters. Clear the search or pick another status.']));
+      const allRoutes = visibleRoutes();
+      const rtotalPages = Math.max(1, Math.ceil(allRoutes.length / s.routeRows));
+      const rpage = Math.min(s.routePage, rtotalPages);
+      const rstart = (rpage - 1) * s.routeRows;
+      const pageRoutes = allRoutes.slice(rstart, rstart + s.routeRows);
+      if (allRoutes.length === 0) {
+        scrollRegion.appendChild(el('div', { style: { padding: '60px 20px', textAlign: 'center', color: '#6B7373', fontSize: '13px' } }, [
+          el('div', { style: { fontWeight: '700', marginBottom: '6px', fontSize: '14px' } }, ['No results found for the selected filters.']),
+          el('div', { style: { fontWeight: '400', fontSize: '13px' } }, ['Try adjusting or clearing your filters to see more results.'])
+        ]));
       } else {
-        scrollRegion.appendChild(renderRouteCards(routes));
+        scrollRegion.appendChild(renderRouteCards(pageRoutes));
       }
     }
     container.appendChild(scrollRegion);
 
-    // ---- static footer: pagination (loads only) + KPIs ----
-    if (isLoads) container.appendChild(renderLoadsFooter());
+    // ---- static footer: pagination + KPIs ----
+    if (isLoads) {
+      container.appendChild(renderLoadsFooter());
+    } else {
+      container.appendChild(renderRoutesFooter());
+    }
     container.appendChild(renderKpis(isLoads));
 
     return container;
@@ -1544,14 +1569,22 @@ export function initApp() {
         valueInputs = [comboWrap];
       } else {
         const inputType = f.type === 'date' ? 'date' : (f.type === 'number' ? 'number' : 'text');
-        const mk = (val, key2, placeholder) => el('input', {
-          type: inputType, value: val, placeholder: placeholder || (isMulti ? 'comma-separated' : ''),
-          oninput: e => setState({ filterPanel: Object.assign({}, draft, { [key2]: e.target.value }) }),
-          style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px' }
-        });
-        valueInputs = isBetween
-          ? [mk(draft.value, 'value', 'from'), el('div', { style: { height: '8px' } }), mk(draft.value2, 'value2', 'to')]
-          : [mk(draft.value, 'value')];
+        const mk = (val, key2, placeholder) => {
+          const inp = el('input', {
+            type: inputType, value: val, placeholder: placeholder || (isMulti ? 'comma-separated' : ''),
+            oninput: e => setState({ filterPanel: Object.assign({}, draft, { [key2]: e.target.value }) }),
+            style: { width: '100%', padding: '7px 8px', background: '#0E1820', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', color: '#FBFBFB', fontFamily: 'inherit', fontSize: '12.5px' }
+          });
+          if (val) setTimeout(() => { if (inp.isConnected) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }, 0);
+          return inp;
+        };
+        if (draft.operator === 'today') {
+          valueInputs = [el('div', { style: { fontSize: '12px', color: '#6B7373', fontStyle: 'italic' } }, ['Matches today\'s date'])];
+        } else {
+          valueInputs = isBetween
+            ? [mk(draft.value, 'value', 'from'), el('div', { style: { height: '8px' } }), mk(draft.value2, 'value2', 'to')]
+            : [mk(draft.value, 'value')];
+        }
       }
 
       const editPanel = el('div', {
@@ -1563,7 +1596,24 @@ export function initApp() {
             onclick: () => {
               const list2 = s[filtersKey].filter(x => x.key !== f.key);
               if (draft.value !== '' || isBetween) list2.push({ key: f.key, operator: draft.operator, value: draft.value, value2: draft.value2 });
-              setState({ [filtersKey]: list2, openPopover: null, filterPanel: null, page: 1 });
+              const patch = { [filtersKey]: list2, openPopover: null, filterPanel: null, page: 1 };
+              if (view === 'loads' && f.key === 'status') {
+                const statusFilter = list2.find(x => x.key === 'status');
+                if (!statusFilter) {
+                  patch.loadTab = 'All Loads';
+                } else {
+                  const vals = statusFilter.value.split(',');
+                  if (vals.length === 1) {
+                    const v = vals[0];
+                    const tabName = v === 'In Transit' || v === 'Dispatched' ? 'On The Road' : v;
+                    const tabExists = LOAD_TABS.includes(tabName);
+                    patch.loadTab = tabExists ? tabName : 'All Loads';
+                  } else {
+                    patch.loadTab = 'All Loads';
+                  }
+                }
+              }
+              setState(patch);
             },
             style: { fontSize: '12.5px', fontWeight: '800', color: '#3FC281', cursor: 'pointer' }
           }, ['Apply'])
@@ -1571,7 +1621,11 @@ export function initApp() {
         opSelect,
         el('div', {}, valueInputs),
         s[filtersKey].some(x => x.key === f.key) ? el('div', {
-          onclick: () => setState({ [filtersKey]: s[filtersKey].filter(x => x.key !== f.key), openPopover: null, filterPanel: null, page: 1 }),
+          onclick: () => {
+            const patch = { [filtersKey]: s[filtersKey].filter(x => x.key !== f.key), openPopover: null, filterPanel: null, page: 1 };
+            if (view === 'loads' && f.key === 'status') patch.loadTab = 'All Loads';
+            setState(patch);
+          },
           style: { marginTop: '10px', fontSize: '11.5px', fontWeight: '800', color: '#EB4343', cursor: 'pointer', textAlign: 'center' }
         }, ['Remove filter']) : null
       ]);
@@ -1618,6 +1672,15 @@ export function initApp() {
       if (o.v === f.operator) opt.selected = true; opSel.appendChild(opt);
     });
     portal.appendChild(opSel);
+    if (field.type === 'enum') {
+      opSel.addEventListener('change', function() {
+        var newOp = opSel.value;
+        var curVal = '';
+        if (valInput) curVal = typeof valInput.value === 'string' ? valInput.value : '';
+        portal.remove(); _chipFilterPortal = null;
+        _openChipFilter(chipEl, { key: f.key, operator: newOp, value: curVal, value2: f.value2 || '' }, view);
+      });
+    }
     // Value inputs
     var valInput, val2Input, val2Wrap, checkboxWrap;
     var inputCSS = 'width:100%;padding:7px 8px;background:#0E1820;border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#FBFBFB;font:400 12.5px '+F+';box-sizing:border-box';
@@ -1720,7 +1783,12 @@ export function initApp() {
       valInput = document.createElement('input');
       valInput.type = inputType; valInput.value = f.value || '';
       valInput.style.cssText = inputCSS;
+      var _todayHint = document.createElement('div');
+      _todayHint.style.cssText = 'font:italic 400 12px '+F+';color:#6B7373;display:' + (f.operator === 'today' ? 'block' : 'none');
+      _todayHint.textContent = "Matches today's date";
+      valInput.style.display = f.operator === 'today' ? 'none' : '';
       portal.appendChild(valInput);
+      portal.appendChild(_todayHint);
       val2Wrap = document.createElement('div');
       val2Wrap.style.display = f.operator === 'between' ? '' : 'none';
       val2Input = document.createElement('input');
@@ -1728,7 +1796,12 @@ export function initApp() {
       val2Input.style.cssText = inputCSS + ';margin-top:8px';
       val2Wrap.appendChild(val2Input);
       portal.appendChild(val2Wrap);
-      opSel.addEventListener('change', function() { if (val2Wrap) val2Wrap.style.display = opSel.value === 'between' ? '' : 'none'; });
+      opSel.addEventListener('change', function() {
+        var isToday = opSel.value === 'today';
+        valInput.style.display = isToday ? 'none' : '';
+        _todayHint.style.display = isToday ? 'block' : 'none';
+        if (val2Wrap) val2Wrap.style.display = opSel.value === 'between' ? '' : 'none';
+      });
     }
     // Remove link
     var removeBtn = document.createElement('div');
@@ -1753,7 +1826,22 @@ export function initApp() {
       var newVal2 = val2Input ? val2Input.value : '';
       var list2 = state[filtersKey].filter(function(x) { return x.key !== f.key; });
       if (newVal !== '') list2.push({ key: f.key, operator: opSel.value, value: newVal, value2: newVal2 });
-      setState({ [filtersKey]: list2, page: 1 });
+      var patch = { [filtersKey]: list2, page: 1 };
+      if (view === 'loads' && f.key === 'status') {
+        var statusF = list2.find(function(x) { return x.key === 'status'; });
+        if (!statusF) {
+          patch.loadTab = 'All Loads';
+        } else {
+          var vals = statusF.value.split(',');
+          if (vals.length === 1) {
+            var tabName = vals[0] === 'In Transit' || vals[0] === 'Dispatched' ? 'On The Road' : vals[0];
+            patch.loadTab = LOAD_TABS.includes(tabName) ? tabName : 'All Loads';
+          } else {
+            patch.loadTab = 'All Loads';
+          }
+        }
+      }
+      setState(patch);
       portal.remove(); _chipFilterPortal = null;
     });
     document.body.appendChild(portal);
@@ -1793,7 +1881,13 @@ export function initApp() {
           style: { cursor: 'pointer' }
         }, [filterChipLabel(field, f)]),
         el('span', {
-          onclick: () => setState({ [filtersKey]: s[filtersKey].filter(x => x.key !== f.key), page: 1 }),
+          onclick: () => {
+            const patch = { [filtersKey]: s[filtersKey].filter(x => x.key !== f.key), page: 1 };
+            if (f.key === 'status') {
+              if (view === 'loads') patch.loadTab = 'All Loads';
+            }
+            setState(patch);
+          },
           style: { cursor: 'pointer', width: '16px', height: '16px', display: 'grid', placeItems: 'center', borderRadius: '999px', color: '#FBFBFB', background: 'rgba(255,255,255,.08)' }
         }, ['×'])
       ]);
@@ -1844,7 +1938,10 @@ export function initApp() {
     const pageLoads = loads.slice(start, start + s.rows);
 
     if (pageLoads.length === 0) {
-      inner.appendChild(el('div', { style: { padding: '60px 20px', textAlign: 'center', color: '#6B7373', fontSize: '13px', fontWeight: '600' } }, ['Nothing matches these filters. Clear the search or pick another status.']));
+      inner.appendChild(el('div', { style: { padding: '60px 20px', textAlign: 'center', color: '#6B7373', fontSize: '13px' } }, [
+          el('div', { style: { fontWeight: '700', marginBottom: '6px', fontSize: '14px' } }, ['No results found for the selected filters.']),
+          el('div', { style: { fontWeight: '400', fontSize: '13px' } }, ['Try adjusting or clearing your filters to see more results.'])
+        ]));
     }
 
     pageLoads.forEach(l => {
@@ -1944,8 +2041,38 @@ export function initApp() {
     ]);
   }
 
+  function renderRoutesFooter() {
+    const s = state;
+    const routes = visibleRoutes();
+    const totalPages = Math.max(1, Math.ceil(routes.length / s.routeRows));
+    const page = Math.min(s.routePage, totalPages);
+    const start = (page - 1) * s.routeRows;
+    const label = 'Showing ' + (routes.length ? start + 1 : 0) + '-' + Math.min(start + s.routeRows, routes.length) + ' of ' + routes.length;
+    const pager = el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+      el('div', { class: 'hoverable', onclick: () => setState({ routePage: Math.max(1, page - 1) }), style: { display: 'grid', placeItems: 'center', width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer', color: '#8B939B' } }, ['‹'])
+    ]);
+    for (let i = 1; i <= totalPages; i++) {
+      const n = i;
+      pager.appendChild(el('div', {
+        onclick: () => setState({ routePage: n }),
+        style: { display: 'grid', placeItems: 'center', minWidth: '26px', height: '26px', padding: '0 6px', borderRadius: '6px', cursor: 'pointer', fontWeight: '800', background: page === n ? ACTIVE : 'transparent', color: page === n ? '#0B131B' : '#8B939B' }
+      }, [String(n)]));
+    }
+    pager.appendChild(el('div', { class: 'hoverable', onclick: () => setState({ routePage: Math.min(totalPages, page + 1) }), style: { display: 'grid', placeItems: 'center', width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer', color: '#8B939B' } }, ['›']));
+    const rowsSelect = el('select', {
+      value: String(s.routeRows),
+      onchange: e => setState({ routeRows: Number(e.target.value), routePage: 1 }),
+      style: { padding: '4px 8px', background: '#17242E', color: '#FBFBFB', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', fontFamily: 'inherit', fontSize: '12px' }
+    }, [el('option', { value: '10' }, ['10']), el('option', { value: '25' }, ['25']), el('option', { value: '50' }, ['50'])]);
+    return el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)', borderTop: '1px solid rgba(255,255,255,.07)', color: '#ABABAB', fontSize: '12px', fontWeight: '600' } }, [
+      el('div', {}, [label]),
+      pager,
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, ['Rows:', rowsSelect])
+    ]);
+  }
+
   function routeGridTemplate(cols) {
-    return cols.map(c => (typeof c.width === 'number' ? c.width + 'px' : c.width)).join(' ') + ' 22px';
+    return cols.map(c => (typeof c.width === 'number' ? c.width + 'px' : c.width)).join(' ') + ' 52px';
   }
 
   function renderRouteCardsHeader(cols) {
@@ -2088,8 +2215,8 @@ export function initApp() {
         ]),
         route_span: (() => {
           const _rLds = loadsOf(r.id);
-          const _fc = _rLds.length ? _rLds[0].origin.split(',')[0] : '—';
-          const _lc = _rLds.length ? _rLds[_rLds.length - 1].dest.split(',')[0] : '—';
+          const _fc = _rLds.length ? _rLds[0].origin : '—';
+          const _lc = _rLds.length ? _rLds[_rLds.length - 1].dest : '—';
           return el('div', { style: { padding: '10px 8px 10px 0', minWidth: '0' } }, [
             el('div', { style: { display: 'inline-flex', flexDirection: 'column', background: '#0D1820', border: '1px solid rgba(255,255,255,.1)', borderRadius: '8px', padding: '5px 10px', gap: '2px', maxWidth: '100%' } }, [
               el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '800', fontSize: '12px', color: '#DDE3E9', whiteSpace: 'nowrap' } }, [
@@ -2175,17 +2302,68 @@ export function initApp() {
         ])
       };
 
+      const moreBtn = el('div', {
+        onclick: e => {
+          e.stopPropagation();
+          const existing = document.querySelector('[data-route-menu]');
+          if (existing) { existing.remove(); return; }
+          const canDelete = r.status === 'Planned';
+          const menuItems = [
+            el('div', { class: 'hoverable', onclick: e2 => { e2.stopPropagation(); menu.remove(); setState({ openRoute: r.id, detailLanesExpanded: false }); }, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#FBFBFB' } }, [
+              el('span', { html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>' }, []),
+              'Open in a new tab'
+            ])
+          ];
+          if (canDelete) {
+            menuItems.push(el('div', { class: 'hoverable', onclick: e2 => {
+              e2.stopPropagation(); menu.remove();
+              const overlay = el('div', { style: { position: 'fixed', inset: '0', zIndex: '9100', background: 'rgba(0,0,0,.55)', display: 'grid', placeItems: 'center' } });
+              const modal = el('div', { style: { background: '#17242E', border: '1px solid rgba(255,255,255,.12)', borderRadius: '14px', padding: '24px', width: '380px', boxShadow: '0 16px 48px rgba(0,0,0,.6)', fontFamily: 'inherit' } }, [
+                el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '16px', fontWeight: '800', color: '#FBFBFB' } }, [
+                  el('span', { html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FBFBFB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>' }, []),
+                  'Delete Route'
+                ]),
+                el('div', { style: { fontSize: '13px', fontWeight: '600', color: '#C9CED2', marginBottom: '8px' } }, ['Are you sure you want to delete this route?']),
+                el('div', { style: { fontSize: '12px', color: '#6B7373', marginBottom: '24px' } }, ['This action is permanent and cannot be undone. Make sure you no longer need it.']),
+                el('div', { style: { display: 'flex', justifyContent: 'center', gap: '12px' } }, [
+                  el('div', { class: 'hoverable', onclick: () => overlay.remove(), style: { padding: '8px 24px', borderRadius: '999px', border: '1px solid rgba(255,255,255,.15)', color: '#FBFBFB', fontWeight: '700', fontSize: '13px', cursor: 'pointer' } }, ['Cancel']),
+                  el('div', { class: 'hoverable', onclick: () => { overlay.remove(); setState({ routes: state.routes.filter(x => x.id !== r.id), expanded: null, openRoute: null }); }, style: { padding: '8px 24px', borderRadius: '999px', background: '#27A767', color: '#0B131B', fontWeight: '800', fontSize: '13px', cursor: 'pointer' } }, ['Yes, I am sure'])
+                ])
+              ]);
+              overlay.appendChild(modal);
+              overlay.addEventListener('click', e3 => { if (e3.target === overlay) overlay.remove(); });
+              document.body.appendChild(overlay);
+            }, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#FBFBFB' } }, [
+              el('span', { html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>' }, []),
+              'Delete route'
+            ]));
+          }
+          const menu = el('div', { 'data-route-menu': r.id, style: { position: 'fixed', zIndex: '9050', background: '#131F27', border: '1px solid rgba(255,255,255,.12)', borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,.5)', padding: '4px', minWidth: '170px', fontFamily: 'inherit' } }, menuItems);
+          document.body.appendChild(menu);
+          const rect = e.currentTarget.getBoundingClientRect();
+          menu.style.top = (rect.bottom + 4) + 'px';
+          menu.style.right = (window.innerWidth - rect.right) + 'px';
+          const closeMenu = e3 => { if (!menu.contains(e3.target)) { menu.remove(); document.removeEventListener('click', closeMenu); } };
+          setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        },
+        style: { width: '22px', height: '22px', display: 'grid', placeItems: 'center', borderRadius: '6px', cursor: 'pointer' },
+        html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>'
+      }, []);
+
       const rowMain = el('div', {
         class: 'row-hoverable',
         onclick: () => setState({ openRoute: r.id, detailLanesExpanded: false }),
         style: { display: 'grid', gridTemplateColumns: gridTemplate, alignItems: 'center', padding: '0 20px', cursor: 'pointer', background: expanded ? 'rgba(39,167,103,.06)' : 'transparent' }
       }, cols.map(c => cells[c.key]).concat([
-        el('div', {
-          title: 'Peek lanes',
-          onclick: e => { e.stopPropagation(); setState({ expanded: expanded ? null : r.id }); },
-          style: { width: '22px', height: '22px', display: 'grid', placeItems: 'center', borderRadius: '6px', cursor: 'pointer', color: '#FBFBFB', transform: 'rotate(' + (expanded ? 180 : 0) + 'deg)', transition: 'transform 150ms ease' },
-          html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FBFBFB" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
-        }, [])
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' } }, [
+          moreBtn,
+          el('div', {
+            title: 'Peek lanes',
+            onclick: e => { e.stopPropagation(); setState({ expanded: expanded ? null : r.id }); },
+            style: { width: '22px', height: '22px', display: 'grid', placeItems: 'center', borderRadius: '6px', cursor: 'pointer', color: '#FBFBFB', transform: 'rotate(' + (expanded ? 180 : 0) + 'deg)', transition: 'transform 150ms ease' },
+            html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FBFBFB" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
+          }, [])
+        ])
       ]));
 
       const block = el('div', { style: { borderBottom: '1px solid rgba(255,255,255,.05)' } }, [rowMain]);
@@ -3520,7 +3698,7 @@ export function initApp() {
       if (!visible.length) {
         var empty = document.createElement('div');
         empty.style.cssText = 'text-align:center;padding:48px 20px;font:400 13px '+F+';color:#6B7373';
-        empty.textContent = 'Nothing matches these filters. Clear the search or pick another status.';
+        empty.innerHTML = '<div style="font-weight:700;margin-bottom:6px;font-size:14px">No results found for the selected filters.</div><div style="font-size:13px">Try adjusting or clearing your filters to see more results.</div>';
         tblBody.appendChild(empty); return;
       }
       visible.forEach(function(ld) {
@@ -5128,6 +5306,75 @@ export function initApp() {
     const rightWrapper = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', padding: '0 20px 16px 0' } }, [mapPanel, hosPanel, statTiles, moneyTiles]);
     const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
     return el('div', { style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } }, [header, splitBody]);
+  }
+
+  // Changelog modal
+  const _changelogBtn = document.getElementById('ef-changelog-btn');
+  if (_changelogBtn) {
+    _changelogBtn.addEventListener('click', () => {
+      if (document.querySelector('[data-changelog-overlay]')) return;
+      const releases = [
+        {
+          date: '10 de agosto, 11:30am',
+          items: [
+            'Se muestra un mensaje cuando no hay resultados en Routes, My Loads o en el modal de cargas de una ruta',
+            'Cada tarjeta de ruta tiene un menú de 3 puntos con opciones "Abrir en nueva pestaña" y "Eliminar ruta"',
+            'Se corrigió un error donde el campo de texto en filtros Origin/Destination perdía el foco al escribir',
+            'El resumen de ruta ahora muestra el estado completo (ej: Jacksonville, FL en vez de solo Jacksonville)',
+            'Los filtros de fecha ahora tienen los operadores: between, before, after y today',
+            'Se agregó paginador en la vista de rutas con opciones de 10, 25 o 50 por página',
+            'Al seleccionar un tab de estado en My Loads se activa un chip de filtro visible; al quitarlo se vuelve a All Loads',
+            'Eliminar ruta solo aparece en rutas con estado Planned y muestra un modal de confirmación antes de borrar',
+            'Se agregó botón de historial de cambios en el sidebar',
+            'En la vista de rutas, el filtro de status se maneja solo con los tabs superiores (sin filtro en el panel)',
+            'Al cambiar el operador de status a "in" en My Loads se puede seleccionar múltiples estados con checkboxes',
+          ]
+        },
+        {
+          date: '5 de agosto, 9:30am',
+          items: [
+            'Los filtros de tipo multi-select (Driver, Dispatcher, Unit, Trailer) ahora usan un campo unificado con chips inline y búsqueda en tiempo real',
+            'Los filtros Driver, Dispatcher, Unit y Trailer solo permiten los operadores "is in" e "is not"',
+          ]
+        }
+      ];
+      const overlay = el('div', { 'data-changelog-overlay': 'true', style: { position: 'fixed', inset: '0', zIndex: '9100', background: 'rgba(0,0,0,.55)', display: 'grid', placeItems: 'center' } });
+      const releaseEls = releases.map(r => {
+        const detailWrap = el('div', { style: { display: 'none', flexDirection: 'column', gap: '0', marginTop: '10px' } },
+          r.items.map(c => el('div', { style: { padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'flex-start', gap: '8px' } }, [
+            el('span', { style: { color: '#27A767', fontSize: '13px', lineHeight: '1.5', flexShrink: '0' } }, ['•']),
+            el('div', { style: { fontSize: '12.5px', color: '#C9CED2', fontWeight: '600', lineHeight: '1.5' } }, [c])
+          ]))
+        );
+        const chevron = el('span', { style: { fontSize: '10px', color: '#8B939B', transition: 'transform .2s' } }, ['▶']);
+        const header = el('div', {
+          onclick: () => {
+            const open = detailWrap.style.display === 'flex';
+            detailWrap.style.display = open ? 'none' : 'flex';
+            chevron.textContent = open ? '▶' : '▼';
+          },
+          style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '10px 0' }
+        }, [
+          chevron,
+          el('div', { style: { fontSize: '13px', fontWeight: '800', color: '#FBFBFB' } }, [r.date]),
+          el('div', { style: { fontSize: '11px', color: '#6B7373', fontWeight: '600' } }, [r.items.length + ' cambios'])
+        ]);
+        return el('div', { style: { borderBottom: '1px solid rgba(255,255,255,.08)' } }, [header, detailWrap]);
+      });
+      const modal = el('div', { style: { background: '#17242E', border: '1px solid rgba(255,255,255,.12)', borderRadius: '14px', padding: '24px', width: '480px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 16px 48px rgba(0,0,0,.6)', fontFamily: 'inherit' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: '800', color: '#FBFBFB' } }, [
+            el('span', { html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#27A767" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' }, []),
+            'Historial de cambios'
+          ]),
+          el('div', { onclick: () => overlay.remove(), style: { cursor: 'pointer', color: '#8B939B', fontSize: '18px', lineHeight: '1' } }, ['×'])
+        ]),
+        el('div', { class: 'ef-scroll', style: { flex: '1', overflowY: 'auto' } }, releaseEls)
+      ]);
+      overlay.appendChild(modal);
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+    });
   }
 
   render();
