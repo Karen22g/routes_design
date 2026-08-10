@@ -877,6 +877,9 @@ export function initApp() {
     chips.innerHTML = window.CR_BLOCKED[kind].map(v => (
       '<span class="cr-tag-chip">' + v + '<span class="cr-tag-chip-x" onclick="event.stopPropagation();crRemoveTag(\'' + kind + '\',\'' + v.replace(/'/g, "\\'") + '\')">×</span></span>'
     )).join('');
+    const total = (window.CR_BLOCKED.region.length) + (window.CR_BLOCKED.city.length) + (window.CR_BLOCKED.state.length);
+    const badge = document.getElementById('cr-prefs-badge');
+    if (badge) { badge.textContent = total; badge.style.display = total > 0 ? '' : 'none'; }
   };
 
   document.addEventListener('click', function (e) {
@@ -1011,7 +1014,7 @@ export function initApp() {
           <div class="cr-field-label">Operative cost <span class="cr-opt">Optional</span></div>
           <select class="cr-select">
             <option selected>JM_test1 — $2.00/mi</option>
-            <option>Custom</option>
+            <option>No operating cost</option>
           </select>
         </div>
       </div>
@@ -1035,6 +1038,7 @@ export function initApp() {
         <button class="cr-expand-trigger" onclick="document.getElementById('cr-prefs-expand').classList.toggle('cr-open')">
           <svg class="cr-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2.5 4.5l3.5 3 3.5-3"/></svg>
           Search preferences
+          <span id="cr-prefs-badge" style="display:none;margin-left:6px;padding:1px 7px;border-radius:999px;background:#27A767;color:#0B131B;font:800 9.5px Nunito,system-ui;line-height:1.6;letter-spacing:0">0</span>
         </button>
         <div class="cr-expand-body">
           <div class="cr-expand-inner">
