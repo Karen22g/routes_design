@@ -666,24 +666,19 @@ export function initApp() {
 
   // mode: 'free' | 'assign' ; unit: CR_UNITS entry or null
   window.crApplyTrailer = function (mode, unit) {
-    const tag = document.getElementById('cr-trailer-tag');
     const sel = document.getElementById('cr-trailer-select');
     if (mode === 'free') {
-      tag.style.display = 'none';
       sel.disabled = false;
       sel.innerHTML = CR_TRAILER_OPTIONS_HTML;
       sel.value = 'Van';
       return;
     }
-    tag.style.display = '';
     if (!unit) {
-      tag.textContent = 'Auto';
       sel.disabled = false;
       sel.innerHTML = CR_TRAILER_OPTIONS_HTML;
       sel.value = 'Van';
       return;
     }
-    tag.textContent = unit.hasLoads ? 'From loads' : 'Auto';
     sel.disabled = true;
     sel.innerHTML = '<option selected>' + unit.trailerId + ' · ' + unit.trailerType + '</option>';
   };
@@ -938,7 +933,7 @@ export function initApp() {
           </select>
         </div>
         <div class="cr-field">
-          <div class="cr-field-label">Driver <span style="color:#EB4343">*</span> <span class="cr-tag">Auto</span></div>
+          <div class="cr-field-label">Driver <span style="color:#EB4343">*</span></div>
           <select class="cr-select" id="cr-driver-select">
             <option value="">—</option>
           </select>
@@ -981,12 +976,7 @@ export function initApp() {
 
       <div class="cr-row cr-row-2">
         <div class="cr-field">
-          <div class="cr-field-label">Origin <span style="color:#EB4343">*</span>
-            <span class="cr-source" id="cr-origin-source" style="display:none">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.5"/></svg>
-              ELD
-            </span>
-          </div>
+          <div class="cr-field-label">Origin <span style="color:#EB4343">*</span></div>
           <input class="cr-input" id="cr-origin-input" placeholder="City or state..." oninput="crUpdateForecastVisibility()">
         </div>
         <div class="cr-field">
@@ -997,7 +987,7 @@ export function initApp() {
 
       <div class="cr-row cr-row-2">
         <div class="cr-field" style="margin-bottom:0">
-          <div class="cr-field-label">Trailer <span style="color:#EB4343">*</span> <span class="cr-tag" id="cr-trailer-tag">Auto</span></div>
+          <div class="cr-field-label">Trailer <span style="color:#EB4343">*</span></div>
           <select class="cr-select" id="cr-trailer-select">
             <option selected>Van</option>
             <option>Reefer</option>
@@ -2796,7 +2786,7 @@ export function initApp() {
   const _syncDone = {}; // routeId → bool (button disabled after sync)
   const _autoAddFromLoads = {}; // routeId → bool (toggle state per route)
   var _lbConfHandler = null, _lbNotifHandler = null;
-  let _lmSt = { tab: 'destinations', selDest: -1, selPath: 0, blockedPaths: new Set() };
+  let _lmSt = { tab: 'destinations', selDest: -1, selPath: 0, blockedPaths: new Set(), discSelIdx: -1, discExpanded: false, rcScale: 0, rcTx: 0, rcTy: 0 };
 
   function _hideLbBar() {
     const b = document.getElementById('_ef-lb'); if (b) b.style.display = 'none';
@@ -4424,7 +4414,7 @@ export function initApp() {
     var ov = document.createElement('div'); ov.id = '_ef-lane-map';
     ov.style.cssText = 'position:fixed;inset:0;z-index:9004;background:rgba(6,12,17,.65);display:flex;align-items:center;justify-content:center';
     var modal = document.createElement('div');
-    modal.style.cssText = 'width:980px;max-width:96vw;max-height:88vh;background:#0B131B;border:1px solid rgba(255,255,255,.12);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.85)';
+    modal.style.cssText = 'width:980px;max-width:96vw;height:88vh;background:#0B131B;border:1px solid rgba(255,255,255,.12);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.85)';
 
     // Header
     var hdr = document.createElement('div');
@@ -4552,155 +4542,487 @@ export function initApp() {
       body.appendChild(destBody);
 
     } else {
-      // ── Route connections: map top-left + list top-right + stats bar bottom ──
-      var ap = RC_PATHS[_lmSt.selPath], isAB = _lmSt.blockedPaths.has(ap.id);
-      var activeEdges = new Set(PATH_EDGES[ap.id]||[]);
-      var activeNodes = new Set(); (PATH_EDGES[ap.id]||[]).forEach(function(e){ var pts=e.split('-'); activeNodes.add(pts[0]); activeNodes.add(pts[1]); });
+      // ── Route connections: full route history graph + route list ──
+
+      // ── 1. Build committed chain from route history via state.openRoute ──
+      var _rcRid = state.openRoute;
+      var _rcAllLoads = _rcRid ? loadsOf(_rcRid) : [];
+      var RC_CMT_ST = { 'Booked':1,'Dispatched':1,'In Transit':1,'Delivered':1,'Invoiced':1,'Paid':1 };
+      var committedChain = [], committedLdSt = [];
+
+      if (_rcAllLoads.length > 0) {
+        committedChain.push(_rcAllLoads[0].origin);
+        committedLdSt.push(null); // no load "to" the first hub
+        for (var _rci0 = 0; _rci0 < _rcAllLoads.length; _rci0++) {
+          var _rL0 = _rcAllLoads[_rci0];
+          if (RC_CMT_ST[_rL0.status]) { committedChain.push(_rL0.dest); committedLdSt.push(_rL0.status); }
+          else break; // first non-committed load stops the chain
+        }
+      }
+      if (!committedChain.length) { committedChain = [origin]; committedLdSt = [null]; }
+
+      // ── 2. Build adjacency + trace future chain from current position ──
+      var rcAdj = {};
+      LOADS.forEach(function(l) { if (!rcAdj[l.origin]) rcAdj[l.origin] = []; rcAdj[l.origin].push(l); });
+
+      var rcCurrentPos = committedChain[committedChain.length - 1];
+      var rcFuture = [rcCurrentPos], _rcCurr = rcCurrentPos;
+      for (var _rcd = 0; _rcd < 3; _rcd++) {
+        var _rcNexts = rcAdj[_rcCurr] || [], _rcNext = null;
+        for (var _rci1 = 0; _rci1 < _rcNexts.length; _rci1++) {
+          var _d = _rcNexts[_rci1].dest;
+          if (rcFuture.indexOf(_d) < 0 && committedChain.indexOf(_d) < 0) { _rcNext = _rcNexts[_rci1]; break; }
+        }
+        if (!_rcNext) break;
+        rcFuture.push(_rcNext.dest); _rcCurr = _rcNext.dest;
+      }
+
+      // Full spine = committed chain + future hops (current position is the junction)
+      var fullSpine = committedChain.concat(rcFuture.slice(1));
+      var _spLen = fullSpine.length;
+
+      // ── 3. Generate route alternatives (prefixes + skips over fullSpine) ──
+      var rcRouteHubsAll = [], _rSeen = {};
+      function _rcAddRoute(hubs) { var k = hubs.join('|'); if (!_rSeen[k] && hubs.length >= 2) { _rSeen[k] = 1; rcRouteHubsAll.push(hubs); } }
+      for (var _pi = 2; _pi <= _spLen; _pi++) _rcAddRoute(fullSpine.slice(0, _pi));
+      if (_spLen >= 3) _rcAddRoute([fullSpine[0], fullSpine[2]]);
+      if (_spLen >= 4) { _rcAddRoute([fullSpine[0], fullSpine[3]]); _rcAddRoute([fullSpine[0], fullSpine[1], fullSpine[3]]); }
+      if (_spLen >= 5) {
+        _rcAddRoute([fullSpine[0], fullSpine[4]]);
+        _rcAddRoute([fullSpine[0], fullSpine[1], fullSpine[4]]);
+        _rcAddRoute([fullSpine[0], fullSpine[1], fullSpine[2], fullSpine[4]]);
+        _rcAddRoute([fullSpine[0], fullSpine[2], fullSpine[4]]);
+      }
+
+      // Build route objects
+      var rcRoutes = rcRouteHubsAll.map(function(hubs, ri) {
+        var totalMiles = 0, minInc = 0, maxInc = 0, lanes = [];
+        for (var _lk = 0; _lk < hubs.length - 1; _lk++) {
+          var _lfr = hubs[_lk], _lto = hubs[_lk + 1], _ll = null;
+          var _fadj = rcAdj[_lfr] || [];
+          for (var _fli = 0; _fli < _fadj.length; _fli++) { if (_fadj[_fli].dest === _lto) { _ll = _fadj[_fli]; break; } }
+          var _mi = _ll ? _ll.miles : Math.round(280 + _lk * 130 + ri * 40);
+          var _revBase = _ll ? _ll.income : Math.round(_mi * 2.1 + ri * 80);
+          var _rMin = Math.round(_revBase * 0.85), _rMax = Math.round(_revBase * 1.28);
+          totalMiles += _mi; minInc += _rMin; maxInc += _rMax;
+          lanes.push({ mi: _mi, rev: '$' + _rMin.toLocaleString('en-US') + '–$' + _rMax.toLocaleString('en-US') });
+        }
+        var pMin = Math.round(minInc * 0.22), pMax = Math.round(maxInc * 0.52);
+        var dayEst = Math.max(1, Math.round(totalMiles / 480));
+        var tags = [];
+        if (ri === 0) tags.push('Best profit');
+        if (ri === 1) tags.push('Best connectivity');
+        if (ri === 2) { tags.push('Best profit'); tags.push('Best connectivity'); }
+        return {
+          id: 'rc-' + ri, hubs: hubs,
+          score: Math.round(Math.min(99, 65 + pMax / 80 + lanes.length * 3)),
+          viability: Math.max(62, 98 - ri * 7),
+          revenue: '$' + minInc.toLocaleString('en-US') + '–$' + maxInc.toLocaleString('en-US'),
+          profit: '$' + pMin.toLocaleString('en-US') + '–$' + pMax.toLocaleString('en-US'),
+          miles: totalMiles, days: dayEst + '–' + (dayEst + 1) + ' days',
+          tags: tags, lanes: lanes
+        };
+      });
 
       var rcBody = document.createElement('div');
       rcBody.style.cssText = 'flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0';
 
-      // ── Top row: SVG map (left) + path list (right) ──
-      var topRow = document.createElement('div');
-      topRow.style.cssText = 'flex:1;display:grid;grid-template-columns:1fr 260px;overflow:hidden;min-height:0';
+      if (!rcRoutes.length) {
+        var noRt = document.createElement('div');
+        noRt.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;color:#4A6572;font:600 13px ' + F;
+        noRt.textContent = 'No route data available for this origin.';
+        rcBody.appendChild(noRt);
+        body.appendChild(rcBody);
+      } else {
+        // ── 4. Classify routes: active (matches committed chain) vs discarded ──
+        function rcMatchCommitted(hubs) {
+          if (hubs.length < committedChain.length) return false;
+          for (var _ci = 0; _ci < committedChain.length; _ci++) { if (hubs[_ci] !== committedChain[_ci]) return false; }
+          return true;
+        }
+        var rcActive = [], rcDisc = [];
+        rcRoutes.forEach(function(rt) { (rcMatchCommitted(rt.hubs) ? rcActive : rcDisc).push(rt); });
 
-      // SVG map
-      var svgArea = document.createElement('div');
-      svgArea.style.cssText = 'overflow:hidden;background:#080F15;position:relative';
-      var svgNs = 'http://www.w3.org/2000/svg';
-      var svgEl = document.createElementNS(svgNs,'svg');
-      svgEl.setAttribute('viewBox','0 0 800 260');
-      svgEl.setAttribute('preserveAspectRatio','xMidYMid meet');
-      svgEl.style.cssText = 'width:100%;height:100%;display:block';
+        // Selection state
+        var rcSelIdx = rcActive.length ? Math.max(0, Math.min(_lmSt.selPath, rcActive.length - 1)) : -1;
+        var rcDiscSelIdx = (_lmSt.discSelIdx >= 0 && _lmSt.discSelIdx < rcDisc.length) ? _lmSt.discSelIdx : -1;
+        var rcDiscExp = !!_lmSt.discExpanded;
+        var rcSel = rcSelIdx >= 0 && rcDiscSelIdx < 0 ? rcActive[rcSelIdx] : null;
+        var rcDiscSel = rcDiscSelIdx >= 0 ? rcDisc[rcDiscSelIdx] : null;
+        var rcDisplayRoute = rcDiscSel || rcSel;
 
-      // Node definitions (positions match RC_BEZ coordinates)
-      var NP = {
-        A:{ x:80,  y:140, r:26, city:'Houston',     state:'TX', up:true  },
-        H:{ x:250, y:215, r:22, city:'Shreveport',  state:'LA', up:false },
-        C:{ x:420, y:80,  r:22, city:'Dallas',      state:'TX', up:true  },
-        D:{ x:570, y:165, r:22, city:'Little Rock', state:'AR', up:true  },
-        B:{ x:720, y:140, r:26, city:'Memphis',     state:'TN', up:true  }
-      };
+        // Routes shown on graph
+        var rcGraphRoutes = rcActive.slice();
+        if (rcDiscSel && rcGraphRoutes.indexOf(rcDiscSel) < 0) rcGraphRoutes.push(rcDiscSel);
+        if (rcDiscExp) rcDisc.forEach(function(r) { if (rcGraphRoutes.indexOf(r) < 0) rcGraphRoutes.push(r); });
 
-      // All edges — dim background
-      Object.keys(RC_BEZ).forEach(function(eid) {
-        var bg = document.createElementNS(svgNs,'path');
-        bg.setAttribute('d', RC_BEZ[eid]);
-        bg.setAttribute('fill','none');
-        bg.setAttribute('stroke', activeEdges.has(eid) ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.07)');
-        bg.setAttribute('stroke-width','2');
-        bg.setAttribute('stroke-linecap','round');
-        svgEl.appendChild(bg);
-      });
+        // ── 5. Merged node graph layout ──
+        var RC_COL_W = 190, RC_R = 20, RC_GAP = 70, RC_TOP = 44, RC_LEFT = 52;
+        var maxSteps = 0;
+        rcGraphRoutes.forEach(function(rt) { if (rt.hubs.length - 1 > maxSteps) maxSteps = rt.hubs.length - 1; });
 
-      // Active edges — green glow + line
-      activeEdges.forEach(function(eid) {
-        var glowColor = isAB ? 'rgba(235,67,67,.15)' : 'rgba(39,167,103,.15)';
-        var lineColor = isAB ? '#EB4343' : '#27A767';
-        var gw = document.createElementNS(svgNs,'path');
-        gw.setAttribute('d', RC_BEZ[eid]); gw.setAttribute('fill','none');
-        gw.setAttribute('stroke', lineColor); gw.setAttribute('stroke-width','18');
-        gw.setAttribute('stroke-linecap','round'); gw.setAttribute('opacity','0.09');
-        svgEl.appendChild(gw);
-        var ln = document.createElementNS(svgNs,'path');
-        ln.setAttribute('d', RC_BEZ[eid]); ln.setAttribute('fill','none');
-        ln.setAttribute('stroke', lineColor); ln.setAttribute('stroke-width','3.5');
-        ln.setAttribute('stroke-linecap','round');
-        svgEl.appendChild(ln);
-      });
+        var colNodes = [];
+        for (var _cs = 0; _cs <= maxSteps; _cs++) colNodes.push([]);
+        rcGraphRoutes.forEach(function(rt) {
+          rt.hubs.forEach(function(city, si) { if (colNodes[si].indexOf(city) < 0) colNodes[si].push(city); });
+        });
 
-      // Nodes — outlined circles (photo 3 style) with city name labels
-      Object.keys(NP).forEach(function(nid) {
-        var np = NP[nid];
-        var isAct = activeNodes.has(nid);
-        var isKey = nid === 'A' || nid === 'B';
-        var actColor = isAB ? '#EB4343' : '#27A767';
+        var maxColH = 0;
+        colNodes.forEach(function(col) { if (col.length > maxColH) maxColH = col.length; });
 
-        // Circle (outlined, subtle fill)
-        var circ = document.createElementNS(svgNs,'circle');
-        circ.setAttribute('cx', np.x); circ.setAttribute('cy', np.y); circ.setAttribute('r', np.r);
-        circ.setAttribute('fill', isAct ? (isAB ? 'rgba(235,67,67,.1)' : 'rgba(39,167,103,.12)') : 'rgba(11,18,24,.7)');
-        circ.setAttribute('stroke', isAct ? actColor : 'rgba(255,255,255,.18)');
-        circ.setAttribute('stroke-width', isKey ? '2.5' : '1.5');
-        svgEl.appendChild(circ);
+        var nodeMap = {};
+        colNodes.forEach(function(col, si) {
+          var totalH = (col.length - 1) * RC_GAP;
+          var startY = RC_TOP + RC_R + (maxColH * RC_GAP - totalH) / 2;
+          col.forEach(function(city, ni) {
+            nodeMap[city + '|' + si] = { cx: RC_LEFT + si * RC_COL_W + RC_COL_W / 2, cy: startY + ni * RC_GAP, city: city, step: si };
+          });
+        });
 
-        // State abbreviation inside circle
-        var st = document.createElementNS(svgNs,'text');
-        st.setAttribute('x', np.x); st.setAttribute('y', np.y + 4);
-        st.setAttribute('text-anchor','middle'); st.setAttribute('dominant-baseline','middle');
-        st.setAttribute('font-size', isKey ? '10' : '9'); st.setAttribute('font-weight','900');
-        st.setAttribute('font-family','Nunito,system-ui');
-        st.setAttribute('fill', isAct ? actColor : 'rgba(255,255,255,.28)');
-        st.setAttribute('pointer-events','none');
-        st.textContent = np.state;
-        svgEl.appendChild(st);
+        var svgW = RC_LEFT + (maxSteps + 1) * RC_COL_W + RC_LEFT;
+        var svgH = RC_TOP + maxColH * RC_GAP + RC_R + 32;
 
-        // City name — above or below circle
-        var labelY = np.up ? np.y - np.r - 10 : np.y + np.r + 13;
-        // Line 1: city
-        var l1 = document.createElementNS(svgNs,'text');
-        l1.setAttribute('x', np.x); l1.setAttribute('y', labelY);
-        l1.setAttribute('text-anchor','middle'); l1.setAttribute('font-size','9');
-        l1.setAttribute('font-weight','700'); l1.setAttribute('font-family','Nunito,system-ui');
-        l1.setAttribute('fill', isAct ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.25)');
-        l1.setAttribute('pointer-events','none');
-        l1.textContent = np.city;
-        svgEl.appendChild(l1);
-        // Line 2: state (abbreviated suffix already in circle, but city line only shows city name)
-      });
+        // ── 6. Node state: uses full committedChain ──
+        function rcNodeState(city, step) {
+          if (step < committedChain.length) {
+            if (committedChain[step] !== city) {
+              if (rcDiscSel && step < rcDiscSel.hubs.length && rcDiscSel.hubs[step] === city) return 'disc-sel';
+              return 'discarded';
+            }
+            // Incoming load status to this hub (null for origin step=0)
+            var inSt = committedLdSt[step];
+            // Truck is en route TO this hub → both origin and destination of the in-transit lane are 'current'
+            if (inSt === 'Dispatched' || inSt === 'In Transit') return 'current';
+            // Outgoing load FROM this hub
+            var outLd = _rcAllLoads[step];
+            var outSt = outLd ? outLd.status : null;
+            // No outgoing load, or outgoing is Unbooked/Dispatched/In Transit → truck is here, mark as current
+            if (!outSt || outSt === 'Unbooked' || outSt === 'Dispatched' || outSt === 'In Transit') return 'current';
+            // Outgoing load is Delivered/Invoiced/Paid → this is a completed past stop
+            return 'completed';
+          }
+          if (rcDiscSel && step < rcDiscSel.hubs.length && rcDiscSel.hubs[step] === city) return 'disc-sel';
+          var onActive = rcActive.some(function(rt) { return step < rt.hubs.length && rt.hubs[step] === city; });
+          return onActive ? 'tentative' : 'discarded';
+        }
 
-      svgArea.appendChild(svgEl);
-      topRow.appendChild(svgArea);
+        // ── 7. SVG area with transform-based zoom/pan ──
+        var svgArea = document.createElement('div');
+        svgArea.style.cssText = 'flex:1;overflow:hidden;background:#080F15;position:relative;cursor:grab';
 
-      // Path list (right column)
-      var pathList = document.createElement('div');
-      pathList.style.cssText = 'border-left:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;overflow:hidden;background:rgba(0,0,0,.18)';
-      var plHdr = document.createElement('div');
-      plHdr.style.cssText = 'padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.07);flex:none';
-      plHdr.innerHTML = '<div style="font:800 12px '+F+';color:#FBFBFB">Caminos disponibles</div><div style="font:400 10px '+F+';color:#6B8A9A;margin-top:2px">'+origin+' → Memphis, TN</div>';
-      pathList.appendChild(plHdr);
-      var plItems = document.createElement('div'); plItems.style.cssText='overflow-y:auto;flex:1';
-      RC_PATHS.forEach(function(p, pi) {
-        var isSel = pi === _lmSt.selPath, isBlocked = _lmSt.blockedPaths.has(p.id);
-        var pRow = document.createElement('div');
-        pRow.style.cssText = 'padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);border-left:3px solid '+(isSel?'#27A767':'transparent')+';background:'+(isSel?'rgba(39,167,103,.08)':isBlocked?'rgba(235,67,67,.04)':'transparent')+';cursor:'+(isBlocked?'default':'pointer')+';opacity:'+(isBlocked?.45:1);
-        pRow.innerHTML = '<div style="font:'+(isSel?800:600)+' 10px '+F+';color:'+(isSel?'#FBFBFB':(isBlocked?'#4A6572':'#ABABAB'))+';margin-bottom:6px;line-height:1.45">'+p.name+(isBlocked?' <span style="color:#EB4343;font-size:8px">[Bloq.]</span>':'')+'</div>' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px">'+
-          ['income','profit','days'].map(function(k){
-            var lbl={income:'Ingreso',profit:'Profit',days:'Días'}[k];
-            var val={income:p.income,profit:p.profit,days:p.days}[k];
-            var col=k==='income'?(isSel?'#27A767':'#8B939B'):(isSel?'#FBFBFB':'#6B7373');
-            return '<div><div style="font:600 8px '+F+';color:#4A6572;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px">'+lbl+'</div><div style="font:700 9px '+F+';color:'+col+'">'+val+'</div></div>';
-          }).join('')+'</div>';
-        if (!isBlocked) pRow.addEventListener('click', function() { _lmSt.selPath=pi; _doRenderLaneMap(); });
-        plItems.appendChild(pRow);
-      });
-      pathList.appendChild(plItems);
-      topRow.appendChild(pathList);
-      rcBody.appendChild(topRow);
+        var svgNs2 = 'http://www.w3.org/2000/svg';
+        var svgEl2 = document.createElementNS(svgNs2, 'svg');
+        svgEl2.setAttribute('width', svgW); svgEl2.setAttribute('height', svgH);
+        svgEl2.style.cssText = 'display:block;transform-origin:0 0;position:absolute;top:0;left:0';
 
-      // ── Bottom stats bar ──
-      var statsBar = document.createElement('div');
-      statsBar.style.cssText = 'display:flex;align-items:center;padding:9px 18px;border-top:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.22);flex:none;gap:0';
-      [['Ingreso est.',ap.income,'#27A767'],['Profit est.',ap.profit,'#7BCBCB'],['Duración',ap.days,'#FBFBFB'],['Millas',ap.miles+' mi','#ABABAB']].forEach(function(kv,i){
-        if(i>0){ var dv=document.createElement('div'); dv.style.cssText='width:1px;height:26px;background:rgba(255,255,255,.07);margin:0 16px;flex:none'; statsBar.appendChild(dv); }
-        var d=document.createElement('div');
-        d.innerHTML='<div style="font:600 9px '+F+';color:#4A6572;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">'+kv[0]+'</div><div style="font:800 12px '+F+';color:'+(isAB?'#4A6572':kv[2])+';white-space:nowrap">'+kv[1]+'</div>';
-        statsBar.appendChild(d);
-      });
-      var sbFlex=document.createElement('div'); sbFlex.style.flex='1'; statsBar.appendChild(sbFlex);
-      var blockBtn=document.createElement('button');
-      blockBtn.style.cssText = isAB
-        ? 'padding:6px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#ABABAB;font:700 11px '+F+';cursor:pointer'
-        : 'padding:6px 16px;background:rgba(235,67,67,.08);border:1px solid rgba(235,67,67,.25);border-radius:6px;color:#EB4343;font:700 11px '+F+';cursor:pointer';
-      blockBtn.textContent = isAB ? '↩ Restaurar ruta' : '✕ Bloquear ruta';
-      blockBtn.addEventListener('click', function(){
-        if(_lmSt.blockedPaths.has(ap.id)) _lmSt.blockedPaths.delete(ap.id); else _lmSt.blockedPaths.add(ap.id);
-        _doRenderLaneMap();
-      });
-      statsBar.appendChild(blockBtn);
-      rcBody.appendChild(statsBar);
-      body.appendChild(rcBody);
+        // Column headers + dividers
+        for (var _ch = 0; _ch <= maxSteps; _ch++) {
+          var chX = RC_LEFT + _ch * RC_COL_W + RC_COL_W / 2;
+          var chLbl = _ch === 0 ? 'ORIGIN' : (_ch === maxSteps ? 'STEP ' + _ch + ' (DESTINATION)' : 'STEP ' + _ch);
+          var chT = document.createElementNS(svgNs2, 'text');
+          chT.setAttribute('x', chX); chT.setAttribute('y', '16');
+          chT.setAttribute('text-anchor', 'middle'); chT.setAttribute('font-size', '9');
+          chT.setAttribute('font-weight', '700'); chT.setAttribute('font-family', 'monospace');
+          chT.setAttribute('fill', '#8B939B'); chT.setAttribute('letter-spacing', '0.08em');
+          chT.textContent = chLbl; svgEl2.appendChild(chT);
+          if (_ch > 0) {
+            var dvX = RC_LEFT + _ch * RC_COL_W;
+            var dvL = document.createElementNS(svgNs2, 'line');
+            dvL.setAttribute('x1', dvX); dvL.setAttribute('x2', dvX);
+            dvL.setAttribute('y1', '26'); dvL.setAttribute('y2', svgH);
+            dvL.setAttribute('stroke', 'rgba(255,255,255,0.04)'); dvL.setAttribute('stroke-width', '1');
+            svgEl2.appendChild(dvL);
+          }
+        }
+
+        // Draw edges per route
+        rcGraphRoutes.forEach(function(rt) {
+          var isDisc = rcDisc.indexOf(rt) >= 0;
+          var isDiscSel = rt === rcDiscSel;
+          var isSel = rt === rcDisplayRoute;
+
+          for (var _ei = 0; _ei < rt.hubs.length - 1; _ei++) {
+            var fn = nodeMap[rt.hubs[_ei] + '|' + _ei];
+            var tn = nodeMap[rt.hubs[_ei + 1] + '|' + (_ei + 1)];
+            if (!fn || !tn) continue;
+
+            // Edge is "committed" when it's on an active route within the committed chain
+            var isCommittedEdge = !isDisc && (_ei + 1 < committedChain.length);
+            var eColor, eW, eDash;
+            if (isCommittedEdge)              { eColor = '#27A767';                  eW = 2.5; eDash = null; }
+            else if (isDisc && !isDiscSel)    { eColor = 'rgba(235,67,67,0.1)';     eW = 1;   eDash = '6,4'; }
+            else if (isDiscSel)               { eColor = 'rgba(255,255,255,0.25)';  eW = 2;   eDash = '6,4'; }
+            else                              { eColor = isSel ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)';
+                                               eW = isSel ? 2.5 : 1.5; eDash = null; }
+
+            var ln = document.createElementNS(svgNs2, 'line');
+            ln.setAttribute('x1', fn.cx + RC_R); ln.setAttribute('y1', fn.cy);
+            ln.setAttribute('x2', tn.cx - RC_R); ln.setAttribute('y2', tn.cy);
+            ln.setAttribute('stroke', eColor); ln.setAttribute('stroke-width', eW);
+            ln.setAttribute('stroke-linecap', 'round');
+            if (eDash) ln.setAttribute('stroke-dasharray', eDash);
+            svgEl2.appendChild(ln);
+
+            // Lane label on selected route
+            if (isSel && rt.lanes[_ei]) {
+              var midX = (fn.cx + RC_R + tn.cx - RC_R) / 2;
+              var midY = Math.max(fn.cy, tn.cy) + 18;
+              var lc1 = isDiscSel ? 'rgba(255,255,255,0.5)' : 'rgba(39,167,103,0.7)';
+              var lc2 = isDiscSel ? 'rgba(255,255,255,0.35)' : 'rgba(39,167,103,0.5)';
+              var lt1 = document.createElementNS(svgNs2, 'text');
+              lt1.setAttribute('x', midX); lt1.setAttribute('y', midY);
+              lt1.setAttribute('text-anchor', 'middle'); lt1.setAttribute('font-size', '8');
+              lt1.setAttribute('font-weight', '700'); lt1.setAttribute('font-family', 'monospace');
+              lt1.setAttribute('fill', lc1);
+              lt1.textContent = 'Lane ' + (_ei + 1) + ': ' + rt.lanes[_ei].mi + ' mi';
+              svgEl2.appendChild(lt1);
+              var lt2 = document.createElementNS(svgNs2, 'text');
+              lt2.setAttribute('x', midX); lt2.setAttribute('y', midY + 11);
+              lt2.setAttribute('text-anchor', 'middle'); lt2.setAttribute('font-size', '7');
+              lt2.setAttribute('font-family', 'monospace'); lt2.setAttribute('fill', lc2);
+              lt2.textContent = rt.lanes[_ei].rev;
+              svgEl2.appendChild(lt2);
+            }
+          }
+        });
+
+        // Draw nodes
+        Object.keys(nodeMap).forEach(function(key) {
+          var nd = nodeMap[key];
+          var state = rcNodeState(nd.city, nd.step);
+          var fill, stroke, strokeW, textColor, opacity;
+          opacity = 1;
+          if (state === 'current')    { fill = 'transparent'; stroke = '#27A767'; strokeW = 2.5; textColor = '#27A767'; }
+          else if (state === 'completed') { fill = '#27A767';  stroke = '#27A767'; strokeW = 2;   textColor = '#172737'; }
+          else if (state === 'disc-sel')  { fill = 'rgba(35,45,55,0.9)'; stroke = 'rgba(255,255,255,0.2)'; strokeW = 1.5; textColor = '#8B939B'; }
+          else if (state === 'discarded') { fill = 'rgba(35,45,55,0.9)'; stroke = 'rgba(255,255,255,0.1)'; strokeW = 1.5; textColor = '#53636B'; opacity = 0.4; }
+          else                            { fill = 'rgba(35,45,55,0.9)'; stroke = 'rgba(255,255,255,0.1)'; strokeW = 1.5; textColor = '#53636B'; }
+
+          var g = document.createElementNS(svgNs2, 'g');
+          if (opacity < 1) g.setAttribute('opacity', opacity);
+
+          var circ2 = document.createElementNS(svgNs2, 'circle');
+          circ2.setAttribute('cx', nd.cx); circ2.setAttribute('cy', nd.cy); circ2.setAttribute('r', RC_R);
+          circ2.setAttribute('fill', fill); circ2.setAttribute('stroke', stroke); circ2.setAttribute('stroke-width', strokeW);
+          g.appendChild(circ2);
+
+          var stepN = document.createElementNS(svgNs2, 'text');
+          stepN.setAttribute('x', nd.cx); stepN.setAttribute('y', nd.cy + 1);
+          stepN.setAttribute('text-anchor', 'middle'); stepN.setAttribute('dominant-baseline', 'middle');
+          stepN.setAttribute('font-size', '13'); stepN.setAttribute('font-weight', '700');
+          stepN.setAttribute('font-family', 'monospace'); stepN.setAttribute('fill', textColor);
+          stepN.setAttribute('pointer-events', 'none');
+          stepN.textContent = String(nd.step + 1);
+          g.appendChild(stepN);
+
+          var cityParts = nd.city.split(', ');
+          var cityLbl = document.createElementNS(svgNs2, 'text');
+          cityLbl.setAttribute('x', nd.cx); cityLbl.setAttribute('y', nd.cy + RC_R + 13);
+          cityLbl.setAttribute('text-anchor', 'middle'); cityLbl.setAttribute('font-size', '9');
+          cityLbl.setAttribute('font-family', 'Nunito,system-ui');
+          cityLbl.setAttribute('fill', (state === 'current' || state === 'completed') ? '#6B7373' : '#53636B');
+          cityLbl.setAttribute('pointer-events', 'none');
+          cityLbl.textContent = cityParts[0] + (cityParts[1] ? ', ' + cityParts[1] : '');
+          g.appendChild(cityLbl);
+
+          svgEl2.appendChild(g);
+        });
+
+        // ── Zoom-to-fit on first open; persist zoom when switching routes ──
+        var _rcScale = _lmSt.rcScale || 0, _rcTx = _lmSt.rcTx || 0, _rcTy = _lmSt.rcTy || 0;
+        function _rcApplyTransform() {
+          svgEl2.style.transform = 'translate(' + _rcTx + 'px,' + _rcTy + 'px) scale(' + _rcScale + ')';
+          _lmSt.rcScale = _rcScale; _lmSt.rcTx = _rcTx; _lmSt.rcTy = _rcTy;
+        }
+        svgArea.appendChild(svgEl2);
+        if (!_lmSt.rcScale) {
+          setTimeout(function() {
+            var cw = svgArea.clientWidth || 500, ch = svgArea.clientHeight || 300;
+            _rcScale = Math.min((cw - 32) / svgW, (ch - 32) / svgH);
+            if (_rcScale > 1.2) _rcScale = 1.2;
+            if (_rcScale < 0.15) _rcScale = 0.15;
+            _rcTx = (cw - svgW * _rcScale) / 2;
+            _rcTy = (ch - svgH * _rcScale) / 2;
+            _rcApplyTransform();
+          }, 0);
+        } else {
+          _rcApplyTransform(); // restore saved zoom immediately — no setTimeout to avoid flash
+        }
+
+        svgArea.addEventListener('wheel', function(e) {
+          e.preventDefault();
+          var rect = svgArea.getBoundingClientRect();
+          var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+          var factor = e.deltaY > 0 ? 0.85 : 1.18;
+          var ns = Math.max(0.15, Math.min(4, _rcScale * factor));
+          _rcTx = mx - (mx - _rcTx) * (ns / _rcScale);
+          _rcTy = my - (my - _rcTy) * (ns / _rcScale);
+          _rcScale = ns; _rcApplyTransform();
+        }, { passive: false });
+
+        (function(area) {
+          var dragging = false, sx, sy, stx, sty;
+          area.addEventListener('mousedown', function(e) { dragging = true; sx = e.clientX; sy = e.clientY; stx = _rcTx; sty = _rcTy; area.style.cursor = 'grabbing'; });
+          window.addEventListener('mouseup', function() { dragging = false; area.style.cursor = 'grab'; });
+          area.addEventListener('mousemove', function(e) { if (!dragging) return; _rcTx = stx + e.clientX - sx; _rcTy = sty + e.clientY - sy; _rcApplyTransform(); });
+        })(svgArea);
+
+        // ── Route panel (right) ──
+        var rcPanel = document.createElement('div');
+        rcPanel.style.cssText = 'border-left:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;overflow:hidden;background:rgba(0,0,0,.18);width:300px;flex:none';
+
+        var rcPanelHdr = document.createElement('div');
+        rcPanelHdr.style.cssText = 'padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.07);flex:none';
+        var _hasCommit = committedChain.length > 1;
+        var panelTitle = 'Route connections from ' + origin.split(',')[0];
+        var _commitCount = committedChain.length - 1;
+        var panelSub = _hasCommit
+          ? 'Committed through ' + _commitCount + ' lane' + (_commitCount !== 1 ? 's' : '')
+          : origin + ' → ' + (fullSpine[fullSpine.length - 1] || '');
+        rcPanelHdr.innerHTML = '<div style="font:800 12px ' + F + ';color:#FBFBFB">' + panelTitle + '</div>';
+        rcPanel.appendChild(rcPanelHdr);
+
+        var rcScroll = document.createElement('div');
+        rcScroll.style.cssText = 'overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:#1E2E38 transparent';
+
+        // Active route cards
+        rcActive.forEach(function(rt, ri) {
+          var isSel = rcDiscSelIdx < 0 && ri === rcSelIdx;
+          var isBlocked = _lmSt.blockedPaths.has(rt.id);
+          var parts = rt.hubs;
+          var isShort = parts.length <= 3;
+          var routeLabel = isShort ? parts.join(' → ') : parts[0] + ' → ' + (parts.length - 2) + ' cities → ' + parts[parts.length - 1];
+          var viabColor = rt.viability >= 75 ? '#27A767' : '#F5A623';
+          var tagsHtml = rt.tags.map(function(tg) {
+            return '<span style="display:inline-block;padding:1px 6px;background:rgba(39,167,103,.12);border:1px solid rgba(39,167,103,.25);border-radius:4px;font:700 8px ' + F + ';color:#27A767">' + tg + '</span>';
+          }).join(' ');
+          var metaLine = '<span style="color:' + viabColor + '">' + rt.viability + '%</span> Viability | ' + rt.lanes.length + ' lane' + (rt.lanes.length > 1 ? 's' : '') + (rt.tags.length ? ' | ' + tagsHtml : '');
+          var card = document.createElement('div');
+          card.style.cssText = 'padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);border-left:3px solid ' + (isSel ? '#27A767' : 'transparent') + ';background:' + (isSel ? 'rgba(39,167,103,.08)' : 'transparent') + ';cursor:pointer;opacity:' + (isBlocked ? 0.4 : 1);
+          card.innerHTML =
+            '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">' +
+              '<span style="font:' + (isSel ? 800 : 600) + ' 10px ' + F + ';color:' + (isSel ? '#FBFBFB' : '#ABABAB') + ';line-height:1.4;flex:1;min-width:0;margin-right:6px">' + routeLabel + (isBlocked ? ' <span style="font:700 8px ' + F + ';color:#EB4343">[Blocked]</span>' : '') + '</span>' +
+              '<span style="font:700 9px ' + F + ';color:#4A8C6A;background:rgba(39,167,103,.1);border-radius:4px;padding:1px 5px;flex-shrink:0">' + rt.score + '</span>' +
+            '</div>' +
+            '<div style="font:600 9px ' + F + ';color:#6B7373">' + metaLine + '</div>';
+          card.addEventListener('click', function() { _lmSt.selPath = ri; _lmSt.discSelIdx = -1; _doRenderLaneMap(); });
+          rcScroll.appendChild(card);
+        });
+
+        // Discarded section (Committed modal only)
+        if (rcDisc.length) {
+          var chevronD = rcDiscExp ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6';
+          var discHdr = document.createElement('div');
+          discHdr.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.05);border-top:1px solid rgba(235,67,67,.15);cursor:pointer;background:rgba(235,67,67,.08)';
+          discHdr.innerHTML =
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EB4343" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="' + chevronD + '"></path></svg>' +
+            '<span style="font:700 10px ' + F + ';color:#EB4343;flex:1">Discarded routes</span>' +
+            '<span style="padding:1px 7px;background:rgba(235,67,67,.12);border-radius:999px;font:700 9px ' + F + ';color:#EB4343">' + rcDisc.length + '</span>';
+          discHdr.addEventListener('click', function() { _lmSt.discExpanded = !_lmSt.discExpanded; _doRenderLaneMap(); });
+          rcScroll.appendChild(discHdr);
+
+          if (rcDiscExp) {
+            rcDisc.forEach(function(rt, di) {
+              var isDSel = di === rcDiscSelIdx;
+              var dparts = rt.hubs;
+              var dlabel = dparts.length <= 3 ? dparts.join(' → ') : dparts[0] + ' → ' + (dparts.length - 2) + ' cities → ' + dparts[dparts.length - 1];
+              var dcard = document.createElement('div');
+              dcard.style.cssText = 'padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);border-left:3px solid ' + (isDSel ? 'rgba(255,255,255,.2)' : 'transparent') + ';background:' + (isDSel ? 'rgba(255,255,255,.03)' : 'transparent') + ';cursor:pointer;opacity:' + (isDSel ? 1 : 0.5);
+              dcard.innerHTML =
+                '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">' +
+                  '<span style="font:' + (isDSel ? 700 : 600) + ' 10px ' + F + ';color:' + (isDSel ? '#8B939B' : '#4A6572') + ';line-height:1.4;flex:1;min-width:0;margin-right:6px">' + dlabel + '</span>' +
+                  '<span style="font:700 9px ' + F + ';color:#3A4A54;background:rgba(255,255,255,.04);border-radius:4px;padding:1px 5px;flex-shrink:0">' + rt.score + '</span>' +
+                '</div>' +
+                '<div style="font:600 9px ' + F + ';color:#3A4A54">' + rt.viability + '% Viability | ' + rt.lanes.length + ' lane' + (rt.lanes.length > 1 ? 's' : '') + ' | <span style="padding:1px 5px;background:rgba(235,67,67,.1);border:1px solid rgba(235,67,67,.2);border-radius:4px;font:700 8px ' + F + ';color:#EB4343">Discarded</span></div>';
+              dcard.addEventListener('click', function() { _lmSt.discSelIdx = isDSel ? -1 : di; _doRenderLaneMap(); });
+              rcScroll.appendChild(dcard);
+            });
+          }
+        }
+
+        rcPanel.appendChild(rcScroll);
+
+        var topRow = document.createElement('div');
+        topRow.style.cssText = 'flex:1;display:flex;overflow:hidden;min-height:0';
+        topRow.appendChild(svgArea); topRow.appendChild(rcPanel);
+        rcBody.appendChild(topRow);
+
+        // ── Bottom stats bar: [metrics spread] [block btn] | [dark bg: start search] ──
+        // Compute search key from already-loaded route data
+        var _sbKey = null;
+        for (var _sbi = 0; _sbi < _rcAllLoads.length; _sbi++) {
+          if (_rcAllLoads[_sbi].origin === origin && _rcAllLoads[_sbi].status === 'Unbooked') { _sbKey = _rcRid + '_' + _sbi; break; }
+        }
+        var _sbSt = _sbKey ? (_lbSearch[_sbKey] || '') : '';
+
+        var statsBar = document.createElement('div');
+        statsBar.style.cssText = 'display:flex;align-items:stretch;border-top:1px solid rgba(255,255,255,.07);flex:none;min-height:54px';
+
+        // Metrics section — each item gets flex:1 so they spread evenly
+        var sbLeft = document.createElement('div');
+        sbLeft.style.cssText = 'flex:1;display:flex;align-items:center;padding:0 24px;gap:0;background:rgba(0,0,0,.22)';
+        if (rcDisplayRoute) {
+          var isBlk = _lmSt.blockedPaths.has(rcDisplayRoute.id);
+          [['Income', rcDisplayRoute.revenue, '#27A767'], ['Profit', rcDisplayRoute.profit, '#7BCBCB'], ['Mileage', rcDisplayRoute.miles + ' mi', '#FBFBFB'], ['Days on route', rcDisplayRoute.days, '#FBFBFB']].forEach(function(kv, i) {
+            if (i > 0) { var sdv = document.createElement('div'); sdv.style.cssText = 'width:1px;height:24px;background:rgba(255,255,255,.07);flex:none;margin:0 24px'; sbLeft.appendChild(sdv); }
+            var sdm = document.createElement('div');
+            sdm.style.cssText = 'flex:1;min-width:0';
+            sdm.innerHTML = '<div style="font:600 9px ' + F + ';color:#4A6572;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">' + kv[0] + '</div><div style="font:800 12px ' + F + ';color:' + (isBlk ? '#4A6572' : kv[2]) + ';white-space:nowrap">' + kv[1] + '</div>';
+            sbLeft.appendChild(sdm);
+          });
+        }
+        statsBar.appendChild(sbLeft);
+
+        // Block route button — right of metrics, before divider
+        if (rcDisplayRoute) {
+          var sbBW = document.createElement('div');
+          sbBW.style.cssText = 'display:flex;align-items:center;padding:0 20px;flex:none;background:rgba(0,0,0,.22)';
+          var blockBtn = document.createElement('button');
+          var _blk = _lmSt.blockedPaths.has(rcDisplayRoute.id);
+          blockBtn.style.cssText = _blk
+            ? 'padding:6px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#ABABAB;font:700 11px ' + F + ';cursor:pointer'
+            : 'padding:6px 16px;background:rgba(235,67,67,.08);border:1px solid rgba(235,67,67,.25);border-radius:6px;color:#EB4343;font:700 11px ' + F + ';cursor:pointer';
+          blockBtn.textContent = _blk ? '↩ Restore route' : '✕ Block route';
+          blockBtn.addEventListener('click', function() {
+            if (_lmSt.blockedPaths.has(rcDisplayRoute.id)) _lmSt.blockedPaths.delete(rcDisplayRoute.id);
+            else _lmSt.blockedPaths.add(rcDisplayRoute.id);
+            _doRenderLaneMap();
+          });
+          sbBW.appendChild(blockBtn);
+          statsBar.appendChild(sbBW);
+        }
+
+        // Vertical divider — same style as the panel separator above
+        var sbVd = document.createElement('div');
+        sbVd.style.cssText = 'width:1px;background:rgba(255,255,255,.07);flex:none';
+        statsBar.appendChild(sbVd);
+
+        // Start search section — dark background matching panel tone
+        var sbRight = document.createElement('div');
+        sbRight.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;padding:0 28px;background:rgba(0,0,0,.18);width:300px;flex:none;box-sizing:border-box';
+        if (_sbSt === 'searching' || _sbSt === 'done') {
+          var sbSave = document.createElement('button');
+          sbSave.style.cssText = 'padding:8px 20px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#ABABAB;font:700 12px ' + F + ';cursor:pointer';
+          sbSave.textContent = 'Save changes';
+          sbRight.appendChild(sbSave);
+        } else if (_sbKey) {
+          var sbStart = document.createElement('button');
+          sbStart.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 20px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 12px ' + F + ';cursor:pointer;white-space:nowrap';
+          sbStart.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>Start search';
+          (function(key, originCity) {
+            sbStart.addEventListener('click', function() {
+              var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
+              _lmSt.origin = null;
+              _lbSearch[key] = 'searching';
+              setTimeout(function() { _lbSearch[key] = 'done'; _lbCount[key] = 2 + Math.floor(Math.random() * 4); _showLbNotif(key, originCity); }, 3000);
+            });
+          })(_sbKey, origin);
+          sbRight.appendChild(sbStart);
+        }
+        statsBar.appendChild(sbRight);
+        rcBody.appendChild(statsBar);
+        body.appendChild(rcBody);
+      }
     }
 
     // ── Footer: Start search / Save changes ──
@@ -4719,14 +5041,19 @@ export function initApp() {
     var _lmSearchActive = _lmSearchSt === 'searching' || _lmSearchSt === 'done';
 
     var footer = document.createElement('div');
-    footer.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;padding:12px 20px;border-top:1px solid rgba(255,255,255,.07);background:#101B23;flex:none;gap:8px';
+    // Routes tab has its own integrated stats bar with Start search — hide the global footer there
+    if (_lmSt.tab === 'routes') {
+      footer.style.cssText = 'display:none';
+    } else {
+      footer.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;padding:12px 20px;border-top:1px solid rgba(255,255,255,.07);background:#101B23;flex:none;gap:8px';
+    }
 
-    if (_lmSearchActive) {
+    if (_lmSt.tab !== 'routes' && _lmSearchActive) {
       var saveBtn = document.createElement('button');
       saveBtn.style.cssText = 'padding:8px 20px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#ABABAB;font:700 12px ' + F + ';cursor:pointer';
       saveBtn.textContent = 'Save changes';
       footer.appendChild(saveBtn);
-    } else if (_lmKey) {
+    } else if (_lmSt.tab !== 'routes' && _lmKey) {
       var startBtn = document.createElement('button');
       startBtn.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 20px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 12px ' + F + ';cursor:pointer';
       startBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>Start search';
@@ -4748,8 +5075,8 @@ export function initApp() {
     modal.appendChild(footer);
     ov.appendChild(modal);
     document.body.appendChild(ov);
-    ov.addEventListener('click', function(e) { if(e.target===ov){ _lmSt.origin=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); } });
-    modal.querySelector('#_ef-lm-x').addEventListener('click', function(){ _lmSt.origin=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); });
+    ov.addEventListener('click', function(e) { if(e.target===ov){ _lmSt.origin=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; _lmSt.rcScale=0; _lmSt.rcTx=0; _lmSt.rcTy=0; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); } });
+    modal.querySelector('#_ef-lm-x').addEventListener('click', function(){ _lmSt.origin=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; _lmSt.rcScale=0; _lmSt.rcTx=0; _lmSt.rcTy=0; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); });
   }
 
   function renderDetail(routeId) {
@@ -5385,6 +5712,29 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '11 de agosto, 3:08pm',
+          items: [
+            'El modal "Destination opportunities" tiene ahora altura fija (88vh) en lugar de max-height',
+            'El título del panel de rutas siempre muestra "Route connections from [Ciudad]" — eliminado el fallback a "Available routes"',
+            'Eliminado el subtítulo debajo del encabezado del panel de rutas',
+            'Tarjetas de rutas activas rediseñadas: viabilidad coloreada (verde ≥75%, amarillo <75%), separadores |, nombres abreviados para rutas con 4+ ciudades',
+            'El score de cada ruta siempre es entero (sin decimales) y aparece alineado a la derecha en todas las tarjetas activas y descartadas',
+            'Los días se removieron de las tarjetas — ahora aparecen solo en la barra inferior como "Days on route" en formato rango (ej: 2–3 days)',
+            'Tarjetas de rutas descartadas rediseñadas: score a la derecha, tag "Discarded" en la línea meta',
+            'El encabezado de la sección de rutas descartadas es ahora más visible con fondo rojo tenue y borde superior rojo',
+            'Corregido el ícono chevron del acordeón de rutas descartadas — era invisible por usar sintaxis de path dentro de <polyline>; ahora usa <path> con comandos SVG válidos',
+            'Los nombres de ciudades en el grafo incluyen código de estado: "Fresno, CA" (antes: "Fresno")',
+            'Numeración de nodos cambiada a 1-based (nodo 1, 2, 3… — antes empezaba en 0)',
+            'El nodo de posición actual del truck (Unbooked) muestra ahora un anillo verde (fill transparente + stroke verde)',
+            'Ambos extremos de una carga Dispatched o In Transit muestran el mismo anillo verde de posición actual',
+            'El nivel de zoom y posición del grafo se conservan al cambiar entre rutas en la misma sesión — solo se resetean al cerrar el modal',
+            'Corregido el parpadeo visual al cambiar entre rutas — el restore de zoom ahora es sincrónico',
+            'La barra inferior tiene sección izquierda con fondo semitransparente, divider alineado con el borde del panel de rutas, y sección derecha de 300px fijos',
+            'El botón "Start search" quedó alineado a la derecha dentro de su sección',
+            'Eliminados los tags "ELD", "Auto" y "From loads" del formulario de creación de ruta (campos Origin, Driver y Trailer)',
+          ]
+        },
         {
           date: '10 de agosto, 1:11pm',
           items: [
