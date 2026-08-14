@@ -2744,8 +2744,8 @@ export function initApp() {
           el('option', { value: 'mile' }, ['Per mile'])
         ])
       ]),
-      row('Income', el('span', { style: { fontSize: '18px', fontWeight: '900' } }, [pnlFmt(pnl.inc)])),
-      row('Cost', el('span', { style: { fontSize: '18px', fontWeight: '900', color: '#8B939B' } }, [pnlFmt(pnl.cst)])),
+      row(el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#27A767' } }, ['Income']), el('span', { style: { fontSize: '18px', fontWeight: '900' } }, [pnlFmt(pnl.inc)])),
+      row(el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#EB4343' } }, ['Cost']), el('span', { style: { fontSize: '18px', fontWeight: '900', color: '#8B939B' } }, [pnlFmt(pnl.cst)])),
       divider(),
       profitRow
     ]);
@@ -5703,7 +5703,7 @@ export function initApp() {
                 // Departed
                 '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px">' +
                   '<span style="font:400 11px Nunito,system-ui;color:rgba(255,255,255,.4)">Departed</span>' +
-                  '<span style="font:600 11px \'JetBrains Mono\',monospace;color:rgba(255,255,255,.75)">'+_ltt.pickup+' · '+_depTime+'</span>' +
+                  '<span style="font:600 11px \'JetBrains Mono\',monospace;color:rgba(255,255,255,.75)">'+_ltt.pickup.replace(/\/\d{4}$/,'')+' · '+_depTime+'</span>' +
                 '</div>' +
                 // Progress row
                 '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
@@ -5723,7 +5723,7 @@ export function initApp() {
                 '<div style="display:flex;justify-content:space-between;align-items:center">' +
                   '<div>' +
                     '<div style="font:500 9px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:3px">Estimated ETA</div>' +
-                    '<div style="font:800 14px \'JetBrains Mono\',monospace;color:#fbbf24">'+_ltt.delivery+' · '+(_ltt.eta||'--')+'</div>' +
+                    '<div style="font:800 14px \'JetBrains Mono\',monospace;color:#FFFFFF">'+_ltt.delivery.replace(/\/\d{4}$/,'')+' · '+(_ltt.eta||'--')+'</div>' +
                   '</div>' +
                   '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">' +
                     '<span style="font:500 9px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:'+(_isLate?'rgba(248,113,113,.6)':'rgba(39,167,103,.7)')+'">'+(_isLate?'Delay':'Status')+'</span>' +
@@ -5820,6 +5820,13 @@ export function initApp() {
       el('div', { style: { position: 'absolute', left: '14px', top: '12px', display: 'flex', gap: '8px' } }, [
         el('div', { style: { padding: '5px 11px', borderRadius: '999px', background: 'rgba(11,19,27,.72)', border: '1px solid rgba(255,255,255,.1)', fontSize: '11px', fontWeight: '700' } }, ['View ⌄']),
         el('div', { style: { padding: '5px 11px', borderRadius: '999px', background: 'rgba(11,19,27,.72)', border: '1px solid rgba(255,255,255,.1)', fontSize: '11px', fontWeight: '700', color: '#27A767' } }, ['Open'])
+      ]),
+      el('div', { style: { position: 'absolute', right: '14px', top: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 4px 4px 10px', borderRadius: '999px', background: 'rgba(11,19,27,.72)', border: '1px solid rgba(255,255,255,.1)' } }, [
+        el('div', { style: { fontSize: '11px', fontWeight: '700', color: '#C9CED2', display: 'flex', alignItems: 'center', gap: '5px' } }, [
+          el('svg', { style: { width: '12px', height: '12px', flex: 'none' }, html: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#8B939B" stroke-width="1.3"/><path d="M8 4.5V8l2.5 2" stroke="#8B939B" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+          'Assign Unit'
+        ]),
+        el('div', { style: { padding: '5px 11px', borderRadius: '999px', background: '#7BCBCB', color: '#0B131B', fontSize: '11px', fontWeight: '800', cursor: 'pointer' } }, ['Sync'])
       ]),
       el('div', { style: { position: 'absolute', left: '14px', right: '14px', top: '52px', display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(11,19,27,.85)', border: '1px solid rgba(255,255,255,.1)', fontSize: '11.5px', lineHeight: '1.5', color: '#C9CED2' } }, [
         iconEl('warn', { flex: 'none', marginTop: '1px' }),
