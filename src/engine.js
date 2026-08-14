@@ -2723,13 +2723,13 @@ export function initApp() {
     }
     function divider() { return el('div', { style: { height: '1px', background: 'rgba(255,255,255,.08)' } }); }
 
-    const profitLabel = el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#8B939B' } }, [
+    const profitLabel = el('span', { style: { fontSize: '12px', fontWeight: '700', color: '#FBFBFB' } }, [
       'Profit ',
-      el('span', { style: { color: '#6B7373', fontSize: '11px', fontWeight: '400' } }, [profitPctDisplay + '%'])
+      el('span', { style: { color: '#6B7373', fontSize: '11px', fontWeight: '400' } }, ['(' + profitPctDisplay + '%)'])
     ]);
     const profitRow = el('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' } }, [
       profitLabel,
-      el('span', { style: { fontSize: '20px', fontWeight: '900', color: '#3FC281' } }, [pnlFmt(pnl.pft)])
+      el('span', { style: { fontSize: '20px', fontWeight: '900', color: '#FBFBFB' } }, [pnlFmt(pnl.pft)])
     ]);
 
     const pnlCard = el('div', { style: { flex: '1.15', background: '#131F27', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' } }, [
@@ -3512,31 +3512,83 @@ export function initApp() {
     var dest = destCity || 'Dallas, TX';
     var F = 'Nunito,system-ui';
 
-    // Full loads dataset — first 2 are lane-specific, rest are system-wide
+    // Get route equipment type for pre-seeded filter
+    var _rte = (ROUTES||[]).find(function(r){ return r.id===rId; }) || {};
+    var _routeEqType = _rte.equipType || _rte.equipmentType || 'Van';
+
+    function _warnToast(msg) {
+      var _wid = '_ef-ll-warn';
+      var ex = document.getElementById(_wid); if (ex) ex.remove();
+      var t = document.createElement('div');
+      t.id = _wid;
+      t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:10001;background:#131F27;border:1px solid rgba(123,203,203,.25);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,.75);min-width:340px;max-width:480px';
+      t.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" style="flex:none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+        '<span style="flex:1;font:400 12px Nunito,system-ui;color:#DDE3E9">' + msg + '</span>' +
+        '<button onclick="var e=document.getElementById(\'_ef-ll-warn\');if(e)e.remove()" style="background:none;border:none;color:#6B7373;cursor:pointer;font-size:17px;padding:0;line-height:1;flex:none">×</button>';
+      document.body.appendChild(t);
+      setTimeout(function(){ var e=document.getElementById(_wid); if(e) e.remove(); }, 4000);
+    }
+
+    // All loads – single income value (actual rate), route: null for all ("No route")
+    // laneLoad 0: WITH driver/truck/trailer · laneLoad 1: unassigned
     var ALL_LOADS = [
-      { id:'ef-cc80f47', origin:originCity, dest:dest,              miles:245, incMin:539,  incMax:833,  rpm:[2.20,3.40], customer:'FreightQuote',    pickup:'08/01/2026', delivery:'08/02/2026', status:'Unbooked',   equipment:'Van 53',    driver:'—', truck:'—',    laneLoad:true },
-      { id:'ef-38a5c6e', origin:originCity, dest:dest,              miles:258, incMin:568,  incMax:878,  rpm:[2.20,3.40], customer:'Echo Global',     pickup:'08/02/2026', delivery:'08/03/2026', status:'Unbooked',   equipment:'Van 53',    driver:'—', truck:'—',    laneLoad:true },
-      { id:'ef-ab12c3d', origin:'Phoenix, AZ',       dest:'Los Angeles, CA',  miles:372, incMin:744,  incMax:1116, rpm:[2.00,3.00], customer:'C.H. Robinson',   pickup:'08/03/2026', delivery:'08/04/2026', status:'Booked',     equipment:'Reefer 53', driver:'—',           truck:'—',    laneLoad:false },
-      { id:'ef-ef45g6h', origin:'Denver, CO',         dest:'Salt Lake City, UT',miles:525, incMin:1050, incMax:1575, rpm:[2.00,3.00], customer:'Echo Global',     pickup:'08/04/2026', delivery:'08/06/2026', status:'In Transit', equipment:'Flatbed 48',driver:'James Wilson', truck:'#3201',laneLoad:false },
-      { id:'ef-ij78k9l', origin:'Chicago, IL',        dest:'Detroit, MI',      miles:281, incMin:562,  incMax:843,  rpm:[2.00,3.00], customer:'Coyote Logistics',pickup:'08/05/2026', delivery:'08/05/2026', status:'Delivered',  equipment:'Van 53',    driver:'Sarah Chen',  truck:'#5507',laneLoad:false },
-      { id:'ef-mn01o2p', origin:'Houston, TX',        dest:'Dallas, TX',       miles:240, incMin:480,  incMax:720,  rpm:[2.00,3.00], customer:'FreightQuote',    pickup:'08/06/2026', delivery:'08/06/2026', status:'Offer',      equipment:'Reefer 48', driver:'—',           truck:'—',    laneLoad:false },
-      { id:'ef-qr34s5t', origin:'Seattle, WA',        dest:'Portland, OR',     miles:174, incMin:348,  incMax:522,  rpm:[2.00,3.00], customer:'Transplace',      pickup:'08/07/2026', delivery:'08/07/2026', status:'Assigned',   equipment:'Van 53',    driver:'Carlos Rivera',truck:'#2098',laneLoad:false },
-      { id:'ef-uv56w7x', origin:'Miami, FL',          dest:'Atlanta, GA',      miles:662, incMin:1324, incMax:1986, rpm:[2.00,3.00], customer:'Echo Global',     pickup:'08/08/2026', delivery:'08/09/2026', status:'Booked',     equipment:'Reefer 53', driver:'—',           truck:'—',    laneLoad:false },
+      { id:'ef-cc80f47', origin:originCity,    dest:dest,                 miles:245, income:686,  customer:'FreightQuote',    pickup:'08/01/2026', pickupTime:'08:00 AM', delivery:'08/02/2026', deliveryTime:'05:00 PM', onTime:'On time', status:'Unbooked',   route:null, equipmentType:'Van',     trailer:'TRL-9203', stops:1, driver:'Marcus Reed',   truck:'TRK-4821', laneLoad:true  },
+      { id:'ef-38a5c6e', origin:originCity,    dest:dest,                 miles:258, income:723,  customer:'Echo Global',     pickup:'08/02/2026', pickupTime:'09:00 AM', delivery:'08/03/2026', deliveryTime:'04:00 PM', onTime:'On time', status:'Unbooked',   route:'R-2601', equipmentType:'Van',     trailer:'—',        stops:1, driver:'—',            truck:'—',        laneLoad:true  },
+      { id:'ef-ab12c3d', origin:'Phoenix, AZ', dest:'Los Angeles, CA',    miles:372, income:930,  customer:'C.H. Robinson',   pickup:'08/03/2026', pickupTime:'07:00 AM', delivery:'08/04/2026', deliveryTime:'06:00 PM', onTime:'On time', status:'Booked',     route:null, equipmentType:'Reefer',  trailer:'—',        stops:2, driver:'—',            truck:'—',        laneLoad:false },
+      { id:'ef-ef45g6h', origin:'Denver, CO',  dest:'Salt Lake City, UT', miles:525, income:1260, customer:'Echo Global',     pickup:'08/04/2026', pickupTime:'06:00 AM', delivery:'08/06/2026', deliveryTime:'03:00 PM', onTime:'On time', status:'In Transit', route:null, equipmentType:'Flatbed', trailer:'TRL-7714', stops:3, driver:'James Wilson', truck:'TRK-3201', laneLoad:false },
+      { id:'ef-ij78k9l', origin:'Chicago, IL', dest:'Detroit, MI',        miles:281, income:703,  customer:'Coyote Logistics',pickup:'08/05/2026', pickupTime:'10:00 AM', delivery:'08/05/2026', deliveryTime:'07:00 PM', onTime:'On time', status:'Delivered',  route:null, equipmentType:'Van',     trailer:'TRL-2231', stops:1, driver:'Sarah Chen',   truck:'TRK-5507', laneLoad:false },
+      { id:'ef-mn01o2p', origin:'Houston, TX', dest:'Dallas, TX',         miles:240, income:600,  customer:'FreightQuote',    pickup:'08/06/2026', pickupTime:'08:00 AM', delivery:'08/06/2026', deliveryTime:'04:00 PM', onTime:'On time', status:'Offer',      route:null, equipmentType:'Reefer',  trailer:'—',        stops:1, driver:'—',            truck:'—',        laneLoad:false },
+      { id:'ef-qr34s5t', origin:'Seattle, WA', dest:'Portland, OR',       miles:174, income:435,  customer:'Transplace',      pickup:'08/07/2026', pickupTime:'07:00 AM', delivery:'08/07/2026', deliveryTime:'02:00 PM', onTime:'Late 1h', status:'Assigned',   route:null, equipmentType:'Van',     trailer:'TRL-5530', stops:1, driver:'Carlos Rivera',truck:'TRK-2098', laneLoad:false },
+      { id:'ef-uv56w7x', origin:'Miami, FL',   dest:'Atlanta, GA',        miles:662, income:1655, customer:'Echo Global',     pickup:'08/08/2026', pickupTime:'06:00 AM', delivery:'08/09/2026', deliveryTime:'08:00 PM', onTime:'On time', status:'Booked',     route:null, equipmentType:'Reefer',  trailer:'—',        stops:2, driver:'—',            truck:'—',        laneLoad:false },
     ];
 
     var _statusTab = 'all';
     var _searchVal = '';
     var _llFilters = [
-      { key:'origin', label:'Origin contains (case insensitive)', value: originCity.split(',')[0].trim().toLowerCase() },
-      { key:'dest',   label:'Dest contains (case insensitive)',   value: dest.split(',')[0].trim().toLowerCase() },
+      { key:'origin',        label:'Origin',         value: originCity.split(',')[0].trim(), operator:'contains' },
+      { key:'dest',          label:'Destination',    value: dest.split(',')[0].trim(),       operator:'contains' },
+      { key:'route',         label:'Route',          value: 'No route',                     operator:'is' },
+      { key:'equipmentType', label:'Equipment type', value: _routeEqType,                   operator:'is' },
     ];
+
+    function _getActiveCols() {
+      return state.columnOrder
+        .filter(function(k){ return !state.hiddenCols.has(k); })
+        .map(function(k){ return LOAD_COLS_BY_KEY[k]; })
+        .filter(Boolean);
+    }
+
+    function _getOperators(key) {
+      if (key === 'route') return [{value:'is',label:'is'},{value:'is not',label:'is not'}];
+      if (key === 'equipmentType' || key === 'status' || key === 'onTime') return [{value:'is',label:'is'},{value:'is not',label:'is not'}];
+      return [{value:'contains',label:'contains'},{value:'is',label:'is'},{value:'is not',label:'is not'},{value:'starts with',label:'starts with'}];
+    }
+
+    function _matchFilter(f, ld) {
+      if (!f.value) return true;
+      var op = f.operator || 'contains';
+      if (f.key === 'route') {
+        var isNoRoute = f.value.toLowerCase().trim() === 'no route';
+        var ldNull = ld.route === null;
+        if (op === 'is')     return isNoRoute ? ldNull : (ld.route||'').toLowerCase() === f.value.toLowerCase();
+        if (op === 'is not') return isNoRoute ? !ldNull : (ld.route||'').toLowerCase() !== f.value.toLowerCase();
+        return true;
+      }
+      var rawMap = {origin:ld.origin,dest:ld.dest,customer:ld.customer,id:ld.id,equipmentType:ld.equipmentType||'',status:ld.status,onTime:ld.onTime,driver:ld.driver,truck:ld.truck,trailer:ld.trailer};
+      var fv = (rawMap[f.key]||'').toLowerCase();
+      var fq = f.value.toLowerCase();
+      if (op === 'contains')    return fv.indexOf(fq) >= 0;
+      if (op === 'is')          return fv === fq;
+      if (op === 'is not')      return fv !== fq;
+      if (op === 'starts with') return fv.startsWith(fq);
+      return true;
+    }
 
     function _getVisible() {
       return ALL_LOADS.filter(function(ld) {
-        var fOrig = _llFilters.find(function(f){return f.key==='origin';});
-        var fDest = _llFilters.find(function(f){return f.key==='dest';});
-        if (fOrig && fOrig.value && ld.origin.toLowerCase().indexOf(fOrig.value.toLowerCase()) < 0) return false;
-        if (fDest && fDest.value && ld.dest.toLowerCase().indexOf(fDest.value.toLowerCase()) < 0) return false;
+        for (var fi = 0; fi < _llFilters.length; fi++) {
+          if (!_matchFilter(_llFilters[fi], ld)) return false;
+        }
         if (_statusTab !== 'all') {
           var tabMap = {'on-road':'In Transit','offer':'Offer','booked':'Booked','assigned':'Assigned','in-transit':'In Transit','delivered':'Delivered','invoiced':'Invoiced','paid':'Paid','canceled':'Canceled','unbooked':'Unbooked'};
           if (tabMap[_statusTab] && ld.status !== tabMap[_statusTab]) return false;
@@ -3549,40 +3601,116 @@ export function initApp() {
       });
     }
 
+    // Closing the modal marks lane loads as "seen" → removes yellow dot automatically
+    function _markSeen() {
+      ALL_LOADS.forEach(function(ld, idx) { if (ld.laneLoad) _lbIgnored.add(_llBaseKey+'_load'+idx); });
+      _lbIgnored.add(_llBaseKey);
+      var _ab = document.getElementById('_ef-lb-add');
+      if (_ab) { var _d = _ab.querySelector('span[style*="FBB303"]'); if (_d) _d.remove(); }
+    }
+
+    function _onTimeFg(ot) {
+      return ot==='On time' ? '#3FC281' : (ot && ot.startsWith('Late') ? '#EB4343' : '#6B7373');
+    }
+
+    function _miniAvatar(name) {
+      if (!name || name==='—') return '<span style="color:#4A5A6A;font:400 11.5px '+F+'">—</span>';
+      var colors=['#7BCBCB','#3FC281','#FBB303','#B48CE0','#EB8A6B'];
+      var ci = name.charCodeAt(0) % colors.length;
+      var init = name.split(' ').map(function(p){return p[0]||'';}).join('').slice(0,2).toUpperCase();
+      return '<span style="display:inline-flex;align-items:center;gap:5px">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:'+colors[ci]+';font:800 8px '+F+';color:#0D141B;flex:none">'+init+'</span>'+
+        '<span style="color:#C9CED2;font:400 11.5px '+F+'">'+name.split(' ')[0]+'</span>'+
+        '</span>';
+    }
+
     var ov = document.createElement('div'); ov.id = '_ef-ll';
     ov.style.cssText = 'position:fixed;inset:0;z-index:9010;background:rgba(6,12,17,.6);display:flex;align-items:center;justify-content:center';
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(255,255,255,.1);border-radius:14px;width:1100px;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 64px rgba(0,0,0,.9)';
+    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(255,255,255,.1);border-radius:14px;width:min(96vw,1360px);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 64px rgba(0,0,0,.9)';
 
     // ── Top bar ──
     var topBar = document.createElement('div');
-    topBar.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.07);flex:none;background:#0D141B';
+    topBar.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.07);flex:none;background:#0D141B';
+
     var titleWrap = document.createElement('div');
     titleWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0';
-    titleWrap.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#27A767" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h3"></path><circle cx="7.5" cy="17.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle></svg><span style="font:800 15px '+F+';color:#FBFBFB">My Loads</span>';
-    // Search
+    titleWrap.innerHTML = ICON.truck + '<span style="font:800 15px '+F+';color:#FBFBFB">My Loads</span>';
+
     var srchWrap = document.createElement('div');
-    srchWrap.style.cssText = 'flex:1;display:flex;align-items:center;gap:8px;background:#101B23;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:0 12px;height:34px';
-    srchWrap.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7373" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>';
+    srchWrap.style.cssText = 'flex:1;display:flex;align-items:center;gap:8px;background:#101B23;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:0 12px;height:34px;min-width:0';
+    srchWrap.innerHTML = ICON.search;
     var srchInp = document.createElement('input');
     srchInp.placeholder = 'Search loads, lanes, customers…';
     srchInp.style.cssText = 'flex:1;background:none;border:none;outline:none;font:400 12px '+F+';color:#DDE3E9;min-width:0';
-    srchInp.style.setProperty('--placeholder-color','#6B7373');
     srchWrap.appendChild(srchInp);
-    // Results badge
+
     var resultsBadge = document.createElement('div');
     resultsBadge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:0 12px;height:34px;border-radius:8px;background:#101B23;border:1px solid rgba(255,255,255,.1);font:700 12px '+F+';color:#8B939B;flex-shrink:0;white-space:nowrap';
-    resultsBadge.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B7373" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span id="_ef-ll-rcount">Results: 2</span>';
-    // Refresh button
+    resultsBadge.innerHTML = ICON.search + '<span id="_ef-ll-rcount">Results: 0</span>';
+
     var syncBtn = document.createElement('div');
     syncBtn.style.cssText = 'display:flex;align-items:center;gap:7px;padding:0 12px;height:34px;border-radius:999px;border:1px solid rgba(255,255,255,.1);cursor:pointer;flex-shrink:0';
     syncBtn.innerHTML = ICON.refresh + '<div style="display:flex;flex-direction:column;gap:2px"><span style="font:800 12px '+F+';color:#FBFBFB;line-height:1">Refresh</span><span style="font:400 10px '+F+';color:#6B7373;line-height:1">DataTruck · Updated 3 min ago</span></div>';
-    // Close
+
+    // Changelog history button
+    var changelogBtn = document.createElement('div');
+    changelogBtn.title = 'Changelog history';
+    changelogBtn.style.cssText = 'width:34px;height:34px;display:grid;place-items:center;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer;color:#8B939B;flex-shrink:0;transition:background .12s,border-color .12s';
+    changelogBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+    changelogBtn.addEventListener('mouseenter', function(){ changelogBtn.style.background='rgba(255,255,255,.06)'; changelogBtn.style.borderColor='rgba(255,255,255,.22)'; });
+    changelogBtn.addEventListener('mouseleave', function(){ changelogBtn.style.background=''; changelogBtn.style.borderColor='rgba(255,255,255,.1)'; });
+
+    // Columns button — reads/writes same state as MyLoads view
+    var _colsOpen = false, _colsPanelEl = null, _colsOutsideH = null;
+    var colsBtnWrap = document.createElement('div');
+    colsBtnWrap.style.cssText = 'position:relative;flex-shrink:0';
+    var colsBtn = document.createElement('div');
+    colsBtn.style.cssText = 'display:flex;align-items:center;gap:7px;padding:0 12px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer;font:700 12px '+F+';color:#E3E6E8;white-space:nowrap;user-select:none';
+    colsBtn.innerHTML = ICON.columns+' Columns '+ICON.chevDown;
+    colsBtnWrap.appendChild(colsBtn);
+
+    function _buildColsPanel() {
+      if (_colsPanelEl) { _colsPanelEl.remove(); _colsPanelEl=null; }
+      if (!_colsOpen) { if (_colsOutsideH){ document.removeEventListener('click',_colsOutsideH,true); _colsOutsideH=null; } return; }
+      var panel = document.createElement('div');
+      panel.style.cssText = 'position:absolute;top:38px;right:0;z-index:30;background:#17242E;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);width:230px';
+      panel.addEventListener('click', function(e){ e.stopPropagation(); });
+      var hint = document.createElement('div'); hint.style.cssText='font:700 11px '+F+';color:#6B7373;padding:2px 8px 8px'; hint.textContent='Drag to reorder · check to show/hide';
+      panel.appendChild(hint);
+      var list = document.createElement('div'); list.style.cssText='display:flex;flex-direction:column;gap:2px;max-height:340px;overflow-y:auto';
+      var _dKey = null;
+      state.columnOrder.forEach(function(key) {
+        var col = LOAD_COLS_BY_KEY[key]; if (!col) return;
+        var hidden = state.hiddenCols.has(key);
+        var r = document.createElement('div'); r.draggable=true;
+        r.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:grab;opacity:'+(hidden?'.5':'1');
+        var gp=document.createElement('span'); gp.style.cssText='color:#6B7373;display:flex;flex:none'; gp.innerHTML=ICON.grip;
+        var cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!hidden; cb.style.cssText='flex:none;cursor:pointer';
+        (function(k){ cb.addEventListener('change', function(){ var hc=new Set(state.hiddenCols); if(hc.has(k)) hc.delete(k); else hc.add(k); setState({hiddenCols:hc}); _rebuildTable(); _buildColsPanel(); }); })(key);
+        var lb=document.createElement('span'); lb.style.cssText='font:700 12.5px '+F; lb.textContent=col.label;
+        r.appendChild(gp); r.appendChild(cb); r.appendChild(lb);
+        (function(k){
+          r.addEventListener('dragstart',function(e){ _dKey=k; e.dataTransfer.effectAllowed='move'; });
+          r.addEventListener('dragover', function(e){ e.preventDefault(); });
+          r.addEventListener('drop',    function(e){ e.preventDefault(); if(!_dKey||_dKey===k)return; var order=state.columnOrder.slice(),from=order.indexOf(_dKey),to=order.indexOf(k); order.splice(from,1);order.splice(to,0,_dKey); _dKey=null; setState({columnOrder:order}); _rebuildTable(); _buildColsPanel(); });
+        })(key);
+        list.appendChild(r);
+      });
+      panel.appendChild(list); _colsPanelEl=panel; colsBtnWrap.appendChild(panel);
+      if (_colsOutsideH) document.removeEventListener('click',_colsOutsideH,true);
+      _colsOutsideH = function(e){ if (!colsBtnWrap.contains(e.target)){ _colsOpen=false; _buildColsPanel(); } };
+      setTimeout(function(){ document.addEventListener('click',_colsOutsideH,true); }, 0);
+    }
+    colsBtn.addEventListener('click', function(e){ e.stopPropagation(); _colsOpen=!_colsOpen; _buildColsPanel(); });
+
     var closeX = document.createElement('button');
     closeX.style.cssText = 'width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:#8B939B;border:1px solid rgba(255,255,255,.1);background:none;font-size:14px;flex-shrink:0';
     closeX.textContent = '✕';
-    closeX.addEventListener('click', function(){ov.remove();});
-    topBar.appendChild(titleWrap); topBar.appendChild(srchWrap); topBar.appendChild(resultsBadge); topBar.appendChild(syncBtn); topBar.appendChild(closeX);
+    closeX.addEventListener('click', function(){ _markSeen(); ov.remove(); });
+
+    topBar.appendChild(titleWrap); topBar.appendChild(srchWrap); topBar.appendChild(resultsBadge);
+    topBar.appendChild(syncBtn); topBar.appendChild(colsBtnWrap); topBar.appendChild(closeX);
     modal.appendChild(topBar);
 
     // ── Status tabs ──
@@ -3625,48 +3753,118 @@ export function initApp() {
 
     function _buildFilterChips() {
       filterBar.querySelectorAll('._ef-ll-chip,._ef-ll-addbtn').forEach(function(c){c.remove();});
-      _llFilters.forEach(function(f,fi) {
+      _llFilters.forEach(function(f, fi) {
         if (!f.value) return;
         var chip = document.createElement('div'); chip.className = '_ef-ll-chip';
-        chip.style.cssText = 'display:inline-flex;align-items:center;gap:0;border-radius:6px;background:rgba(39,167,103,.08);border:1px solid rgba(39,167,103,.25);font:600 11px '+F+';color:#3FC281;overflow:hidden;cursor:pointer';
+        chip.style.cssText = 'position:relative;display:inline-flex;align-items:center;gap:0;border-radius:6px;background:rgba(39,167,103,.08);border:1px solid rgba(39,167,103,.25);font:600 11px '+F+';color:#3FC281;cursor:pointer;flex-shrink:0';
+
         var lbl = document.createElement('span');
-        lbl.style.cssText = 'padding:4px 8px 4px 10px;white-space:nowrap';
-        lbl.textContent = f.label + ': "' + f.value + '"';
-        lbl.title = 'Click to edit';
-        lbl.addEventListener('click', function(e) {
-          e.stopPropagation();
-          var inp = document.createElement('input');
-          inp.value = f.value;
-          inp.style.cssText = 'background:transparent;border:none;outline:none;font:600 11px '+F+';color:#3FC281;width:'+(Math.max(f.value.length*7+40, 120))+'px;padding:4px 8px 4px 10px';
-          chip.replaceChild(inp, lbl);
-          inp.focus(); inp.select();
-          function _commit(){ var v=inp.value.trim(); _llFilters[fi].value=v; _llPage=1; _buildFilterChips(); _rebuildTable(); }
-          inp.addEventListener('blur', _commit);
-          inp.addEventListener('keydown', function(ev){ if(ev.key==='Enter'){ev.preventDefault();_commit();} if(ev.key==='Escape'){_llFilters[fi].value=f.value;_buildFilterChips();} });
-        });
+        lbl.style.cssText = 'padding:4px 8px 4px 10px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis';
+        lbl.textContent = f.label + ' ' + (f.operator||'contains') + ' "' + f.value + '"';
+
         var xBtn = document.createElement('span');
         xBtn.style.cssText = 'padding:0 8px;height:100%;display:flex;align-items:center;color:#6B7373;font:700 13px system-ui;cursor:pointer;border-left:1px solid rgba(39,167,103,.15)';
         xBtn.textContent = '×';
-        xBtn.addEventListener('click', function(e){ e.stopPropagation(); _llFilters[fi].value=''; _llPage=1; _buildFilterChips(); _rebuildTable(); });
+        xBtn.addEventListener('click', function(e){
+          e.stopPropagation();
+          _llFilters[fi].value = ''; _llPage = 1; _buildFilterChips(); _rebuildTable();
+        });
+
         chip.appendChild(lbl); chip.appendChild(xBtn);
+
+        // ── Popover ──
+        (function(filter, idx) {
+          var _popEl = null;
+
+          function _closeAll() {
+            filterBar.querySelectorAll('._ef-ll-pop').forEach(function(p){ p.remove(); });
+            _popEl = null;
+          }
+
+          function _openPop(e) {
+            e.stopPropagation();
+            if (_popEl) { _closeAll(); return; }
+            _closeAll();
+
+            _popEl = document.createElement('div');
+            _popEl.className = '_ef-ll-pop';
+            _popEl.style.cssText = 'position:absolute;top:calc(100% + 6px);left:0;z-index:600;background:#1A2A35;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:14px 16px;min-width:260px;box-shadow:0 10px 32px rgba(0,0,0,.65);font-family:'+F;
+            _popEl.addEventListener('click', function(e2){ e2.stopPropagation(); });
+
+            // Header
+            var hdr = document.createElement('div');
+            hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px';
+            var hdrLbl = document.createElement('div');
+            hdrLbl.style.cssText = 'font:800 13px '+F+';color:#FBFBFB';
+            hdrLbl.textContent = filter.label;
+            var applyBtn = document.createElement('div');
+            applyBtn.style.cssText = 'font:800 12px '+F+';color:#27A767;cursor:pointer';
+            applyBtn.textContent = 'Apply';
+            hdr.appendChild(hdrLbl); hdr.appendChild(applyBtn);
+            _popEl.appendChild(hdr);
+
+            // Operator select
+            var ops = _getOperators(filter.key);
+            var opSel = document.createElement('select');
+            opSel.style.cssText = 'width:100%;background:#0E1820;border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#FBFBFB;font:600 12px '+F+';padding:8px 10px;margin-bottom:8px;cursor:pointer;box-sizing:border-box;outline:none';
+            ops.forEach(function(op){
+              var opt = document.createElement('option');
+              opt.value = op.value; opt.textContent = op.label;
+              if (op.value === (filter.operator || ops[0].value)) opt.selected = true;
+              opSel.appendChild(opt);
+            });
+            _popEl.appendChild(opSel);
+
+            // Value input
+            var valInp = document.createElement('input');
+            valInp.value = filter.value;
+            valInp.style.cssText = 'width:100%;background:#0E1820;border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#FBFBFB;font:600 12px '+F+';padding:8px 10px;box-sizing:border-box;outline:none';
+            valInp.placeholder = 'Filter value…';
+            _popEl.appendChild(valInp);
+
+            // Remove filter
+            var removeBtn = document.createElement('div');
+            removeBtn.style.cssText = 'font:700 11px '+F+';color:#EB4343;cursor:pointer;margin-top:10px;text-align:center';
+            removeBtn.textContent = 'Remove filter';
+            removeBtn.addEventListener('click', function(){
+              _llFilters[idx].value = ''; _llPage = 1; _closeAll(); _buildFilterChips(); _rebuildTable();
+            });
+            _popEl.appendChild(removeBtn);
+
+            function _apply() {
+              _llFilters[idx].operator = opSel.value;
+              _llFilters[idx].value = valInp.value.trim();
+              _llPage = 1; _closeAll(); _buildFilterChips(); _rebuildTable();
+            }
+            applyBtn.addEventListener('click', _apply);
+            valInp.addEventListener('keydown', function(ev){ if (ev.key === 'Enter') _apply(); });
+
+            chip.appendChild(_popEl);
+            setTimeout(function(){ valInp.focus(); valInp.select(); }, 0);
+
+            // Outside click closes
+            function _outside(e2) {
+              if (!chip.contains(e2.target)) { _closeAll(); document.removeEventListener('click', _outside, true); }
+            }
+            setTimeout(function(){ document.addEventListener('click', _outside, true); }, 0);
+          }
+
+          lbl.addEventListener('click', _openPop);
+          chip.addEventListener('click', function(e){ if (e.target === chip) _openPop(e); });
+        })(f, fi);
+
         filterBar.appendChild(chip);
       });
     }
     _buildFilterChips();
     modal.appendChild(filterBar);
 
-    // ── Table ──
+    // ── Table (horizontally scrollable, dynamic columns) ──
     var tblWrap = document.createElement('div');
-    tblWrap.style.cssText = 'overflow:auto;flex:1';
-    var tblCols = '140px 100px 100px 1fr 1fr 80px 100px 100px 150px';
-    var tblHead = document.createElement('div');
-    tblHead.style.cssText = 'display:grid;grid-template-columns:'+tblCols+';padding:0 20px;background:#131F27;border-bottom:1px solid rgba(255,255,255,.07);font:700 11px '+F+';color:#6B7373;position:sticky;top:0;z-index:2;min-width:860px';
-    var _hp = 'padding:9px 6px;display:flex;align-items:center;gap:3px;white-space:nowrap';
-    tblHead.innerHTML = '<div style="'+_hp+'">Load ID ↕</div><div style="'+_hp+'">Status ↕</div><div style="'+_hp+'">Route ↕</div><div style="'+_hp+'">Origin ↕</div><div style="'+_hp+'">Dest ↕</div><div style="'+_hp+'">Distance ↕</div><div style="'+_hp+'">Pickup ↕</div><div style="'+_hp+'">Delivery ↕</div><div style="'+_hp+'">Income ↕</div>';
-    tblWrap.appendChild(tblHead);
-    var tblBody = document.createElement('div');
-    tblBody.style.cssText = 'min-width:860px';
-    tblWrap.appendChild(tblBody);
+    tblWrap.style.cssText = 'overflow:auto;flex:1'; // both-axis scroll
+    var tblInner = document.createElement('div');
+    tblInner.style.cssText = 'min-width:max-content;display:flex;flex-direction:column';
+    tblWrap.appendChild(tblInner);
     modal.appendChild(tblWrap);
 
     // ── Pagination footer ──
@@ -3725,143 +3923,103 @@ export function initApp() {
       return {c:'#8B939B',bg:'rgba(255,255,255,.05)',bd:'rgba(255,255,255,.12)'};
     }
 
-    // Check if all lane loads are ignored → remove dot from Add button
-    function _checkAllIgnored() {
-      var laneLoads = ALL_LOADS.filter(function(l){return l.laneLoad;});
-      var allIgn = laneLoads.every(function(ld, _li) {
-        var globalIdx = ALL_LOADS.indexOf(ld);
-        return _lbIgnored.has(_llBaseKey + '_load' + globalIdx);
-      });
-      if (allIgn) {
-        _lbIgnored.add(_llBaseKey);
-        var _ab = document.getElementById('_ef-lb-add');
-        if (_ab) { var _d = _ab.querySelector('span[style*="FBB303"]'); if (_d) _d.remove(); }
-      }
-    }
-
     function _rebuildTable() {
       var visible = _getVisible();
       var rcount = document.getElementById('_ef-ll-rcount');
       if (rcount) rcount.textContent = 'Results: ' + visible.length;
       _renderPagination(visible.length);
-      var startIdx = (_llPage - 1) * _llPerPage;
-      visible = visible.slice(startIdx, startIdx + _llPerPage);
-      tblBody.innerHTML = '';
-      if (!visible.length) {
-        var empty = document.createElement('div');
-        empty.style.cssText = 'text-align:center;padding:48px 20px;font:400 13px '+F+';color:#6B7373';
-        empty.innerHTML = '<div style="font-weight:700;margin-bottom:6px;font-size:14px">No results found for the selected filters.</div><div style="font-size:13px">Try adjusting or clearing your filters to see more results.</div>';
-        tblBody.appendChild(empty); return;
+      var pageLoads = visible.slice((_llPage-1)*_llPerPage, _llPage*_llPerPage);
+
+      var cols = _getActiveCols();
+      var gridTpl = cols.map(function(c){ return (typeof c.width==='number' ? c.width+'px' : c.width); }).join(' ') + ' 130px';
+
+      tblInner.innerHTML = '';
+
+      // Header
+      var tblHead = document.createElement('div');
+      tblHead.style.cssText = 'display:grid;grid-template-columns:'+gridTpl+';padding:0 20px;background:#131F27;border-bottom:1px solid rgba(255,255,255,.07);position:sticky;top:0;z-index:2';
+      var _hpS = 'padding:10px 8px 10px 0;font:800 11px '+F+';color:#6B7373;display:flex;align-items:center;gap:3px;white-space:nowrap;letter-spacing:.02em';
+      cols.forEach(function(c){
+        var h=document.createElement('div'); h.style.cssText=_hpS;
+        h.innerHTML = c.label + ' <span style="font-size:10px;opacity:.7">↕</span>';
+        tblHead.appendChild(h);
+      });
+      var actH=document.createElement('div'); actH.style.cssText=_hpS; tblHead.appendChild(actH);
+      tblInner.appendChild(tblHead);
+
+      if (!pageLoads.length) {
+        var empty=document.createElement('div');
+        empty.style.cssText='text-align:center;padding:48px 20px;font:400 13px '+F+';color:#6B7373';
+        empty.innerHTML='<div style="font-weight:700;margin-bottom:6px;font-size:14px">No results found for the selected filters.</div><div>Try adjusting or clearing your filters to see more results.</div>';
+        tblInner.appendChild(empty); return;
       }
-      visible.forEach(function(ld) {
-        var globalIdx = ALL_LOADS.indexOf(ld);
-        var _subKey = _llBaseKey + '_load' + globalIdx;
-        var _alreadyIgnored = _lbIgnored.has(_subKey);
+
+      pageLoads.forEach(function(ld) {
         var sc = _statusColor(ld.status);
-        var rMin = ld.rpm[0].toFixed(2), rMax = ld.rpm[1].toFixed(2);
-        var row = document.createElement('div');
-        row.style.cssText = 'display:grid;grid-template-columns:'+tblCols+';padding:0 20px;border-bottom:1px solid rgba(255,255,255,.05);align-items:center;transition:background .1s;cursor:default';
-        // Load ID (with yellow dot for lane-specific loads)
-        var idCell = document.createElement('div');
-        idCell.style.cssText = 'padding:12px 6px;display:flex;align-items:center;gap:6px';
-        if (ld.laneLoad && !_alreadyIgnored) {
-          var dot = document.createElement('span');
-          dot.className = '_ef-ll-dot-'+globalIdx;
-          dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:#FBB303;flex:none;box-shadow:0 0 4px rgba(251,179,3,.5)';
-          idCell.appendChild(dot);
+        var rpm = (ld.income / ld.miles).toFixed(2);
+
+        function _cell(html, extraStyle) {
+          var d=document.createElement('div');
+          d.style.cssText='padding:13px 8px 13px 0;'+(extraStyle||'');
+          d.innerHTML=html; return d;
         }
-        var idSpan = document.createElement('span');
-        idSpan.style.cssText = 'font:600 12px monospace;color:#7BCBCB';
-        idSpan.textContent = ld.id;
-        idCell.appendChild(idSpan);
-        row.appendChild(idCell);
-        // Status badge
-        var statusCell = document.createElement('div');
-        statusCell.style.cssText = 'padding:12px 6px';
-        statusCell.innerHTML = '<span style="font:700 10px '+F+';color:'+sc.c+';background:'+sc.bg+';border:1px solid '+sc.bd+';border-radius:4px;padding:2px 7px;white-space:nowrap">'+ld.status+'</span>';
-        row.appendChild(statusCell);
-        // Route (short)
-        var rtCell = document.createElement('div');
-        rtCell.style.cssText = 'padding:12px 6px;font:400 11px '+F+';color:#6B7373';
-        rtCell.textContent = '—';
-        row.appendChild(rtCell);
-        // Origin
-        var origCell = document.createElement('div');
-        origCell.style.cssText = 'padding:12px 6px;font:400 12px '+F+';color:#DDE3E9';
-        origCell.textContent = ld.origin;
-        row.appendChild(origCell);
-        // Dest
-        var destCell = document.createElement('div');
-        destCell.style.cssText = 'padding:12px 6px;font:400 12px '+F+';color:#DDE3E9';
-        destCell.textContent = ld.dest;
-        row.appendChild(destCell);
-        // Distance
-        var distCell = document.createElement('div');
-        distCell.style.cssText = 'padding:12px 6px;font:400 12px '+F+';color:#ABABAB';
-        distCell.textContent = ld.miles + ' mi';
-        row.appendChild(distCell);
-        // Pickup
-        var pkCell = document.createElement('div');
-        pkCell.style.cssText = 'padding:12px 6px;font:400 12px '+F+';color:#ABABAB';
-        pkCell.textContent = ld.pickup;
-        row.appendChild(pkCell);
-        // Delivery
-        var dlCell = document.createElement('div');
-        dlCell.style.cssText = 'padding:12px 6px;font:400 12px '+F+';color:#ABABAB';
-        dlCell.textContent = ld.delivery;
-        row.appendChild(dlCell);
-        // Income + actions (last cell)
-        var incCell = document.createElement('div');
-        incCell.style.cssText = 'padding:12px 6px;display:flex;align-items:center;justify-content:space-between;gap:8px';
-        var incInfo = document.createElement('div');
-        incInfo.innerHTML = '<div style="font:700 12px '+F+';color:#3FC281">$'+ld.incMin+'–$'+ld.incMax+'</div><div style="font:400 10px '+F+';color:#7BCBCB">$'+rMin+'–$'+rMax+'/mi</div>';
-        incCell.appendChild(incInfo);
+
+        var cellMap = {
+          id: (function(){
+            var d=document.createElement('div'); d.style.cssText='padding:13px 8px 13px 0;display:flex;align-items:center;gap:6px';
+            if (ld.laneLoad){ var dot=document.createElement('span'); dot.style.cssText='width:7px;height:7px;border-radius:50%;background:#FBB303;flex:none;box-shadow:0 0 5px rgba(251,179,3,.5)'; d.appendChild(dot); }
+            var s=document.createElement('span'); s.style.cssText='font:800 12px monospace;color:#7BCBCB'; s.textContent=ld.id; d.appendChild(s); return d;
+          })(),
+          status:       _cell('<span style="font:700 10px '+F+';color:'+sc.c+';background:'+sc.bg+';border:1px solid '+sc.bd+';border-radius:4px;padding:2px 7px;white-space:nowrap">'+ld.status+'</span>'),
+          route:        _cell(ld.route ? '<span style="font:600 12px '+F+';color:#7BCBCB">'+ld.route+'</span>' : '<span style="font:600 12px '+F+';color:#6B7373;font-style:italic">No route</span>'),
+          origin:       _cell('<span style="font:600 12.5px '+F+';color:#7BCBCB">'+ld.origin+'</span>'),
+          dest:         _cell('<span style="font:600 12.5px '+F+';color:#7BCBCB">'+ld.dest+'</span>'),
+          miles:        _cell('<span style="font:700 12.5px '+F+'">'+ld.miles.toLocaleString('en-US')+' mi</span>'),
+          pickup:       _cell('<div style="font:700 12px '+F+'">'+ld.pickup+'</div><div style="color:#6B7373;font-size:10.5px;font-family:\'JetBrains Mono\',monospace">'+ld.pickupTime+'</div>'),
+          delivery:     _cell('<div style="font:700 12px '+F+'">'+ld.delivery+'</div><div style="color:#6B7373;font-size:10.5px;font-family:\'JetBrains Mono\',monospace">'+ld.deliveryTime+'</div>'),
+          onTime:       _cell('<span style="font:800 11px '+F+';color:'+_onTimeFg(ld.onTime)+'">'+ld.onTime+'</span>'),
+          income:       _cell('<div style="display:flex;align-items:center;gap:5px"><div style="font:800 13px '+F+';color:#3FC281">'+money(ld.income)+'</div><span style="width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1px solid rgba(255,255,255,.1);color:#8B939B;flex-shrink:0;pointer-events:none"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span></div><div style="font:500 10.5px '+F+';color:#6B7373;margin-top:1px">$'+rpm+'/mi</div>'),
+          driver:       _cell(_miniAvatar(ld.driver)),
+          truck:        _cell('<span style="font:400 11.5px \'JetBrains Mono\',monospace;color:#ABABAB">'+ld.truck+'</span>'),
+          equipment:    _cell('<span style="font:400 11.5px '+F+';color:#ABABAB">'+ld.trailer+'</span>'),
+          equipmentType:_cell('<span style="font:400 11.5px '+F+';color:#ABABAB">'+(ld.equipmentType||'')+'</span>'),
+          stops:        _cell('<span style="font:700 12.5px '+F+'">'+ld.stops+'</span>'),
+          customer:     _cell('<span style="font:400 12px '+F+';color:#C9CED2">'+ld.customer+'</span>'),
+        };
+
+        var row=document.createElement('div');
+        row.style.cssText='display:grid;grid-template-columns:'+gridTpl+';padding:0 20px;border-bottom:1px solid rgba(255,255,255,.05);align-items:center;transition:background .1s';
+        cols.forEach(function(c){ row.appendChild(cellMap[c.key] || document.createElement('div')); });
+
+        // Actions cell — "Add to lane" for lane loads only
+        var actCell=document.createElement('div'); actCell.style.cssText='padding:13px 0 13px 8px;display:flex;align-items:center;justify-content:flex-end';
         if (ld.laneLoad) {
-          var actWrap = document.createElement('div');
-          actWrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px';
-          var addBtn2 = document.createElement('button');
-          addBtn2.dataset.gidx = globalIdx;
-          addBtn2.className = '_ef-ll-add';
-          addBtn2.style.cssText = 'padding:4px 11px;background:#27A767;border:none;border-radius:6px;color:#0B131B;font:800 11px '+F+';cursor:pointer;white-space:nowrap';
-          addBtn2.textContent = 'Add to lane';
-          actWrap.appendChild(addBtn2);
-          if (!_alreadyIgnored) {
-            var ignBtn = document.createElement('button');
-            ignBtn.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.08);border-radius:5px;background:transparent;color:#6B7373;font:600 10px '+F+';cursor:pointer;white-space:nowrap';
-            ignBtn.innerHTML = '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg> Ignore load';
-            (function(gidx, btn, rw){
-              btn.addEventListener('click', function(){
-                _lbIgnored.add(_llBaseKey+'_load'+gidx);
-                var dot = rw.querySelector('._ef-ll-dot-'+gidx);
-                if (dot) dot.remove();
-                btn.remove();
-                _checkAllIgnored();
-              });
-            })(globalIdx, ignBtn, row);
-            actWrap.appendChild(ignBtn);
-          }
-          incCell.appendChild(actWrap);
+          var addBtn=document.createElement('button');
+          addBtn.style.cssText='padding:5px 14px;background:#27A767;border:none;border-radius:6px;color:#0B131B;font:800 11px '+F+';cursor:pointer;white-space:nowrap';
+          addBtn.textContent='Add to lane';
+          (function(load){
+            addBtn.addEventListener('click', function(e){
+              e.stopPropagation();
+              if (load.route !== null) {
+                _warnToast('This load is already assigned to a lane in a route.');
+                return;
+              }
+              var tgt=loadsOf(rId)[parseInt(lIdx)];
+              if (tgt) {
+                var _oldDest=tgt.dest;
+                tgt.origin=originCity; tgt.dest=load.dest; tgt.miles=load.miles;
+                tgt.income=load.income; tgt.status='Booked'; tgt.customer=load.customer;
+                if (load.dest!==_oldDest) _cascadeLane(rId, parseInt(lIdx), load.dest);
+              }
+              ov.remove(); _hideLbBar(); _hideLbNotif(); setState({});
+            });
+          })(ld);
+          actCell.appendChild(addBtn);
         }
-        row.appendChild(incCell);
+        row.appendChild(actCell);
         row.addEventListener('mouseenter', function(){ row.style.background='rgba(255,255,255,.025)'; });
         row.addEventListener('mouseleave', function(){ row.style.background=''; });
-        tblBody.appendChild(row);
-      });
-      // Wire "Add to lane" buttons
-      tblBody.querySelectorAll('._ef-ll-add').forEach(function(btn){
-        btn.addEventListener('click', function(e){
-          e.stopPropagation();
-          var gidx = parseInt(btn.dataset.gidx);
-          var ld = ALL_LOADS[gidx];
-          var tgt = loadsOf(rId)[parseInt(lIdx)];
-          if (tgt) {
-            var _oldDest = tgt.dest;
-            tgt.origin = originCity; tgt.dest = ld.dest; tgt.miles = ld.miles;
-            tgt.income = Math.round((ld.incMin+ld.incMax)/2); tgt.status = 'Booked'; tgt.customer = ld.customer;
-            if (ld.dest !== _oldDest) _cascadeLane(rId, parseInt(lIdx), ld.dest);
-          }
-          ov.remove(); _hideLbBar(); _hideLbNotif(); setState({});
-        });
+        tblInner.appendChild(row);
       });
     }
     _rebuildTable();
@@ -3885,7 +4043,7 @@ export function initApp() {
 
     ov.appendChild(modal);
     document.body.appendChild(ov);
-    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    ov.addEventListener('click', function(e){ if(e.target===ov){ _markSeen(); ov.remove(); } });
   }
 
   function _openMyLoads(rId, lIdx, originCity) {
@@ -4316,12 +4474,12 @@ export function initApp() {
     var hdr = document.createElement('div');
     hdr.style.cssText = 'display:flex;align-items:flex-start;gap:12px;padding:18px 20px 16px;border-bottom:1px solid rgba(255,255,255,.07)';
     hdr.innerHTML =
-      '<div style="width:32px;height:32px;border-radius:8px;background:#EB4343;display:grid;place-items:center;flex:none">' +
-        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93 4.93 19.07"></path></svg>' +
+      '<div style="width:32px;height:32px;border-radius:8px;background:#17202A;border:1px solid rgba(255,255,255,.1);display:grid;place-items:center;flex:none">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>' +
       '</div>' +
       '<div style="flex:1">' +
-        '<div style="font:900 15px '+F+';color:#FBFBFB;line-height:1.2">Route filters</div>' +
-        '<div style="font:400 11px '+F+';color:#6B7373;margin-top:3px">Filters applied when generating this route</div>' +
+        '<div style="font:900 15px '+F+';color:#FBFBFB;line-height:1.2">Route preferences</div>' +
+        '<div style="font:400 11px '+F+';color:#6B7373;margin-top:3px">Filters considered when optimizing this route.</div>' +
       '</div>' +
       '<button id="_ef-rp-x" style="width:28px;height:28px;display:grid;place-items:center;border-radius:7px;cursor:pointer;color:#8B939B;border:1px solid rgba(255,255,255,.1);background:none;font-size:16px;flex:none">×</button>';
     modal.appendChild(hdr);
@@ -4368,7 +4526,7 @@ export function initApp() {
     // BLOCKED STATES
     var fbs = document.createElement('div'); fbs.appendChild(_rpLabel('Blocked states')); fbs.appendChild(_rpAddRow('None — all states available', '+ Block a state...')); body.appendChild(fbs);
     // OPERATIVE COST USED
-    var foc = document.createElement('div'); foc.appendChild(_rpLabel('Operative cost used')); foc.appendChild(_rpSelect(['JM_test1 — $2.00 / mi','Standard — $1.75 / mi','Premium — $2.50 / mi'], 'JM_test1 — $2.00 / mi')); body.appendChild(foc);
+    var foc = document.createElement('div'); foc.appendChild(_rpLabel('Operative cost used')); foc.appendChild(_rpSelect(['JM_test1 — $2.00 / mi','Standard — $1.75 / mi','Premium — $2.50 / mi','No operating cost'], 'JM_test1 — $2.00 / mi')); body.appendChild(foc);
     modal.appendChild(body);
     // Footer
     var ftr = document.createElement('div');
@@ -5177,6 +5335,8 @@ export function initApp() {
     _htruck.querySelector('button').addEventListener('click', function() {
       var _existing = document.getElementById('_ef-truck-modal');
       if (_existing) { _existing.remove(); return; }
+      var _rteEq = (ROUTES||[]).find(function(rr){ return rr.id === routeId; });
+      var _eqType = (_rteEq && _rteEq.equipmentType) || 'Van';
       var _tm = document.createElement('div');
       _tm.id = '_ef-truck-modal';
       _tm.style.cssText = 'position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:40px 20px';
@@ -5189,7 +5349,7 @@ export function initApp() {
       var _reqLbl = '<span style="font:600 10px Nunito,system-ui;color:#5A6A7A;margin-left:auto;padding-left:8px">Required</span>';
       function _assignRow(iconHtml, mainText, subText, filled) {
         return '<div style="display:flex;align-items:center;gap:12px;padding:13px 14px;background:#0E1820;border:1px solid rgba(255,255,255,' + (filled ? '.12' : '.07') + ');border-radius:10px;cursor:pointer">' +
-          '<div style="width:36px;height:36px;border-radius:50%;background:#162330;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + iconHtml + '</div>' +
+          '<div style="width:36px;height:36px;border-radius:8px;background:#162330;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + iconHtml + '</div>' +
           '<div style="flex:1;min-width:0">' +
             '<div style="font:' + (filled ? '800' : '500') + ' 13px Nunito,system-ui;color:' + (filled ? '#DDE3E9' : '#8B939B') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mainText + '</div>' +
             '<div style="font:500 11px Nunito,system-ui;color:#5A6A7A;margin-top:1px">' + subText + '</div>' +
@@ -5198,8 +5358,9 @@ export function initApp() {
         '</div>';
       }
       var _driverIcon = '<span style="font:800 14px Nunito,system-ui;color:#7BCBCB">D</span>';
-      var _truckIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"></path><circle cx="7.5" cy="17.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle></svg>';
-      var _trailerIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"></rect><path d="M16 8h4l3 5v3h-7V8z"></path><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>';
+      var _truckIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 7h3.5a1 1 0 0 1 .8.4l2.7 3.6V18h-3"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
+      var _trailerIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="7" y1="17" x2="7" y2="20"/><line x1="17" y1="17" x2="17" y2="20"/><line x1="5" y1="20" x2="9" y2="20"/><line x1="15" y1="20" x2="19" y2="20"/></svg>';
+      var _eqIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
       _tmc.innerHTML =
         '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 16px;border-bottom:1px solid rgba(255,255,255,.08)">' +
           '<div style="display:flex;align-items:center;gap:8px;font:800 15px Nunito,system-ui;color:#DDE3E9">' +
@@ -5212,7 +5373,7 @@ export function initApp() {
           '<div style="text-align:right;padding:2px 4px 6px">' + _reqLbl + '</div>' +
           _assignRow(_truckIcon, 'TRK-4821 · Van 53\'', 'Unit', true) +
           '<div style="text-align:right;padding:2px 4px 6px">' + _reqLbl + '</div>' +
-          _assignRow(_trailerIcon, 'TRL-9203', 'Trailer', true) +
+          _assignRow(_trailerIcon, 'TRL-9203 · ' + _eqType, 'Trailer', true) +
           '<div style="text-align:right;padding:2px 4px 6px">' + _reqLbl + '</div>' +
         '</div>' +
         '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid rgba(255,255,255,.07)">' +
@@ -5227,7 +5388,7 @@ export function initApp() {
     // Optimization (clock) button
     var _hopt = document.createElement('button');
     _hopt.style.cssText = 'width:36px;height:36px;border-radius:8px;background:#17202A;border:1px solid rgba(255,255,255,.08);color:#DDE3E9;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0';
-    _hopt.title = 'Route filters';
+    _hopt.title = 'Route preferences';
     _hopt.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>';
     _hopt.addEventListener('click', function() { _openRoutePreferences(routeId); });
     header.appendChild(_hopt);
@@ -5424,8 +5585,8 @@ export function initApp() {
     function _showZoneTip(chipEl, destCity) {
       var nearby = _zoneNearby(destCity);
       _zoneTip.innerHTML =
-        '<div style="font:700 10px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#7BCBCB;margin-bottom:5px">Zona de búsqueda</div>' +
-        '<div style="font:500 11.5px Nunito,system-ui;color:#8D99A6;margin-bottom:8px;line-height:1.4">Revisando en ciudades<br>cercanas como:</div>' +
+        '<div style="font:700 10px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#7BCBCB;margin-bottom:5px">Search zone</div>' +
+        '<div style="font:500 11.5px Nunito,system-ui;color:#8D99A6;margin-bottom:8px;line-height:1.4">Also reviewing in<br>nearby cities like:</div>' +
         nearby.map(function(c) {
           return '<div style="display:flex;align-items:center;gap:7px;padding:3px 0">' +
             '<svg width="8" height="8" viewBox="0 0 8 8" style="flex-shrink:0"><circle cx="4" cy="4" r="3" fill="#7BCBCB" fill-opacity=".7"/></svg>' +
@@ -5712,6 +5873,22 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '13 de agosto, 6:11pm',
+          items: [
+            'El tooltip de la zona de búsqueda se tradujo al inglés: "Search zone" y "Also reviewing in nearby cities like:"',
+            'Modal "Assign driver & equipment": contenedores de íconos cambiados de círculo a cuadro redondeado; ícono SVG actualizado',
+            'Modal "Assign driver & equipment": se eliminaron las pills de Equipment type (Van / Reefer / Flatbed)',
+            'La fila del trailer en el modal de asignación muestra el tipo de equipo de la ruta junto al código (ej: "TRL-9203 · Van")',
+            'Modal de filtros de ruta renombrado a "Route preferences"; nuevo ícono de sliders, subtítulo actualizado y opción "No operating cost" agregada',
+            'El label "Profit" en el panel financiero quedó en blanco y negrita; el porcentaje ahora aparece en gris con paréntesis: "(-20.5%)"',
+            'El valor de Profit (Total / Per mile / Per day) cambió de verde a blanco y negrita',
+            'Modal "My Loads" al agregar carga a un lane: rediseño completo — columnas dinámicas sincronizadas con My Loads, filtros pre-cargados (origin, dest, no route, equipment type), valor único de income, botón de columnas, scroll horizontal',
+            'Cerrando el modal "My Loads" del lane se marca la sugerencia como vista (elimina el punto amarillo del botón Add)',
+            'Toast de advertencia al intentar agregar al lane una carga que ya tiene ruta asignada: "This load is already assigned to a lane in a route."',
+            'Ícono de reloj (no clickeable) agregado al lado del valor de income en cada fila del modal de lane loads',
+          ]
+        },
         {
           date: '11 de agosto, 3:08pm',
           items: [
