@@ -3532,7 +3532,7 @@ export function initApp() {
     // All loads – single income value (actual rate), route: null for all ("No route")
     // laneLoad 0: WITH driver/truck/trailer · laneLoad 1: unassigned
     var ALL_LOADS = [
-      { id:'ef-cc80f47', origin:originCity,    dest:dest,                 miles:245, income:686,  customer:'FreightQuote',    pickup:'08/01/2026', pickupTime:'08:00 AM', delivery:'08/02/2026', deliveryTime:'05:00 PM', onTime:'On time', status:'Unbooked',   route:null, equipmentType:'Van',     trailer:'TRL-9203', stops:1, driver:'Marcus Reed',   truck:'TRK-4821', laneLoad:true  },
+      { id:'ef-cc80f47', origin:originCity,    dest:dest,                 miles:245, income:686,  customer:'FreightQuote',    pickup:'08/01/2026', pickupTime:'08:00 AM', delivery:'08/02/2026', deliveryTime:'05:00 PM', onTime:'On time', status:'Unbooked',   route:null, equipmentType:_routeEqType, trailer:'TRL-9203', stops:1, driver:'Marcus Reed',   truck:'TRK-4821', laneLoad:true  },
       { id:'ef-38a5c6e', origin:originCity,    dest:dest,                 miles:258, income:723,  customer:'Echo Global',     pickup:'08/02/2026', pickupTime:'09:00 AM', delivery:'08/03/2026', deliveryTime:'04:00 PM', onTime:'On time', status:'Unbooked',   route:'R-2601', equipmentType:'Van',     trailer:'—',        stops:1, driver:'—',            truck:'—',        laneLoad:true  },
       { id:'ef-ab12c3d', origin:'Phoenix, AZ', dest:'Los Angeles, CA',    miles:372, income:930,  customer:'C.H. Robinson',   pickup:'08/03/2026', pickupTime:'07:00 AM', delivery:'08/04/2026', deliveryTime:'06:00 PM', onTime:'On time', status:'Booked',     route:null, equipmentType:'Reefer',  trailer:'—',        stops:2, driver:'—',            truck:'—',        laneLoad:false },
       { id:'ef-ef45g6h', origin:'Denver, CO',  dest:'Salt Lake City, UT', miles:525, income:1260, customer:'Echo Global',     pickup:'08/04/2026', pickupTime:'06:00 AM', delivery:'08/06/2026', deliveryTime:'03:00 PM', onTime:'On time', status:'In Transit', route:null, equipmentType:'Flatbed', trailer:'TRL-7714', stops:3, driver:'James Wilson', truck:'TRK-3201', laneLoad:false },
@@ -3569,7 +3569,7 @@ export function initApp() {
       var op = f.operator || 'contains';
       if (f.key === 'route') {
         var isNoRoute = f.value.toLowerCase().trim() === 'no route';
-        var ldNull = ld.route === null;
+        var ldNull = ld.route === null || ld.route === '';
         if (op === 'is')     return isNoRoute ? ldNull : (ld.route||'').toLowerCase() === f.value.toLowerCase();
         if (op === 'is not') return isNoRoute ? !ldNull : (ld.route||'').toLowerCase() !== f.value.toLowerCase();
         return true;
@@ -3738,11 +3738,112 @@ export function initApp() {
     funnelBtn.addEventListener('mouseenter', function(){ funnelBtn.style.background='rgba(255,255,255,.06)'; funnelBtn.style.borderColor='rgba(255,255,255,.22)'; });
     funnelBtn.addEventListener('mouseleave', function(){ funnelBtn.style.background='transparent'; funnelBtn.style.borderColor='rgba(255,255,255,.12)'; });
     funnelBtn.addEventListener('click', function(){
-      var newKey='custom'+Date.now();
-      _llFilters.push({key:newKey,label:'Field contains',value:'value'});
-      _buildFilterChips();
-      var chips=filterBar.querySelectorAll('._ef-ll-chip');
-      if(chips.length){var lastLbl=chips[chips.length-1].querySelector('span');if(lastLbl)lastLbl.click();}
+      var _oldPop = document.getElementById('_ef-ll-filter-pop'); if (_oldPop) _oldPop.remove();
+      filterBar.querySelectorAll('._ef-ll-pop').forEach(function(p){ p.remove(); });
+      var _existPending = filterBar.querySelector('._ef-ll-chip-pending');
+      if (_existPending) { _existPending.remove(); return; }
+      var newKey = 'custom' + Date.now();
+      var pendingFilter = { key: newKey, label: 'Field contains', value: '', operator: 'contains' };
+      var pendingChip = document.createElement('div');
+      pendingChip.className = '_ef-ll-chip _ef-ll-chip-pending';
+      pendingChip.style.cssText = 'position:relative;display:inline-flex;align-items:center;gap:0;border-radius:6px;background:rgba(123,203,203,.06);border:1px solid rgba(123,203,203,.2);font:600 11px '+F+';color:#7BCBCB;cursor:pointer;flex-shrink:0';
+      var pendingLbl = document.createElement('span');
+      pendingLbl.style.cssText = 'padding:4px 10px;white-space:nowrap;color:#6B7373;font-style:italic';
+      pendingLbl.textContent = 'New filter…';
+      pendingChip.appendChild(pendingLbl);
+      var _filterFields = [
+        { key:'origin', label:'Origin' }, { key:'dest', label:'Destination' },
+        { key:'customer', label:'Customer' }, { key:'status', label:'Status' },
+        { key:'route', label:'Related route' }, { key:'equipmentType', label:'Equipment type' },
+        { key:'driver', label:'Driver' }, { key:'truck', label:'Unit' },
+        { key:'onTime', label:'On time' }, { key:'id', label:'Load ID' }
+      ];
+      var _popEl = document.createElement('div');
+      _popEl.id = '_ef-ll-filter-pop';
+      _popEl.className = '_ef-ll-pop';
+      _popEl.style.cssText = 'position:fixed;z-index:9020;background:#1A2A35;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:14px 16px;min-width:270px;box-shadow:0 10px 32px rgba(0,0,0,.65);font-family:'+F;
+      _popEl.addEventListener('click', function(e2){ e2.stopPropagation(); });
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px';
+      var hdrLbl = document.createElement('div');
+      hdrLbl.style.cssText = 'font:800 13px '+F+';color:#FBFBFB';
+      hdrLbl.textContent = 'Add filter';
+      var applyBtn = document.createElement('div');
+      applyBtn.style.cssText = 'font:800 12px '+F+';color:#27A767;cursor:pointer';
+      applyBtn.textContent = 'Apply';
+      hdr.appendChild(hdrLbl); hdr.appendChild(applyBtn);
+      _popEl.appendChild(hdr);
+      // Field selector
+      var fieldLbl = document.createElement('div');
+      fieldLbl.style.cssText = 'font:600 10px '+F+';color:#5A6A7A;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px';
+      fieldLbl.textContent = 'Field';
+      _popEl.appendChild(fieldLbl);
+      var fieldSel = document.createElement('select');
+      fieldSel.style.cssText = 'width:100%;background:#0E1820;border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#FBFBFB;font:600 12px '+F+';padding:8px 10px;margin-bottom:8px;cursor:pointer;box-sizing:border-box;outline:none';
+      _filterFields.forEach(function(ff){ var opt=document.createElement('option'); opt.value=ff.key; opt.textContent=ff.label; fieldSel.appendChild(opt); });
+      _popEl.appendChild(fieldSel);
+      // Operator selector
+      var opLbl = document.createElement('div');
+      opLbl.style.cssText = 'font:600 10px '+F+';color:#5A6A7A;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px';
+      opLbl.textContent = 'Condition';
+      _popEl.appendChild(opLbl);
+      var opSel = document.createElement('select');
+      opSel.style.cssText = 'width:100%;background:#0E1820;border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#FBFBFB;font:600 12px '+F+';padding:8px 10px;margin-bottom:8px;cursor:pointer;box-sizing:border-box;outline:none';
+      _popEl.appendChild(opSel);
+      function _refreshOps() {
+        opSel.innerHTML = '';
+        _getOperators(fieldSel.value).forEach(function(op){ var opt=document.createElement('option'); opt.value=op.value; opt.textContent=op.label; opSel.appendChild(opt); });
+      }
+      _refreshOps();
+      fieldSel.addEventListener('change', _refreshOps);
+      // Value input
+      var valLbl = document.createElement('div');
+      valLbl.style.cssText = 'font:600 10px '+F+';color:#5A6A7A;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px';
+      valLbl.textContent = 'Value';
+      _popEl.appendChild(valLbl);
+      var valInp = document.createElement('input');
+      valInp.placeholder = 'Filter value…';
+      valInp.style.cssText = 'width:100%;background:#0E1820;border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#FBFBFB;font:600 12px '+F+';padding:8px 10px;box-sizing:border-box;outline:none';
+      _popEl.appendChild(valInp);
+      var removeBtn = document.createElement('div');
+      removeBtn.style.cssText = 'font:700 11px '+F+';color:#EB4343;cursor:pointer;margin-top:10px;text-align:center';
+      removeBtn.textContent = 'Remove filter';
+      _popEl.appendChild(removeBtn);
+      function _discard() {
+        pendingChip.remove();
+        _popEl.remove();
+        document.removeEventListener('click', _outside, true);
+      }
+      function _applyPending() {
+        var val = valInp.value.trim();
+        if (!val) { _discard(); return; }
+        var selField = _filterFields.find(function(ff){ return ff.key === fieldSel.value; });
+        pendingFilter.key = fieldSel.value;
+        pendingFilter.label = selField ? selField.label : fieldSel.value;
+        pendingFilter.operator = opSel.value;
+        pendingFilter.value = val;
+        _llFilters.push(pendingFilter);
+        document.removeEventListener('click', _outside, true);
+        pendingChip.remove();
+        _popEl.remove();
+        _llPage = 1; _buildFilterChips(); _rebuildTable();
+      }
+      removeBtn.addEventListener('click', _discard);
+      applyBtn.addEventListener('click', _applyPending);
+      valInp.addEventListener('keydown', function(ev){ if (ev.key === 'Enter') _applyPending(); });
+      filterBar.appendChild(pendingChip);
+      document.body.appendChild(_popEl);
+      setTimeout(function(){
+        var r = pendingChip.getBoundingClientRect();
+        var popH = _popEl.offsetHeight;
+        _popEl.style.top = Math.round(r.top - popH - 6) + 'px';
+        _popEl.style.left = Math.round(Math.min(r.left, window.innerWidth - 286)) + 'px';
+        valInp.focus();
+      }, 0);
+      function _outside(e2) {
+        if (!pendingChip.contains(e2.target) && !_popEl.contains(e2.target)) { _discard(); }
+      }
+      setTimeout(function(){ document.addEventListener('click', _outside, true); }, 0);
     });
     tabsBar.appendChild(funnelBtn);
     modal.appendChild(tabsBar);
@@ -5334,7 +5435,7 @@ export function initApp() {
     _htruck.innerHTML = '<button style="position:relative;width:36px;height:36px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;color:#DDE3E9;background:#17202A;border:1px solid rgba(255,255,255,.08)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"></path><circle cx="7.5" cy="17.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle></svg><span style="position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:999px;background:#27A767;border:2px solid #0D141B"></span></button>';
     _htruck.querySelector('button').addEventListener('click', function() {
       var _existing = document.getElementById('_ef-truck-modal');
-      if (_existing) { _existing.remove(); return; }
+      if (_existing) { _existing.remove(); var _existDp = document.getElementById('_ef-detail-panel'); if (_existDp) _existDp.remove(); return; }
       var _rteEq = (ROUTES||[]).find(function(rr){ return rr.id === routeId; });
       var _eqType = (_rteEq && _rteEq.equipmentType) || 'Van';
       var _tm = document.createElement('div');
@@ -5342,44 +5443,136 @@ export function initApp() {
       _tm.style.cssText = 'position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:40px 20px';
       var _tmbg = document.createElement('div');
       _tmbg.style.cssText = 'position:absolute;inset:0;background:rgba(6,12,17,.65)';
-      _tmbg.addEventListener('click', function() { _tm.remove(); });
+      _tmbg.addEventListener('click', function() { _tm.remove(); var _dp2 = document.getElementById('_ef-detail-panel'); if (_dp2) _dp2.remove(); });
       var _tmc = document.createElement('div');
       _tmc.style.cssText = 'position:relative;width:100%;max-width:480px;background:#131F27;border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.6)';
       var _chevSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A6A7A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>';
       var _reqLbl = '<span style="font:600 10px Nunito,system-ui;color:#5A6A7A;margin-left:auto;padding-left:8px">Required</span>';
-      function _assignRow(iconHtml, mainText, subText, filled) {
+      function _assignRow(iconHtml, mainText, subText, filled, detailKey) {
         return '<div style="display:flex;align-items:center;gap:12px;padding:13px 14px;background:#0E1820;border:1px solid rgba(255,255,255,' + (filled ? '.12' : '.07') + ');border-radius:10px;cursor:pointer">' +
           '<div style="width:36px;height:36px;border-radius:8px;background:#162330;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + iconHtml + '</div>' +
           '<div style="flex:1;min-width:0">' +
             '<div style="font:' + (filled ? '800' : '500') + ' 13px Nunito,system-ui;color:' + (filled ? '#DDE3E9' : '#8B939B') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mainText + '</div>' +
             '<div style="font:500 11px Nunito,system-ui;color:#5A6A7A;margin-top:1px">' + subText + '</div>' +
           '</div>' +
-          _chevSvg +
+          '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">' +
+            _chevSvg +
+            (filled && detailKey ? '<span data-detail="' + detailKey + '" style="font:700 9.5px Nunito,system-ui;color:#7BCBCB;cursor:pointer;line-height:1;white-space:nowrap">View details</span>' : '') +
+          '</div>' +
         '</div>';
       }
       var _driverIcon = '<span style="font:800 14px Nunito,system-ui;color:#7BCBCB">D</span>';
       var _truckIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 7h3.5a1 1 0 0 1 .8.4l2.7 3.6V18h-3"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
       var _trailerIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="7" y1="17" x2="7" y2="20"/><line x1="17" y1="17" x2="17" y2="20"/><line x1="5" y1="20" x2="9" y2="20"/><line x1="15" y1="20" x2="19" y2="20"/></svg>';
       var _eqIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
+      function _closeTruckAll() { var _m = document.getElementById('_ef-truck-modal'); if (_m) _m.remove(); var _dp = document.getElementById('_ef-detail-panel'); if (_dp) _dp.remove(); }
+      function _openDetailPanel(activeTab) {
+        var _existingDp = document.getElementById('_ef-detail-panel');
+        if (_existingDp) _existingDp.remove();
+        var _dp = document.createElement('div');
+        _dp.id = '_ef-detail-panel';
+        _dp.style.cssText = 'position:fixed;top:0;right:0;width:320px;height:100vh;z-index:201;background:#131F27;border-left:1px solid rgba(255,255,255,.1);box-shadow:-20px 0 48px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden';
+        var _titleMap = {
+          unit:    { name: "TRK-4821 · Van 53'", sub: 'Unit' },
+          driver:  { name: 'Marcus Reed', sub: 'Driver' },
+          trailer: { name: 'TRL-9203 · ' + _eqType, sub: 'Trailer' }
+        };
+        var _fieldsMap = {
+          unit: [
+            { label: 'Current Location', value: '' }, { label: 'ETA', value: '' },
+            { label: 'Cab ID', value: 'TRK-4821' },
+            { label: 'ELD', value: '<span style="color:#8B939B">Not linked</span>&nbsp;&nbsp;<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6A7A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;cursor:pointer"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' },
+            { label: 'Cab Name', value: '' }, { label: 'Plate Number', value: '' },
+            { label: 'VIN', value: '' }, { label: 'Fuel Type', value: '' },
+            { label: 'Operating Cost', value: '' },
+            { label: 'Max. Hitch', value: '<span style="color:#8B939B">lb</span>' },
+            { label: 'Axle Config.', value: '' },
+            { label: 'Tank Capacity', value: '<span style="color:#8B939B">gal</span>' }
+          ],
+          driver: [
+            { label: 'Full Name', value: 'Marcus Reed' },
+            { label: 'CDL Class', value: '' }, { label: 'License #', value: '' },
+            { label: 'License Expiry', value: '' }, { label: 'Phone', value: '' },
+            { label: 'HOS Status', value: '' }, { label: 'Home Base', value: '' }
+          ],
+          trailer: [
+            { label: 'Trailer ID', value: 'TRL-9203' },
+            { label: 'Type', value: _eqType },
+            { label: 'Plate Number', value: '' }, { label: 'VIN', value: '' },
+            { label: 'Length', value: '' }, { label: 'Capacity', value: '' },
+            { label: 'Max. Weight', value: '' }
+          ]
+        };
+        function _buildPanel(tab) {
+          var t = _titleMap[tab];
+          var fields = _fieldsMap[tab];
+          var tabsHtml = ['unit','driver','trailer'].map(function(tk) {
+            var isAct = tk === tab;
+            var lbl = tk.charAt(0).toUpperCase() + tk.slice(1);
+            return '<button data-tab="' + tk + '" style="padding:10px 0;border:0;background:transparent;font:' + (isAct?'800':'600') + ' 13px Nunito,system-ui;color:' + (isAct?'#DDE3E9':'#5A6A7A') + ';cursor:pointer;border-bottom:2px solid ' + (isAct?'#7BCBCB':'transparent') + ';flex:1">' + lbl + '</button>';
+          }).join('');
+          var fieldsHtml = fields.map(function(f) {
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">' +
+              '<span style="font:500 12px Nunito,system-ui;color:#5A6A7A;flex-shrink:0">' + f.label + '</span>' +
+              '<span style="font:600 12px Nunito,system-ui;color:#DDE3E9;text-align:right;max-width:55%">' + (f.value || '') + '</span>' +
+            '</div>';
+          }).join('');
+          _dp.innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0">' +
+              '<div>' +
+                '<div style="font:800 15px Nunito,system-ui;color:#DDE3E9;line-height:1.2">' + t.name + '</div>' +
+                '<div style="font:500 11px Nunito,system-ui;color:#5A6A7A;margin-top:2px">' + t.sub + '</div>' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:5px">' +
+                '<button style="width:28px;height:28px;border-radius:8px;background:#17202A;border:1px solid rgba(255,255,255,.08);color:#8B939B;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;padding:0">⋯</button>' +
+                '<button id="_ef-dp-close" style="width:28px;height:28px;border-radius:8px;background:#17202A;border:1px solid rgba(255,255,255,.08);color:#8B939B;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0">×</button>' +
+              '</div>' +
+            '</div>' +
+            '<div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);padding:0 18px;flex-shrink:0">' + tabsHtml + '</div>' +
+            '<div style="flex:1;overflow-y:auto;padding:0 18px 20px" class="ef-scroll">' +
+              '<div style="font:700 10px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#5A6A7A;padding:14px 0 6px">General information</div>' +
+              fieldsHtml +
+              (tab === 'unit' ?
+                '<div style="font:700 10px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#5A6A7A;padding:14px 0 6px;margin-top:4px">Documents</div>' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">' +
+                  '<span style="font:500 12px Nunito,system-ui;color:#5A6A7A">Vehicle Photos</span>' +
+                  '<div style="width:34px;height:20px;border-radius:999px;background:#27A767;position:relative;cursor:pointer;flex-shrink:0"><div style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:999px;background:#fff"></div></div>' +
+                '</div>'
+              : '') +
+            '</div>';
+          _dp.querySelector('#_ef-dp-close').addEventListener('click', function() { _dp.remove(); });
+          _dp.querySelectorAll('[data-tab]').forEach(function(btn) {
+            btn.addEventListener('click', function() { _buildPanel(btn.getAttribute('data-tab')); });
+          });
+        }
+        _buildPanel(activeTab);
+        document.body.appendChild(_dp);
+      }
       _tmc.innerHTML =
         '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 16px;border-bottom:1px solid rgba(255,255,255,.08)">' +
           '<div style="display:flex;align-items:center;gap:8px;font:800 15px Nunito,system-ui;color:#DDE3E9">' +
             '<span style="color:#8B939B;font-weight:400">+</span> Assign driver &amp; equipment' +
           '</div>' +
-          '<button onclick="document.getElementById(\'_ef-truck-modal\').remove()" style="width:28px;height:28px;border-radius:8px;background:#17202A;border:1px solid rgba(255,255,255,.08);color:#8B939B;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-size:18px;line-height:1">×</button>' +
+          '<button id="_ef-tmc-close" style="width:28px;height:28px;border-radius:8px;background:#17202A;border:1px solid rgba(255,255,255,.08);color:#8B939B;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-size:18px;line-height:1">×</button>' +
         '</div>' +
         '<div style="padding:16px 20px;display:flex;flex-direction:column;gap:4px">' +
-          _assignRow(_driverIcon, 'Marcus Reed', 'Driver', true) +
+          _assignRow(_driverIcon, 'Marcus Reed', 'Driver', true, 'driver') +
           '<div style="text-align:right;padding:2px 4px 6px">' + _reqLbl + '</div>' +
-          _assignRow(_truckIcon, 'TRK-4821 · Van 53\'', 'Unit', true) +
+          _assignRow(_truckIcon, 'TRK-4821 · Van 53\'', 'Unit', true, 'unit') +
           '<div style="text-align:right;padding:2px 4px 6px">' + _reqLbl + '</div>' +
-          _assignRow(_trailerIcon, 'TRL-9203 · ' + _eqType, 'Trailer', true) +
+          _assignRow(_trailerIcon, 'TRL-9203 · ' + _eqType, 'Trailer', true, 'trailer') +
           '<div style="text-align:right;padding:2px 4px 6px">' + _reqLbl + '</div>' +
         '</div>' +
         '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid rgba(255,255,255,.07)">' +
-          '<button onclick="document.getElementById(\'_ef-truck-modal\').remove()" style="height:36px;padding:0 18px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#8B939B;font:700 13px Nunito,system-ui;cursor:pointer">Cancel</button>' +
-          '<button onclick="document.getElementById(\'_ef-truck-modal\').remove()" style="height:36px;padding:0 22px;border-radius:999px;border:0;background:#27A767;color:#111D25;font:800 13px Nunito,system-ui;cursor:pointer">Save</button>' +
+          '<button id="_ef-tmc-cancel" style="height:36px;padding:0 18px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#8B939B;font:700 13px Nunito,system-ui;cursor:pointer">Cancel</button>' +
+          '<button id="_ef-tmc-save" style="height:36px;padding:0 22px;border-radius:999px;border:0;background:#27A767;color:#111D25;font:800 13px Nunito,system-ui;cursor:pointer">Save</button>' +
         '</div>';
+      _tmc.querySelector('#_ef-tmc-close').addEventListener('click', _closeTruckAll);
+      _tmc.querySelector('#_ef-tmc-cancel').addEventListener('click', _closeTruckAll);
+      _tmc.querySelector('#_ef-tmc-save').addEventListener('click', _closeTruckAll);
+      _tmc.querySelectorAll('[data-detail]').forEach(function(btn) {
+        btn.addEventListener('click', function(e) { e.stopPropagation(); _openDetailPanel(btn.getAttribute('data-detail')); });
+      });
       _tm.appendChild(_tmbg);
       _tm.appendChild(_tmc);
       document.body.appendChild(_tm);
@@ -5394,7 +5587,12 @@ export function initApp() {
     header.appendChild(_hopt);
 
     // Action elements – live in tabsBar (map hidden) or rightHdr (map visible)
-    var _mapToggleEl = el('div', { class: 'hoverable', onclick: () => setState({ detailMapHidden: !state.detailMapHidden }), style: { padding: '6px 14px', margin: '6px 0', border: '1px solid rgba(255,255,255,.12)', borderRadius: '999px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: state.detailMapHidden ? '#27A767' : undefined } }, [state.detailMapHidden ? 'Show map' : 'Hide map']);
+    var _mapToggleEl = el('div', { class: 'hoverable', onclick: () => setState({ detailMapHidden: !state.detailMapHidden }), title: state.detailMapHidden ? 'Show map' : 'Hide map', style: { width: '30px', height: '30px', margin: '6px 0', borderRadius: '7px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: state.detailMapHidden ? '#27A767' : '#8B939B' } }, [
+      el('svg', { style: { width: '15px', height: '15px', flex: 'none' }, html: state.detailMapHidden
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="14 8 19 12 14 16"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="14 8 9 12 14 16"/></svg>'
+      })
+    ]);
     var _editRouteEl = el('div', { class: 'hoverable', style: { padding: '6px 14px', margin: '6px 0', border: '1px solid rgba(255,255,255,.12)', borderRadius: '999px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' } }, ['Edit route']);
     var _syncPillEl = (function() {
         var rId = routeId;
@@ -5502,7 +5700,7 @@ export function initApp() {
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '12px 12px', fontSize: '12.5px', fontWeight: '800', color: '#8B939B', cursor: 'pointer' }, html: ICON.report + '<span style="margin-left:7px;">Report</span>' })
     ];
     const _tbStyle = { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' };
-    const _tbContents = [..._planTabEls, el('div', { style: { flex: '1' } }), _mapToggleEl, _syncPillEl, _editRouteEl];
+    const _tbContents = [..._planTabEls, el('div', { style: { flex: '1' } }), _syncPillEl, _editRouteEl, _mapToggleEl];
 
     const laneCols = '40px minmax(200px,1fr) 110px 68px 84px 110px 100px 80px 65px 90px 80px 90px 110px';
     const TABLE_MIN_W = '1220px';
@@ -5586,7 +5784,7 @@ export function initApp() {
       var nearby = _zoneNearby(destCity);
       _zoneTip.innerHTML =
         '<div style="font:700 10px Nunito,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#7BCBCB;margin-bottom:5px">Search zone</div>' +
-        '<div style="font:500 11.5px Nunito,system-ui;color:#8D99A6;margin-bottom:8px;line-height:1.4">Also reviewing in<br>nearby cities like:</div>' +
+        '<div style="font:500 11.5px Nunito,system-ui;color:#8D99A6;margin-bottom:8px;line-height:1.4">Including nearby cities to<br>search for loads, such as</div>' +
         nearby.map(function(c) {
           return '<div style="display:flex;align-items:center;gap:7px;padding:3px 0">' +
             '<svg width="8" height="8" viewBox="0 0 8 8" style="flex-shrink:0"><circle cx="4" cy="4" r="3" fill="#7BCBCB" fill-opacity=".7"/></svg>' +
@@ -5817,21 +6015,6 @@ export function initApp() {
     const mapPanel = el('div', { style: { position: 'relative', height: '360px', borderRadius: '12px', overflow: 'hidden', background: '#17242E', border: '1px solid rgba(255,255,255,.08)' } }, [
       el('div', { style: { position: 'absolute', inset: '0', backgroundImage: 'linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px)', backgroundSize: '30px 30px' } }),
       el('div', { style: { position: 'absolute', inset: '0' }, html: '<svg width="100%" height="300" viewBox="0 0 420 300" preserveAspectRatio="none"><path d="M90 150 C 140 90, 210 110, 260 90 S 380 130, 420 190" fill="none" stroke="#7BCBCB" stroke-width="2.5" stroke-linecap="round"></path><path d="M90 150 C 150 200, 240 210, 320 170" fill="none" stroke="#EB4343" stroke-width="2" stroke-dasharray="6 6" stroke-linecap="round"></path></svg>' }),
-      el('div', { style: { position: 'absolute', left: '14px', top: '12px', display: 'flex', gap: '8px' } }, [
-        el('div', { style: { padding: '5px 11px', borderRadius: '999px', background: 'rgba(11,19,27,.72)', border: '1px solid rgba(255,255,255,.1)', fontSize: '11px', fontWeight: '700' } }, ['View ⌄']),
-        el('div', { style: { padding: '5px 11px', borderRadius: '999px', background: 'rgba(11,19,27,.72)', border: '1px solid rgba(255,255,255,.1)', fontSize: '11px', fontWeight: '700', color: '#27A767' } }, ['Open'])
-      ]),
-      el('div', { style: { position: 'absolute', right: '14px', top: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 4px 4px 10px', borderRadius: '999px', background: 'rgba(11,19,27,.72)', border: '1px solid rgba(255,255,255,.1)' } }, [
-        el('div', { style: { fontSize: '11px', fontWeight: '700', color: '#C9CED2', display: 'flex', alignItems: 'center', gap: '5px' } }, [
-          el('svg', { style: { width: '12px', height: '12px', flex: 'none' }, html: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#8B939B" stroke-width="1.3"/><path d="M8 4.5V8l2.5 2" stroke="#8B939B" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
-          'Assign Unit'
-        ]),
-        el('div', { style: { padding: '5px 11px', borderRadius: '999px', background: '#7BCBCB', color: '#0B131B', fontSize: '11px', fontWeight: '800', cursor: 'pointer' } }, ['Sync'])
-      ]),
-      el('div', { style: { position: 'absolute', left: '14px', right: '14px', top: '52px', display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(11,19,27,.85)', border: '1px solid rgba(255,255,255,.1)', fontSize: '11.5px', lineHeight: '1.5', color: '#C9CED2' } }, [
-        iconEl('warn', { flex: 'none', marginTop: '1px' }),
-        'Tracking unavailable: this route doesn\'t have a unit assigned yet, so we can\'t display a truck location.'
-      ]),
       el('div', { style: { position: 'absolute', left: '14px', bottom: '14px', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(11,19,27,.85)', border: '1px solid rgba(255,255,255,.1)' } }, [
         el('div', {}, [
           el('div', { style: { fontSize: '12px', fontWeight: '800' } }, ['ELD status']),
@@ -5842,6 +6025,123 @@ export function initApp() {
       ]),
       el('div', { style: { position: 'absolute', right: '8px', bottom: '6px', fontSize: '9px', color: '#6B7373' } }, ['Map placeholder'])
     ]);
+    // Map toolbar — 3 icon buttons (left) + Sync pill (right)
+    (function() {
+      var _F = 'Nunito,system-ui';
+      var _rId = routeId;
+      var toolbar = document.createElement('div');
+      toolbar.style.cssText = 'position:absolute;left:12px;top:12px;display:flex;align-items:center;gap:3px;padding:4px;border-radius:10px;background:rgba(11,19,27,.82);border:1px solid rgba(255,255,255,.1);z-index:10';
+      function _mb(svg, tip, fn) {
+        var b = document.createElement('div');
+        b.title = tip;
+        b.style.cssText = 'width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#C9CED2;flex-shrink:0';
+        b.innerHTML = svg;
+        b.addEventListener('mouseenter', function() { b.style.background = 'rgba(255,255,255,.09)'; });
+        b.addEventListener('mouseleave', function() { b.style.background = ''; });
+        if (fn) b.addEventListener('click', fn);
+        return b;
+      }
+      function _sep() {
+        var s = document.createElement('div');
+        s.style.cssText = 'width:1px;height:18px;background:rgba(255,255,255,.1);flex-shrink:0;margin:0 1px';
+        return s;
+      }
+      // Button 3: Expand map
+      var _xBtn = _mb('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>', 'Expand map', function() {
+        var ex = document.getElementById('_ef-map-expand');
+        if (ex) { ex.remove(); return; }
+        var ov = document.createElement('div');
+        ov.id = '_ef-map-expand';
+        ov.style.cssText = 'position:fixed;inset:0;z-index:500;background:#17242E';
+        ov.innerHTML = '<div style="position:relative;width:100%;height:100%;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:30px 30px"><svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 420 300" preserveAspectRatio="none"><path d="M90 150 C 140 90, 210 110, 260 90 S 380 130, 420 190" fill="none" stroke="#7BCBCB" stroke-width="2.5" stroke-linecap="round"></path><path d="M90 150 C 150 200, 240 210, 320 170" fill="none" stroke="#EB4343" stroke-width="2" stroke-dasharray="6 6" stroke-linecap="round"></path></svg><div id="_ef-map-exp-close" style="position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:8px;background:rgba(11,19,27,.82);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#C9CED2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></div></div>';
+        document.body.appendChild(ov);
+        document.getElementById('_ef-map-exp-close').addEventListener('click', function() { ov.remove(); });
+      });
+      // Button 2: Center / locate on map
+      var _cBtn = _mb('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><line x1="12" y1="2" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22"/><line x1="2" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22" y2="12"/></svg>', 'Center map');
+      toolbar.appendChild(_xBtn); toolbar.appendChild(_cBtn);
+      toolbar.appendChild(_sep());
+      // Button 1 (photo 1 btn 2): Layer visibility picker
+      var _layersState = { icons: true, loaded: true, deadhead: true };
+      var _lBtn = _mb('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>', 'Layer visibility');
+      _lBtn.style.position = 'relative';
+      function _closeLDrop() {
+        var ex = document.getElementById('_ef-layer-drop');
+        if (ex) ex.remove();
+        document.removeEventListener('click', _closeLDrop);
+      }
+      _lBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var ex = document.getElementById('_ef-layer-drop');
+        if (ex) { _closeLDrop(); return; }
+        var drop = document.createElement('div');
+        drop.id = '_ef-layer-drop';
+        drop.style.cssText = 'position:absolute;top:calc(100% + 8px);left:0;z-index:200;background:#131F27;border:1px solid rgba(255,255,255,.12);border-radius:12px;width:260px;box-shadow:0 12px 32px rgba(0,0,0,.6);overflow:hidden';
+        drop.addEventListener('click', function(e2) { e2.stopPropagation(); });
+        [{key:'unbooked',label:'Lane unbooked',desc:'Show unbooked lanes.'},{key:'booked',label:'Lane booked',desc:'Show lanes with booked loads.'},{key:'completed',label:'Lane completed',desc:'Show completed lanes.'},{key:'hub',label:'Hub Area',desc:'Show hub regions on the map.',off:true}].forEach(function(layer) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05)';
+          row.addEventListener('mouseenter', function() { row.style.background = 'rgba(255,255,255,.03)'; });
+          row.addEventListener('mouseleave', function() { row.style.background = ''; });
+          var txt = document.createElement('div');
+          txt.style.cssText = 'flex:1;min-width:0';
+          txt.innerHTML = '<div style="font:700 13px '+_F+';color:#DDE3E9;margin-bottom:2px">'+layer.label+'</div><div style="font:400 11.5px '+_F+';color:#6B7373">'+layer.desc+'</div>';
+          var on = !layer.off;
+          _layersState[layer.key] = on;
+          var tog = document.createElement('div');
+          tog.style.cssText = 'width:38px;height:22px;border-radius:999px;background:'+(on?'#7BCBCB':'rgba(255,255,255,.12)')+';position:relative;transition:background .18s;flex-shrink:0;cursor:pointer';
+          var knob = document.createElement('div');
+          knob.style.cssText = 'position:absolute;top:3px;left:'+(on?'19px':'3px')+';width:16px;height:16px;border-radius:50%;background:#0B131B;transition:left .18s';
+          tog.appendChild(knob);
+          row.addEventListener('click', function() {
+            _layersState[layer.key] = !_layersState[layer.key];
+            var nowOn = _layersState[layer.key];
+            tog.style.background = nowOn ? '#7BCBCB' : 'rgba(255,255,255,.12)';
+            knob.style.left = nowOn ? '19px' : '3px';
+          });
+          row.appendChild(txt); row.appendChild(tog);
+          drop.appendChild(row);
+        });
+        _lBtn.appendChild(drop);
+        setTimeout(function() { document.addEventListener('click', _closeLDrop); }, 0);
+      });
+      toolbar.appendChild(_lBtn);
+      mapPanel.appendChild(toolbar);
+      // Sync pill — right-aligned, separate; info icon triggers body-level tooltip
+      var _syncWrap = document.createElement('div');
+      _syncWrap.style.cssText = 'position:absolute;right:12px;top:12px;z-index:10';
+      var _syncPill = document.createElement('div');
+      _syncPill.style.cssText = 'display:flex;align-items:center;gap:5px;padding:5px 10px 5px 13px;border-radius:999px;background:rgba(11,19,27,.82);border:1px solid rgba(255,255,255,.1);font:700 12px '+_F+';color:#C9CED2;cursor:pointer;user-select:none';
+      _syncPill.innerHTML = 'Sync';
+      var _infoIcon = document.createElement('div');
+      _infoIcon.style.cssText = 'display:flex;align-items:center;color:#FBB303;flex-shrink:0;line-height:0';
+      _infoIcon.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
+      _syncPill.appendChild(_infoIcon);
+      // Tooltip at body level to escape overflow:hidden of mapPanel
+      var _stip = document.getElementById('_ef-sync-map-tip');
+      if (_stip) _stip.remove();
+      _stip = document.createElement('div');
+      _stip.id = '_ef-sync-map-tip';
+      _stip.style.cssText = 'display:none;position:fixed;z-index:9999;background:#131F27;border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px 13px;width:224px;font:400 11.5px '+_F+';color:#8B939B;line-height:1.5;box-shadow:0 10px 28px rgba(0,0,0,.6);pointer-events:none';
+      _stip.textContent = 'Tracking unavailable: assign a unit to this route to enable real-time truck tracking.';
+      document.body.appendChild(_stip);
+      function _showSyncTip() {
+        _stip.style.display = 'block';
+        var r = _infoIcon.getBoundingClientRect();
+        var tw = _stip.offsetWidth, th = _stip.offsetHeight;
+        _stip.style.top = Math.round(r.top - th - 8) + 'px';
+        _stip.style.left = Math.round(Math.min(r.right - tw, window.innerWidth - tw - 8)) + 'px';
+        _infoIcon.style.color = '#FBB303';
+      }
+      function _hideSyncTip() {
+        _stip.style.display = 'none';
+        _infoIcon.style.color = '#FBB303';
+      }
+      _infoIcon.addEventListener('mouseenter', _showSyncTip);
+      _infoIcon.addEventListener('mouseleave', _hideSyncTip);
+      _syncWrap.appendChild(_syncPill);
+      mapPanel.appendChild(_syncWrap);
+    })();
 
     const hosPanel = el('div', { style: { padding: '14px 16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#131F27' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
@@ -5880,6 +6180,21 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '14 de agosto, 2:39pm',
+          items: [
+            'Toolbar del mapa rediseñada: se eliminaron los botones de texto confusos ("View ⌄", "Open", "Assign Unit + Sync pill") y se consolidó todo en una toolbar de íconos flotante top-left',
+            'La barra de tabs (Plan / On road / Report) quedó limpia; Refresh y Edit route permanecen ahí como estaban, con un ícono de layout para hide/show del mapa sin texto',
+            'Toolbar del mapa — botón 3: Expand map (abre overlay full-screen con botón de cerrar)',
+            'Toolbar del mapa — botón 2: ícono de crosshair con círculo exterior y punto central relleno (Center map)',
+            'Toolbar del mapa — botón 1 (ojito): Layer visibility picker — dropdown con 4 toggles: Lane unbooked, Lane booked, Lane completed, Hub Area; diseño con título + descripción por fila y knob oscuro sobre fondo teal',
+            'Botón Sync separado a la derecha del mapa como pill independiente; incluye ícono ⓘ en amarillo (#FBB303) que muestra tooltip body-level al hacer hover: "Tracking unavailable: assign a unit to this route to enable real-time truck tracking."',
+            'Tooltip del Sync usa position:fixed con getBoundingClientRect() para escapar el overflow:hidden del mapPanel y aparecer siempre encima del diseño',
+            'Banner "Tracking unavailable" dentro del mapa eliminado',
+            'Popover "Add filter" del modal My Loads movido a document.body con position:fixed y z-index:9020 para escapar el overflow del modal (z-index:9010); se abre hacia arriba (dropup) usando r.top - popH - 6',
+            'Click-outside del popover "Add filter" actualizado para ignorar clics dentro del propio popover (evita cierre accidental al interactuar con selects e inputs)',
+          ]
+        },
         {
           date: '13 de agosto, 6:11pm',
           items: [
