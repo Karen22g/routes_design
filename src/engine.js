@@ -4566,6 +4566,7 @@ export function initApp() {
     var ex = document.getElementById('_ef-rp'); if (ex) ex.remove();
     var F = 'Nunito,system-ui';
     var ls = loadsOf(routeId);
+    var _orig = ls.length ? ls[0].origin : '';
     var _dest = ls.length ? ls[ls.length - 1].dest : '';
     var ov = document.createElement('div'); ov.id = '_ef-rp';
     ov.style.cssText = 'position:fixed;inset:0;z-index:9020;background:rgba(6,12,17,.6);display:flex;align-items:center;justify-content:center';
@@ -4618,8 +4619,11 @@ export function initApp() {
       row.style.cssText = 'background:#0D1820;border:1px solid rgba(255,255,255,.1);border-radius:9px;padding:10px 13px;color:#6B7373;font:500 13px '+F+';cursor:pointer';
       row.textContent = placeholder; wrap.appendChild(row); return wrap;
     }
-    // DESTINATION
-    var fd = document.createElement('div'); fd.appendChild(_rpLabel('Destination')); fd.appendChild(_rpInput(_dest)); body.appendChild(fd);
+    // ORIGIN + DESTINATION (side by side)
+    var fod = document.createElement('div'); fod.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:12px';
+    var fo = document.createElement('div'); fo.appendChild(_rpLabel('Origin')); fo.appendChild(_rpInput(_orig)); fod.appendChild(fo);
+    var fd = document.createElement('div'); fd.appendChild(_rpLabel('Destination')); fd.appendChild(_rpInput(_dest)); fod.appendChild(fd);
+    body.appendChild(fod);
     // DAYS ON ROUTE
     var fdr = document.createElement('div'); fdr.appendChild(_rpLabel('Days on route')); fdr.appendChild(_rpSelect(['1 day','1–2 days','1–4 days','1 week','Any'], '1–4 days')); body.appendChild(fdr);
     // BLOCKED REGIONS
@@ -5828,8 +5832,11 @@ export function initApp() {
       });
     })();
 
+    var _firstDhRendered = false;
     function appendRow(row) {
       const _isDH = row.num === 'DH';
+      const _isFirstDh = _isDH && !_firstDhRendered;
+      if (_isDH) _firstDhRendered = true;
       let _lBorder = 'none';
       if (!_isDH) {
         var _pri = _lHighlightPriority[row.origin + '|' + row.dest] || 0;
@@ -5952,6 +5959,25 @@ export function initApp() {
       if (row.isRange && row.loadIdx !== null) {
         rowDiv.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); _renderLbBar(rowDiv, routeId, row.loadIdx, row.origin, row.dest); });
         rowDiv.addEventListener('mouseleave', function() { _lbTimer = setTimeout(function() { if (!document.getElementById('_ef-lb-conf') && !document.getElementById('_ef-lb-notif') && !document.getElementById('_ef-lb-menu')) { _hideLbBar(); } }, 200); });
+      }
+      if (_isFirstDh) {
+        var _dhOrigCell = rowDiv.children[1] && rowDiv.children[1].children[0] && rowDiv.children[1].children[0].children[0];
+        if (_dhOrigCell) {
+          _dhOrigCell.style.cursor = 'pointer';
+          _dhOrigCell.style.transition = 'color .15s';
+          _dhOrigCell.addEventListener('mouseenter', function() {
+            _dhOrigCell.style.color = '#7BCBCB';
+            _showPinTip(_dhOrigCell, '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg><span style="color:#FBFBFB;font-weight:500">Edit in Route Preferences</span>');
+          });
+          _dhOrigCell.addEventListener('mouseleave', function() {
+            _dhOrigCell.style.color = row.textFg;
+            _hidePinTip();
+          });
+          _dhOrigCell.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _openRoutePreferences(routeId);
+          });
+        }
       }
       table.appendChild(rowDiv);
     }
@@ -6180,6 +6206,13 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '18 de agosto, 4:38pm',
+          items: [
+            'Modal "Route Preferences": se agregó el campo "Origin" al lado de "Destination", permitiendo editar el punto de inicio de la ruta directamente desde el modal',
+            'Vista de plan — primer tramo DH: al hacer hover sobre la ciudad de origen, aparece un tooltip "Edit in Route Preferences" que abre el modal directo para modificar el origen de la ruta',
+          ]
+        },
         {
           date: '14 de agosto, 2:39pm',
           items: [
