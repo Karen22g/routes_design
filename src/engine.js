@@ -5983,20 +5983,27 @@ export function initApp() {
       if (_isFirstDh) {
         var _dhOrigCell = rowDiv.children[1] && rowDiv.children[1].children[0] && rowDiv.children[1].children[0].children[0];
         if (_dhOrigCell) {
-          _dhOrigCell.style.cursor = 'pointer';
-          _dhOrigCell.style.transition = 'color .15s';
-          _dhOrigCell.addEventListener('mouseenter', function() {
-            _dhOrigCell.style.color = '#7BCBCB';
-            _showPinTip(_dhOrigCell, '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg><span style="color:#FBFBFB;font-weight:500">Edit in Route Preferences</span>');
+          _dhOrigCell.style.display = 'flex';
+          _dhOrigCell.style.alignItems = 'center';
+          _dhOrigCell.style.gap = '4px';
+          var _pencilBtn = document.createElement('span');
+          _pencilBtn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;border-radius:4px;border:1px solid rgba(255,255,255,.1);color:#6B7373;cursor:pointer;transition:color .15s,border-color .15s';
+          _pencilBtn.innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
+          _pencilBtn.addEventListener('mouseenter', function() {
+            _pencilBtn.style.color = '#7BCBCB';
+            _pencilBtn.style.borderColor = 'rgba(123,203,203,.35)';
+            _showPinTip(_pencilBtn, '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg><span style="color:#FBFBFB;font-weight:500">Edit in Route Preferences</span>');
           });
-          _dhOrigCell.addEventListener('mouseleave', function() {
-            _dhOrigCell.style.color = row.textFg;
+          _pencilBtn.addEventListener('mouseleave', function() {
+            _pencilBtn.style.color = '#6B7373';
+            _pencilBtn.style.borderColor = 'rgba(255,255,255,.1)';
             _hidePinTip();
           });
-          _dhOrigCell.addEventListener('click', function(e) {
+          _pencilBtn.addEventListener('click', function(e) {
             e.stopPropagation();
             _openRoutePreferences(routeId);
           });
+          _dhOrigCell.appendChild(_pencilBtn);
         }
       }
       table.appendChild(rowDiv);
