@@ -303,7 +303,11 @@ export function initApp() {
     detailOpsUnit: 'total',
     detailLanesExpanded: false,
     detailMapHidden: false,
-    laneMapOrigin: null
+    laneMapOrigin: null,
+    detailTab: 'plan',        // 'plan' | 'control' | 'report'
+    controlMode: 'route',     // 'route' | 'lane'
+    controlLane: null,        // selected load index within the route (lane mode)
+    controlNearbyStops: true
   };
   let CR_ROUTE_COUNTER = 2700;
 
@@ -650,7 +654,7 @@ export function initApp() {
     ROUTES.unshift(newRoute);
     newLoads.forEach(function (l) { LOADS.push(l); });
 
-    setState({ showCreateRoute: false, openRoute: newId, view: 'routes', detailLanesExpanded: false });
+    setState({ showCreateRoute: false, openRoute: newId, view: 'routes', detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null });
     if (tmsLoads.length === 0 && newLoads.length > 0) {
       setTimeout(function() { _lmSt.origin = newLoads[0].origin; _doRenderLaneMap(); }, 80);
     }
@@ -2009,7 +2013,7 @@ export function initApp() {
         route: r.id
           ? el('div', { style: { padding: '13px 8px 13px 0' } }, [
               el('div', {
-                onclick: e => { e.stopPropagation(); setState({ view: 'routes', openRoute: r.id, openLoad: null }); },
+                onclick: e => { e.stopPropagation(); setState({ view: 'routes', openRoute: r.id, openLoad: null, detailTab: 'plan', controlMode: 'route', controlLane: null }); },
                 style: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#7BCBCB', fontWeight: '700', fontSize: '12px', cursor: 'pointer', borderBottom: '1px dashed rgba(123,203,203,.4)' }
               }, [iconEl('route'), routeNameShort]),
               el('div', { style: { color: '#6B7373', fontSize: '10.5px', marginTop: '2px' } }, ['Leg ' + idx + ' of ' + loadsOf(l.route).length])
@@ -2360,7 +2364,7 @@ export function initApp() {
           if (existing) { existing.remove(); return; }
           const canDelete = r.status === 'Planned';
           const menuItems = [
-            el('div', { class: 'hoverable', onclick: e2 => { e2.stopPropagation(); menu.remove(); setState({ openRoute: r.id, detailLanesExpanded: false }); }, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#FBFBFB' } }, [
+            el('div', { class: 'hoverable', onclick: e2 => { e2.stopPropagation(); menu.remove(); setState({ openRoute: r.id, detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null }); }, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#FBFBFB' } }, [
               el('span', { html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>' }, []),
               'Open in a new tab'
             ])
@@ -2403,7 +2407,7 @@ export function initApp() {
 
       const rowMain = el('div', {
         class: 'row-hoverable',
-        onclick: () => setState({ openRoute: r.id, detailLanesExpanded: false }),
+        onclick: () => setState({ openRoute: r.id, detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null }),
         style: { display: 'grid', gridTemplateColumns: gridTemplate, alignItems: 'center', padding: '0 20px', cursor: 'pointer', background: expanded ? 'rgba(39,167,103,.06)' : 'transparent' }
       }, cols.map(c => cells[c.key]).concat([
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' } }, [
@@ -2553,7 +2557,7 @@ export function initApp() {
 
     const fields = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '1px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.07)', borderRadius: '10px', overflow: 'hidden' } }, [
       field('Status', pill(l.status, c[0], c[1])),
-      field('Route', el('div', { onclick: () => setState({ openLoad: null, view: 'routes', openRoute: r.id }), style: { fontSize: '12px', fontWeight: '700', color: '#7BCBCB', cursor: 'pointer' } }, [r.name + ' →'])),
+      field('Route', el('div', { onclick: () => setState({ openLoad: null, view: 'routes', openRoute: r.id, detailTab: 'plan', controlMode: 'route', controlLane: null }), style: { fontSize: '12px', fontWeight: '700', color: '#7BCBCB', cursor: 'pointer' } }, [r.name + ' →'])),
       field('Trailer', el('div', { style: { fontSize: '12px', fontWeight: '700' } }, [r.trailer + ' · ' + l.equipment])),
       field('Driver / unit', el('div', { style: { fontSize: '12px', fontWeight: '700' } }, [r.driver + ' · ' + r.unit])),
       field('Truck', el('div', { style: { fontSize: '12px', fontWeight: '700', fontFamily: "'JetBrains Mono', monospace" } }, [l.truck])),
@@ -5343,6 +5347,7 @@ export function initApp() {
   }
 
   function renderDetail(routeId) {
+    if (state.detailTab === 'control') return renderControl(routeId);
     const d = buildDetailRows(routeId);
     const r = d.r;
     const c = STATUS[r.status];
@@ -5698,10 +5703,25 @@ export function initApp() {
         wrap.appendChild(leftPart); wrap.appendChild(rightPart);
         return wrap;
     })();
+    function _detailTab(id, icon, label) {
+      var active = state.detailTab === id;
+      return el('div', {
+        onclick: id === 'report' ? undefined : (() => setState({ detailTab: id })),
+        style: {
+          display: 'flex', alignItems: 'center', gap: '7px', padding: '12px 12px',
+          fontSize: '12.5px', fontWeight: '800',
+          color: active ? '#27A767' : '#8B939B',
+          boxShadow: active ? 'inset 0 -2px 0 0 #27A767' : 'none',
+          cursor: id === 'report' ? 'default' : 'pointer',
+          opacity: id === 'report' ? '.5' : '1'
+        },
+        html: icon + '<span style="margin-left:7px;">' + label + '</span>'
+      });
+    }
     var _planTabEls = [
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '12px 12px', fontSize: '12.5px', fontWeight: '800', color: '#27A767', boxShadow: 'inset 0 -2px 0 0 #27A767', cursor: 'pointer' }, html: ICON.plan + '<span style="margin-left:7px;">Plan</span>' }),
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '12px 12px', fontSize: '12.5px', fontWeight: '800', color: '#8B939B', cursor: 'pointer' }, html: ICON.onroad + '<span style="margin-left:7px;">On road</span>' }),
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '12px 12px', fontSize: '12.5px', fontWeight: '800', color: '#8B939B', cursor: 'pointer' }, html: ICON.report + '<span style="margin-left:7px;">Report</span>' })
+      _detailTab('plan', ICON.plan, 'Plan'),
+      _detailTab('control', ICON.onroad, 'Control'),
+      _detailTab('report', ICON.report, 'Report')
     ];
     const _tbStyle = { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' };
     const _tbContents = [..._planTabEls, el('div', { style: { flex: '1' } }), _syncPillEl, _editRouteEl, _mapToggleEl];
@@ -6198,6 +6218,734 @@ export function initApp() {
     const rightWrapper = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', padding: '0 20px 16px 0' } }, [mapPanel, hosPanel, statTiles, moneyTiles]);
     const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
     return el('div', { style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } }, [header, splitBody]);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONTROL (On Road) — immersive live-execution view. Real data (miles driven,
+  // departure time, delay, live position) vs Plan's estimated metrics.
+  // ─────────────────────────────────────────────────────────────────────────
+  function buildControlData(routeId) {
+    const r = routeOf(routeId);
+    const ls = loadsOf(routeId);
+    const rows = [];
+    function execOf(status) {
+      if (status === 'In Transit' || status === 'Dispatched') return 'In progress';
+      if (status === 'Delivered' || status === 'Invoiced' || status === 'Paid' || status === 'Completed') return 'Completed';
+      if (status === 'Unbooked') return 'Upcoming';
+      return 'Booked'; // Booked / Assigned / Offer
+    }
+    let loadNum = 0;
+    ls.forEach((l, i) => {
+      const prevDest = i === 0 ? l.origin : ls[i - 1].dest;
+      const dhExec = (l.status === 'In Transit' || l.status === 'Dispatched') ? 'In progress'
+        : (l.status === 'Delivered' || l.status === 'Invoiced' || l.status === 'Paid' || l.status === 'Completed') ? 'Completed'
+        : 'Upcoming';
+      rows.push({
+        kind: 'dh', num: 'DH', origin: prevDest, dest: l.origin,
+        originDate: 'Est. ' + prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery),
+        destDate: 'Est. ' + prettyDate(l.pickup), exec: dhExec, loadIdx: null
+      });
+      loadNum++;
+      const exec = execOf(l.status);
+      const pct = exec === 'Completed' ? 100 : exec === 'In progress' ? (55 + (i * 17) % 35) : 0;
+      const _isLate = l.onTime && l.onTime.indexOf('Late') === 0;
+      rows.push({
+        kind: 'load', num: String(loadNum), origin: l.origin, dest: l.dest,
+        originDate: 'Est. ' + prettyDate(l.pickup), destDate: 'Est. ' + prettyDate(l.delivery),
+        exec: exec, loadIdx: i, load: l, pct: pct,
+        milesDriven: Math.round(l.miles * pct / 100),
+        departedAt: exec !== 'Upcoming' ? (l.pickup.replace(/\/\d{4}$/, '') + ' · ' + ((l.pickupTime || '').split(' - ')[0] || '--')) : '--',
+        delay: _isLate ? l.onTime : (exec !== 'Upcoming' ? 'On time' : '--'), isLate: !!_isLate
+      });
+    });
+    // ── Layer live-simulation state on top of the base rows ──
+    const sim = _ctrlSim[routeId];
+    if (sim && sim.started) {
+      rows.forEach(row => {
+        if (row.kind !== 'load') return;
+        if (row.loadIdx < sim.activeLaneIdx) { row.exec = 'Completed'; row.pct = 100; row.milesDriven = row.load.miles; }
+        else if (row.loadIdx === sim.activeLaneIdx) {
+          row.exec = sim.progress >= 1 ? 'Completed' : 'In progress';
+          row.pct = Math.round(sim.progress * 100);
+          row.milesDriven = Math.round(row.load.miles * sim.progress);
+          row.isLate = sim.delayMin > 0;
+          row.delay = sim.delayMin > 0 ? ('+' + sim.delayMin + 'm') : 'On time';
+          row.departedAt = row.load.pickup.replace(/\/\d{4}$/, '') + ' · ' + ((row.load.pickupTime || '').split(' - ')[0] || '--');
+        } else { row.exec = 'Upcoming'; }
+      });
+      rows.forEach((row, i) => {
+        if (row.kind !== 'dh') return;
+        const nxt = rows[i + 1];
+        if (nxt) row.exec = nxt.exec === 'Completed' ? 'Completed' : (nxt.exec === 'In progress' ? 'In progress' : 'Upcoming');
+      });
+    }
+    const currentIncome = ls
+      .filter(l => ['In Transit', 'Dispatched', 'Delivered', 'Invoiced', 'Paid'].indexOf(l.status) >= 0)
+      .reduce((s, l) => s + l.income, 0);
+    return { r: r, ls: ls, rows: rows, currentIncome: currentIncome };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONTROL — live-simulation engine (demo). Drives truck movement, situations,
+  // driver permissions, plan edits, route optimization, and a change log.
+  // ─────────────────────────────────────────────────────────────────────────
+  const _ctrlSim = {};
+  let _ctrlSimTimer = null;
+  const _CTRL_PATH_ORIG = 'M560 545 C 610 505, 640 452, 700 425 S 812 372, 872 300';
+  const _CTRL_PATH_OPT = 'M560 545 C 648 462, 772 356, 872 300';
+  const _CTRL_PATH_DEV = 'M700 425 C 742 452, 720 512, 660 512';
+  const _CTRL_SCENARIOS = {
+    traffic:   { title: 'Heavy traffic ahead',            sev: 'warn', desc: 'I-40 congestion is adding ~35 min to the current leg.',           actions: [{ label: 'Re-optimize route', kind: 'reopt' }, { label: 'Notify customer', kind: 'notify' }, { label: 'Dismiss', kind: 'dismiss' }] },
+    appt:      { title: 'Receiver moved the appointment', sev: 'warn', desc: 'Delivery window changed to 10:00 – 14:00.',                        actions: [{ label: 'Update stop time', kind: 'stoptime' }, { label: 'Message driver', kind: 'msg' }, { label: 'Dismiss', kind: 'dismiss' }] },
+    hos:       { title: 'Driver low on drive hours',      sev: 'warn', desc: '2h 10m of drive time left — short of the delivery.',              actions: [{ label: 'Add rest stop', kind: 'addrest' }, { label: 'Enable PC miles', kind: 'pcmiles' }, { label: 'Dismiss', kind: 'dismiss' }] },
+    driverreq: { title: 'Driver requests a route change',  sev: 'info', desc: 'Marcus wants to detour via US-72 to avoid a lane closure.',       actions: [{ label: 'Approve', kind: 'approve' }, { label: 'Deny', kind: 'deny' }] },
+    breakdown: { title: 'Breakdown reported',             sev: 'crit', desc: 'Trailer tire blowout reported near the current position.',       actions: [{ label: 'Dispatch roadside', kind: 'roadside' }, { label: 'Re-plan remaining', kind: 'replan' }] },
+    backhaul:  { title: 'Better backhaul available',       sev: 'info', desc: 'A reload at $3.10/mi (+$180) matches this lane.',                 actions: [{ label: 'Add to plan', kind: 'addlane' }, { label: 'Ignore', kind: 'dismiss' }] }
+  };
+  function _hhmm() { const d = new Date(); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function _ctrlSimGet(routeId) {
+    if (!_ctrlSim[routeId]) {
+      const ls = loadsOf(routeId);
+      let ai = ls.findIndex(l => l.status === 'In Transit' || l.status === 'Dispatched');
+      if (ai < 0) ai = 0;
+      const al = ls[ai];
+      const started = !!(al && (al.status === 'In Transit' || al.status === 'Dispatched'));
+      const late = al && al.onTime && al.onTime.indexOf('Late') === 0;
+      _ctrlSim[routeId] = {
+        started: started, running: false, speed: 1,
+        activeLaneIdx: ai, progress: started ? 0.42 : 0,
+        variant: 'original', deviation: false, proposed: false,
+        delayMin: late ? (parseInt(al.onTime.replace(/\D/g, ''), 10) || 0) : 0,
+        permissions: { changeRoute: false, changeStops: false, pcMiles: false },
+        pcActive: false,
+        extraStops: {}, events: [], log: [],
+        permOpen: false, logOpen: false, scenarioOpen: false
+      };
+      if (started && al) _ctrlSim[routeId].log.push({ time: '08:00', actor: 'System', text: 'Truck departed ' + al.origin, kind: 'ok' });
+    }
+    return _ctrlSim[routeId];
+  }
+  function _ctrlLog(routeId, actor, text, kind) { _ctrlSimGet(routeId).log.unshift({ time: _hhmm(), actor: actor, text: text, kind: kind || 'info' }); }
+  function _ctrlActivePath(s) { return s.variant === 'optimized' ? _CTRL_PATH_OPT : _CTRL_PATH_ORIG; }
+  function _ctrlAddStop(routeId, stop) { const s = _ctrlSimGet(routeId); const li = s.activeLaneIdx; if (!s.extraStops[li]) s.extraStops[li] = []; s.extraStops[li].push(stop); }
+  function _ctrlSimPaint(routeId) {
+    const s = _ctrlSim[routeId]; if (!s) return;
+    const route = document.getElementById('ctrl-route');
+    const trav = document.getElementById('ctrl-traveled');
+    const truck = document.getElementById('ctrl-truck');
+    if (route && trav) {
+      const d = _ctrlActivePath(s);
+      if (route.getAttribute('d') !== d) { route.setAttribute('d', d); trav.setAttribute('d', d); }
+      let len = 400; try { len = trav.getTotalLength(); } catch (e) {}
+      trav.style.strokeDasharray = len; trav.style.strokeDashoffset = (len * (1 - s.progress)).toFixed(1);
+      if (truck) { try { const pt = trav.getPointAtLength(len * s.progress); truck.setAttribute('transform', 'translate(' + pt.x.toFixed(1) + ',' + pt.y.toFixed(1) + ')'); } catch (e) {} }
+    }
+    const prop = document.getElementById('ctrl-proposed'); if (prop) prop.style.display = s.proposed ? 'block' : 'none';
+    const dev = document.getElementById('ctrl-deviation'); if (dev) dev.style.display = s.deviation ? 'block' : 'none';
+    const ls = loadsOf(routeId); const al = ls[s.activeLaneIdx];
+    const mi = al ? Math.round(al.miles * s.progress) : 0;
+    document.querySelectorAll('.ctrl-live-mi').forEach(e => e.textContent = mi.toLocaleString('en-US') + ' mi');
+    document.querySelectorAll('.ctrl-live-pct').forEach(e => e.textContent = Math.round(s.progress * 100) + '%');
+    document.querySelectorAll('.ctrl-live-progress').forEach(e => e.style.width = (s.progress * 100) + '%');
+    const delayTxt = s.delayMin > 0 ? '+' + s.delayMin + 'm late' : 'On time';
+    const delayCol = s.delayMin > 0 ? '#f87171' : '#27A767';
+    document.querySelectorAll('.ctrl-live-delay').forEach(e => { e.textContent = delayTxt; e.style.color = delayCol; });
+    document.querySelectorAll('.ctrl-live-dot').forEach(e => { e.style.animation = s.running ? '_efDotPulse 1.2s ease-in-out infinite' : 'none'; e.style.background = s.running ? '#27A767' : '#8B939B'; });
+  }
+  function _ctrlSimStart(routeId) {
+    if (_ctrlSimTimer) return;
+    _ctrlSimTimer = setInterval(function () {
+      const s = _ctrlSim[routeId];
+      if (!s || !s.running) return;
+      if (!document.getElementById('ctrl-route')) { clearInterval(_ctrlSimTimer); _ctrlSimTimer = null; return; }
+      s.progress = Math.min(1, s.progress + 0.01 * s.speed);
+      if (s.deviation && s.delayMin < 45) s.delayMin += 1;
+      if (s.progress >= 1) { s.running = false; _ctrlLog(routeId, 'System', 'Arrived at ' + ((loadsOf(routeId)[s.activeLaneIdx] || {}).dest || 'destination'), 'ok'); _ctrlSimStop(); setState({}); }
+      _ctrlSimPaint(routeId);
+    }, 360);
+  }
+  function _ctrlSimStop() { if (_ctrlSimTimer) { clearInterval(_ctrlSimTimer); _ctrlSimTimer = null; } }
+  function _ctrlPlay(routeId) { const s = _ctrlSimGet(routeId); if (!s.started) { s.started = true; _ctrlLog(routeId, 'System', 'Execution started — truck dispatched', 'ok'); } s.running = true; s.proposed = false; _ctrlSimStart(routeId); setState({}); }
+  function _ctrlPause(routeId) { const s = _ctrlSimGet(routeId); s.running = false; _ctrlSimStop(); setState({}); }
+  function _ctrlSpeed(routeId) { const s = _ctrlSimGet(routeId); s.speed = s.speed >= 4 ? 1 : s.speed * 2; setState({}); }
+  function _ctrlOptimize(routeId) {
+    const s = _ctrlSimGet(routeId);
+    if (!s.started) { s.proposed = !s.proposed; setState({}); }
+    else { s.variant = 'optimized'; s.deviation = false; s.delayMin = Math.max(0, s.delayMin - 20); _ctrlLog(routeId, 'Dispatcher', 'Re-optimized route from current position (−37 mi · ETA −42 min)', 'ok'); setState({}); }
+  }
+  function _ctrlAcceptProposed(routeId) { const s = _ctrlSimGet(routeId); s.variant = 'optimized'; s.proposed = false; _ctrlLog(routeId, 'Dispatcher', 'Applied optimized plan before dispatch (−52 mi · −1h 05m)', 'ok'); setState({}); }
+  function _ctrlInject(routeId, id) {
+    const s = _ctrlSimGet(routeId); s.scenarioOpen = false;
+    if (id === 'driverreq' && s.permissions.changeRoute) {
+      s.variant = 'optimized'; s.deviation = false;
+      _ctrlLog(routeId, 'Driver', 'Changed route (auto-applied — permission granted)', 'ok');
+      s.events.unshift({ id: 'driverreq_auto', title: 'Driver changed the route', sev: 'info', desc: 'Marcus re-routed via US-72. Auto-applied because the driver has route-change permission.', actions: [{ label: 'Acknowledge', kind: 'dismiss' }] });
+    } else {
+      if (id === 'traffic') s.deviation = true;
+      s.events.unshift(Object.assign({ id: id }, _CTRL_SCENARIOS[id]));
+    }
+    setState({});
+  }
+  function _ctrlAction(routeId, kind) {
+    const s = _ctrlSimGet(routeId);
+    switch (kind) {
+      case 'reopt': s.variant = 'optimized'; s.deviation = false; s.delayMin = Math.max(0, s.delayMin - 25); _ctrlLog(routeId, 'Dispatcher', 'Re-optimized route from current position (−37 mi · ETA −42 min)', 'ok'); break;
+      case 'notify': _ctrlLog(routeId, 'Dispatcher', 'Sent delay notification to customer', 'info'); break;
+      case 'stoptime': _ctrlLog(routeId, 'Dispatcher', 'Updated stop delivery window to 10:00 – 14:00', 'info'); break;
+      case 'msg': _ctrlLog(routeId, 'Dispatcher', 'Messaged driver about the appointment change', 'info'); break;
+      case 'addrest': _ctrlAddStop(routeId, { address: 'Rest Area — I-40 MM 292', tags: 'Rest · 30 min', role: 'Rest' }); _ctrlLog(routeId, 'Dispatcher', 'Added rest stop to the lane', 'info'); break;
+      case 'pcmiles': s.permissions.pcMiles = true; s.pcActive = true; _ctrlLog(routeId, 'Dispatcher', 'Enabled PC (Personal Conveyance) miles for driver', 'ok'); break;
+      case 'approve': s.variant = 'optimized'; s.deviation = false; _ctrlLog(routeId, 'Dispatcher', 'Approved driver route change', 'ok'); break;
+      case 'deny': _ctrlLog(routeId, 'Dispatcher', 'Denied driver route change', 'warn'); break;
+      case 'roadside': _ctrlLog(routeId, 'Dispatcher', 'Dispatched roadside assistance', 'crit'); break;
+      case 'replan': _ctrlLog(routeId, 'Dispatcher', 'Re-planned the remaining lanes', 'info'); break;
+      case 'addlane': _ctrlLog(routeId, 'Dispatcher', 'Added backhaul load to the plan', 'ok'); break;
+      case 'dismiss': default: break;
+    }
+    s.events.shift();
+    setState({});
+  }
+  function _ctrlTogglePerm(routeId, key) {
+    const s = _ctrlSimGet(routeId); s.permissions[key] = !s.permissions[key];
+    const names = { changeRoute: 'Change route', changeStops: 'Change stops', pcMiles: 'PC miles' };
+    _ctrlLog(routeId, 'Dispatcher', (s.permissions[key] ? 'Granted' : 'Revoked') + ' driver permission: ' + names[key], 'info');
+    setState({});
+  }
+
+  function renderControl(routeId) {
+    const sim = _ctrlSimGet(routeId);
+    const cd = buildControlData(routeId);
+    const r = cd.r;
+    const F = 'Nunito,system-ui';
+    const laneMode = state.controlMode === 'lane' && state.controlLane != null && !!cd.ls[state.controlLane];
+    const panelW = laneMode ? 404 : 470;
+
+    // ── icons (inline) ──
+    const IC = {
+      spinner: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>',
+      box: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
+      clock: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+      check: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+      chevDown: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+      pin: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+      share: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>',
+      smart: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg>',
+      dots: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+      crosshair: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>',
+      sync: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>',
+      arrowUpRight: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>',
+      fuel: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>',
+      wash: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-3-3-7-7-11-4 4-7 8-7 11a7 7 0 0 0 7 7z"/></svg>',
+      hotel: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20V8l10-5 10 5v12"/><path d="M2 20h20M9 20v-5h6v5"/></svg>'
+    };
+
+    function _chip(exec) {
+      const M = {
+        'In progress': { bg: 'rgba(39,167,103,.14)', fg: '#3FC281', ic: IC.spinner, pulse: true },
+        'Booked': { bg: 'rgba(255,255,255,.05)', fg: '#8B939B', ic: IC.box },
+        'Upcoming': { bg: 'transparent', fg: '#6B7373', ic: IC.clock, bd: '1px solid rgba(255,255,255,.1)' },
+        'Completed': { bg: 'rgba(39,167,103,.12)', fg: '#6BD59E', ic: IC.check }
+      };
+      const m = M[exec] || M.Booked;
+      const sp = document.createElement('span');
+      sp.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:7px;font:700 10.5px ' + F + ';background:' + m.bg + ';color:' + m.fg + ';border:' + (m.bd || '1px solid transparent') + (m.pulse ? ';animation:_efDotPulse 2s ease-in-out infinite' : '');
+      sp.innerHTML = m.ic + '<span>' + exec + '</span>';
+      return sp;
+    }
+    function _routePill(status) {
+      const m = status === 'In progress' ? { bg: 'rgba(39,167,103,.14)', fg: '#3FC281', ic: IC.spinner }
+        : status === 'Completed' ? { bg: 'rgba(39,167,103,.12)', fg: '#6BD59E', ic: IC.check }
+        : { bg: 'rgba(251,179,3,.12)', fg: '#FBB303', ic: IC.clock };
+      return el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '999px', background: m.bg, color: m.fg, font: '800 12px ' + F, flexShrink: '0' }, html: m.ic + '<span>' + status + '</span>' });
+    }
+    function _numBadge(row) {
+      const isDH = row.kind === 'dh';
+      const done = row.exec === 'Completed';
+      const active = row.exec === 'In progress';
+      const bg = isDH ? (active ? 'rgba(123,203,203,.16)' : 'transparent') : (done ? '#27A767' : active ? 'rgba(123,203,203,.16)' : '#1B2A36');
+      const fg = isDH ? '#7BCBCB' : (done ? '#0E1820' : active ? '#7BCBCB' : '#DDE3E9');
+      const bd = isDH || active ? '1px solid rgba(123,203,203,.35)' : 'none';
+      return el('div', { style: { display: 'grid', placeItems: 'center', width: '34px', height: '34px', borderRadius: '9px', background: bg, color: fg, border: bd, font: '800 11px ' + F, flexShrink: '0' } }, [row.num]);
+    }
+    function _endpoint(name, date, alignEnd) {
+      return el('div', { style: { minWidth: '0', textAlign: alignEnd ? 'right' : 'left' } }, [
+        el('div', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', font: '700 12px ' + F, color: '#E7ECF0' } }, [name]),
+        el('div', { style: { whiteSpace: 'nowrap', font: '400 10px "JetBrains Mono",monospace', color: '#6B7373', marginTop: '1px' } }, [date])
+      ]);
+    }
+
+    // ── Left panel: ROUTE mode ──
+    function _routePanel() {
+      const rows = el('div', { class: 'ef-scroll', style: { overflowY: 'auto', padding: '4px 12px 14px' } },
+        cd.rows.map(row => el('div', {
+          class: 'row-hoverable',
+          onclick: row.kind === 'load' ? (() => setState({ controlMode: 'lane', controlLane: row.loadIdx })) : undefined,
+          style: { display: 'grid', gridTemplateColumns: '34px 1fr auto', alignItems: 'center', gap: '11px', padding: '9px 8px', borderRadius: '10px', cursor: row.kind === 'load' ? 'pointer' : 'default' }
+        }, [
+          _numBadge(row),
+          el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 16px 1fr', alignItems: 'center', gap: '6px', minWidth: '0' } }, [
+            _endpoint(row.origin, row.originDate, false),
+            svg(ICON.arrow, { flex: 'none' }),
+            _endpoint(row.dest, row.destDate, false)
+          ]),
+          _chip(row.exec)
+        ]))
+      );
+      return el('div', { style: { position: 'absolute', top: '76px', left: '24px', width: panelW + 'px', maxHeight: 'calc(100% - 210px)', zIndex: '15', display: 'flex', flexDirection: 'column', borderRadius: '16px', background: 'rgba(11,17,23,.82)', border: '1px solid rgba(255,255,255,.09)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.5)', overflow: 'hidden' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '18px 20px 14px' } }, [
+          el('div', { style: { font: '800 17px ' + F, color: '#F4F6F8', letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [r.name]),
+          _routePill(r.status)
+        ]),
+        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr auto', padding: '9px 14px', margin: '0 16px 6px', background: 'rgba(255,255,255,.03)', borderRadius: '10px', font: '700 11px ' + F, color: '#8B939B' } }, [
+          el('div', {}, ['Origin - Destination']),
+          el('div', {}, ['Status'])
+        ]),
+        rows
+      ]);
+    }
+
+    // ── Left panel: LANE mode ──
+    const _CTRL_ADDR = ['2972 Thornbridge Cir, Shiloh, IL 85485', '1845 Cedar Grove Rd, Tempe, AZ 85281', '640 Riverside Dr, Gallup, NM 87301', '118 Old Mill Rd, Amarillo, TX 79101', '5521 Beacon St, Wichita, KS 67202', '89 Harbor View Ln, Kansas City, MO 64106'];
+    function _ctrlStops(laneIdx) {
+      const a = _CTRL_ADDR, n = a.length;
+      const base = [
+        { address: a[(laneIdx * 2) % n], role: 'Pick-up', tags: 'Pick-up · Gas · Weight' },
+        { address: a[(laneIdx * 2 + 1) % n], role: 'Stop', tags: 'Fuel · Rest' },
+        { address: a[(laneIdx * 2 + 2) % n], role: 'Delivery', tags: 'Delivery · Weight' }
+      ];
+      const extra = sim.extraStops[laneIdx];
+      if (extra && extra.length) extra.forEach(es => base.splice(base.length - 1, 0, { address: es.address, role: es.role, tags: es.tags, added: true }));
+      return base.map((b, i) => Object.assign({ n: i + 1 }, b));
+    }
+    function _lanePanel() {
+      const idx = state.controlLane;
+      const l = cd.ls[idx];
+      const rowData = cd.rows.find(x => x.loadIdx === idx) || {};
+      const stops = _ctrlStops(idx);
+      const eqAbbr = (r.equipmentType || 'Van').slice(0, 2);
+
+      // header
+      const head = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '16px 16px 14px', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
+        _numBadge({ kind: 'load', num: rowData.num || String(idx + 1), exec: rowData.exec }),
+        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 16px 1fr', alignItems: 'center', gap: '6px', flex: '1', minWidth: '0' } }, [
+          _endpoint(l.origin, rowData.originDate || '', false),
+          svg(ICON.arrow, { flex: 'none' }),
+          _endpoint(l.dest, rowData.destDate || '', false)
+        ]),
+        _chip(rowData.exec || 'Booked'),
+        el('div', { class: 'hoverable', onclick: () => setState({ controlMode: 'route', controlLane: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8B939B', flexShrink: '0', font: '400 18px ' + F } }, ['×'])
+      ]);
+
+      // load summary card — REAL execution metrics
+      const isReal = rowData.exec === 'In progress' || rowData.exec === 'Completed';
+      const summary = el('div', { style: { margin: '14px 16px 0', padding: '12px 13px', borderRadius: '12px', background: '#0E1820', border: '1px solid rgba(255,255,255,.07)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '18px', flex: '1', minWidth: '0' } }, [
+            el('div', {}, [
+              el('div', { style: { font: '800 12px "JetBrains Mono",monospace', color: '#DDE3E9' } }, [l.id.replace('ef-', 'L').toUpperCase().slice(0, 9)]),
+              el('div', { style: { font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Load id'])
+            ]),
+            el('div', {}, [
+              el('div', { style: { font: '800 12px ' + F, color: '#3FC281' } }, [money(rowData.exec === 'Upcoming' ? 0 : l.income)]),
+              el('div', { style: { font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Current income'])
+            ]),
+            el('div', {}, [
+              el('div', { class: 'ctrl-live-mi', style: { font: '800 12px ' + F, color: '#E7ECF0' } }, [(rowData.milesDriven || 0).toLocaleString('en-US') + ' mi']),
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, [
+                (isReal ? el('span', { class: 'ctrl-live-dot', style: { width: '5px', height: '5px', borderRadius: '50%', background: '#27A767', animation: '_efDotPulse 1.6s ease-in-out infinite' } }) : null),
+                (isReal ? 'Miles driven' : 'Estimated miles')
+              ])
+            ])
+          ]),
+          el('div', { style: { display: 'grid', placeItems: 'center', width: '34px', height: '34px', borderRadius: '9px', background: '#162330', color: '#7BCBCB', font: '800 12px ' + F, flexShrink: '0' } }, [eqAbbr]),
+          el('div', { class: 'hoverable', style: { width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8B939B', flexShrink: '0' }, html: IC.dots })
+        ]),
+        // real-tracking strip: departed + delay
+        (isReal ? el('div', { style: { marginTop: '11px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,.06)' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } }, [
+            el('div', { style: { font: '600 10.5px ' + F, color: '#8B939B' } }, ['Departed ', el('span', { style: { color: '#DDE3E9', fontWeight: '700' } }, [rowData.departedAt || '--'])]),
+            el('span', { class: 'ctrl-live-delay', style: { font: '700 10px "JetBrains Mono",monospace', padding: '2px 8px', borderRadius: '6px', color: rowData.isLate ? '#f87171' : '#27A767', background: 'rgba(39,167,103,.1)' } }, [(rowData.delay || 'On time')])
+          ]),
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '9px' } }, [
+            el('div', { style: { flex: '1', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,.08)', overflow: 'hidden' } }, [
+              el('div', { class: 'ctrl-live-progress', style: { height: '100%', width: (rowData.pct || 0) + '%', background: 'linear-gradient(90deg,#1E8C56,#27A767)', borderRadius: '2px', transition: 'width .3s linear' } })
+            ]),
+            el('span', { class: 'ctrl-live-pct', style: { font: '700 9px "JetBrains Mono",monospace', color: '#6B7373', flexShrink: '0' } }, [(rowData.pct || 0) + '%'])
+          ])
+        ]) : null)
+      ]);
+
+      // "Lista de paradas agregadas" heading row
+      const stopsHead = el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '16px 16px 8px' } }, [
+        el('div', { style: { font: '800 13px ' + F, color: '#E7ECF0' } }, ['Lista de paradas agregadas']),
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+          el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 11px', borderRadius: '999px', background: 'rgba(123,203,203,.1)', border: '1px solid rgba(123,203,203,.28)', color: '#7BCBCB', font: '800 11px ' + F, cursor: 'pointer' }, html: '<span>Smart trip</span>' + IC.smart }),
+          el('div', { class: 'hoverable', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8B939B', border: '1px solid rgba(255,255,255,.1)' }, html: IC.share })
+        ])
+      ]);
+
+      // stop rows (expandable, DOM-only)
+      const stopList = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '0 16px' } },
+        stops.map((s, si) => {
+          const body = el('div', { style: { display: 'none', padding: '2px 12px 12px 46px', flexDirection: 'column', gap: '6px' } }, [
+            el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '600 11px ' + F, color: '#8B939B' } }, [el('span', {}, ['Arrival window']), el('span', { style: { color: '#DDE3E9' } }, ['08:00 – 12:00'])]),
+            el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '600 11px ' + F, color: '#8B939B' } }, [el('span', {}, ['Reference']), el('span', { style: { color: '#DDE3E9', fontFamily: '"JetBrains Mono",monospace' } }, ['REF-' + (1000 + idx * 3 + si)])])
+          ]);
+          const chev = el('div', { style: { transition: 'transform .2s', color: '#6B7373', display: 'flex' }, html: IC.chevDown });
+          const head = el('div', {
+            class: 'hoverable',
+            onclick: () => { const open = body.style.display === 'flex'; body.style.display = open ? 'none' : 'flex'; chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)'; },
+            style: { display: 'grid', gridTemplateColumns: '30px 1fr auto', alignItems: 'center', gap: '10px', padding: '10px 12px', cursor: 'pointer' }
+          }, [
+            el('div', { style: { display: 'grid', placeItems: 'center', width: '24px', height: '24px', borderRadius: '999px', background: '#1B2A36', color: '#DDE3E9', font: '800 11px ' + F } }, [String(s.n)]),
+            el('div', { style: { minWidth: '0' } }, [
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', minWidth: '0' } }, [
+                svg(IC.pin, { color: '#7BCBCB', flex: 'none' }),
+                el('div', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', font: '700 12px ' + F, color: '#E7ECF0' } }, [s.address])
+              ]),
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' } }, [
+                el('span', { style: { font: '600 10px ' + F, color: '#6B7373' } }, [s.tags]),
+                (s.added ? el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#27A767', background: 'rgba(39,167,103,.14)', padding: '1px 6px', borderRadius: '999px' } }, ['Added']) : null)
+              ])
+            ]),
+            chev
+          ]);
+          return el('div', { style: { borderRadius: '11px', background: '#101B23', border: '1px solid rgba(255,255,255,.06)', overflow: 'hidden' } }, [head, body]);
+        })
+      );
+
+      // + choose destination
+      const addRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '10px 16px 16px' } }, [
+        el('div', { style: { display: 'grid', placeItems: 'center', width: '30px', height: '30px', borderRadius: '999px', border: '1px dashed rgba(255,255,255,.18)', color: '#6B7373', font: '400 16px ' + F, flexShrink: '0' } }, ['+']),
+        el('div', { class: 'hoverable', style: { flex: '1', display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', borderRadius: '10px', background: '#0E1820', border: '1px dashed rgba(255,255,255,.14)', color: '#6B7373', font: '500 12px ' + F, cursor: 'pointer' }, html: IC.pin + '<span>Choose destination or click on the map</span>' })
+      ]);
+
+      return el('div', { style: { position: 'absolute', top: '76px', left: '24px', width: panelW + 'px', maxHeight: 'calc(100% - 210px)', zIndex: '15', display: 'flex', flexDirection: 'column', borderRadius: '16px', background: 'rgba(11,17,23,.86)', border: '1px solid rgba(255,255,255,.09)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.5)', overflow: 'hidden' } }, [
+        head,
+        el('div', { class: 'ef-scroll', style: { overflowY: 'auto' } }, [summary, stopsHead, stopList, addRow])
+      ]);
+    }
+
+    // ── POI chips (lane mode, top-center) ──
+    function _poiChips() {
+      const chip = (icon, label, primary) => el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 14px', borderRadius: '999px', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', color: primary ? '#DDE3E9' : '#B8C0C8', font: '700 12px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: (icon || '') + '<span>' + label + '</span>' });
+      return el('div', { style: { position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: '18', display: 'flex', alignItems: 'center', gap: '8px' } }, [
+        chip(ICON.search, 'See all stops', true),
+        chip(IC.fuel, 'Fuel stop'),
+        chip(IC.wash, 'Washout'),
+        chip(IC.hotel, 'Hotel'),
+        el('div', { class: 'hoverable', style: { width: '36px', height: '36px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', color: '#B8C0C8', cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
+      ]);
+    }
+
+    // ── Top-right: Nearby stops toggle + View ──
+    function _topRight() {
+      const on = !!state.controlNearbyStops;
+      const toggle = el('div', { onclick: () => setState({ controlNearbyStops: !on }), style: { display: 'flex', alignItems: 'center', gap: '10px', height: '40px', padding: '0 8px 0 16px', borderRadius: '999px', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', cursor: 'pointer' } }, [
+        el('span', { style: { font: '700 12.5px ' + F, color: '#DDE3E9' } }, ['Nearby stops']),
+        el('div', { style: { width: '38px', height: '22px', borderRadius: '999px', background: on ? '#27A767' : 'rgba(255,255,255,.14)', position: 'relative', transition: 'background .18s', flexShrink: '0' } }, [
+          el('div', { style: { position: 'absolute', top: '3px', left: on ? '19px' : '3px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left .18s' } })
+        ])
+      ]);
+      const viewBtn = el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 14px', borderRadius: '999px', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', color: '#DDE3E9', font: '700 12.5px ' + F, cursor: 'pointer' }, html: '<span>View</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>' });
+      return el('div', { style: { position: 'absolute', top: '20px', right: '24px', zIndex: '20', display: 'flex', alignItems: 'center', gap: '10px' } }, [toggle, viewBtn]);
+    }
+
+    // ── Bottom-left: Hours of Service (real) ──
+    function _hosGauge(val, label, pct, color) {
+      const C = (2 * Math.PI * 15).toFixed(1);
+      const off = (2 * Math.PI * 15 * (1 - pct / 100)).toFixed(1);
+      return el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px' } }, [
+        el('div', {}, [
+          el('div', { style: { font: '900 15px "JetBrains Mono",monospace', color: '#F4F6F8', lineHeight: '1' } }, [val]),
+          el('div', { style: { font: '600 10px ' + F, color: '#6B7373', marginTop: '3px' } }, [label])
+        ]),
+        el('div', { style: { width: '38px', height: '38px', flexShrink: '0' }, html: '<svg width="38" height="38" viewBox="0 0 38 38"><circle cx="19" cy="19" r="15" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/><circle cx="19" cy="19" r="15" fill="none" stroke="' + color + '" stroke-width="3" stroke-linecap="round" stroke-dasharray="' + C + '" stroke-dashoffset="' + off + '" transform="rotate(-90 19 19)"/></svg>' })
+      ]);
+    }
+    function _hosCard() {
+      return el('div', { style: { position: 'absolute', left: '24px', bottom: '24px', zIndex: '15', width: panelW + 'px', padding: '16px 18px', borderRadius: '16px', background: 'rgba(11,17,23,.86)', border: '1px solid rgba(255,255,255,.09)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.5)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' } }, [
+          el('div', { style: { font: '800 13px ' + F, color: '#E7ECF0' } }, ['Hours of Service (Now)']),
+          el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 11px', borderRadius: '999px', background: 'rgba(255,255,255,.05)', color: '#DDE3E9', font: '700 11px ' + F, cursor: 'pointer' }, html: '<span>Daily breakdown</span>' + IC.arrowUpRight })
+        ]),
+        el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' } }, [
+          _hosGauge('08:00', 'Break', 62, '#27A767'),
+          _hosGauge('11:00', 'Drive', 74, '#27A767'),
+          _hosGauge('14:00', 'Shift', 48, '#7BCBCB'),
+          _hosGauge('00:00', 'Cycle', 8, '#7BCBCB')
+        ])
+      ]);
+    }
+
+    // ── Bottom-right: ELD status (real/synced) ──
+    function _eldCard() {
+      return el('div', { style: { position: 'absolute', right: '24px', bottom: '24px', zIndex: '15', display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 14px', borderRadius: '14px', background: 'rgba(11,17,23,.86)', border: '1px solid rgba(255,255,255,.09)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.5)' } }, [
+        el('div', {}, [
+          el('div', { style: { font: '800 12px ' + F, color: '#E7ECF0' } }, ['ELD status']),
+          el('div', { style: { font: '500 10.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Updated 2 min ago'])
+        ]),
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 11.5px ' + F, color: '#3FC281' } }, [
+          el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#27A767' } }),
+          'Synced'
+        ]),
+        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 14px', borderRadius: '999px', background: '#27A767', color: '#0E1820', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync })
+      ]);
+    }
+
+    // ── Map layer (stylized SVG) ──
+    function _mapLayer() {
+      const map = el('div', { style: { position: 'absolute', inset: '0', zIndex: '1', overflow: 'hidden' } });
+      const activeD = _ctrlActivePath(sim);
+      const S =
+        '<svg width="100%" height="100%" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0">' +
+          '<defs><radialGradient id="cGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(39,167,103,.28)"/><stop offset="100%" stop-color="rgba(39,167,103,0)"/></radialGradient></defs>' +
+          '<rect width="1000" height="700" fill="#0A1018"/>' +
+          '<g stroke="rgba(123,203,203,.06)" stroke-width="1.5" fill="none">' +
+            '<path d="M0 200 C 220 260, 420 160, 1000 240"/>' +
+            '<path d="M0 470 C 250 420, 520 520, 1000 450"/>' +
+            '<path d="M300 0 C 340 200, 300 420, 360 700"/>' +
+            '<path d="M700 0 C 660 220, 740 440, 720 700"/>' +
+            '<path d="M0 340 C 300 320, 600 360, 1000 330"/>' +
+          '</g>' +
+          '<g fill="rgba(255,255,255,.09)" font-family="Nunito,system-ui" font-weight="800" font-size="19" letter-spacing="3">' +
+            '<text x="560" y="300">ARIZONA</text>' +
+            '<text x="835" y="305">NEW MEXICO</text>' +
+            '<text x="815" y="66">COLORADO</text>' +
+            '<text x="560" y="78">NEVADA</text>' +
+            '<text x="630" y="630">SONORA</text>' +
+          '</g>' +
+          '<g>' +
+            '<circle cx="720" cy="430" r="72" fill="rgba(123,203,203,.05)" stroke="rgba(123,203,203,.18)" stroke-width="1.5" stroke-dasharray="3 5"/>' +
+            '<circle cx="852" cy="330" r="60" fill="rgba(123,203,203,.05)" stroke="rgba(123,203,203,.18)" stroke-width="1.5" stroke-dasharray="3 5"/>' +
+            '<circle cx="620" cy="528" r="66" fill="rgba(123,203,203,.05)" stroke="rgba(123,203,203,.18)" stroke-width="1.5" stroke-dasharray="3 5"/>' +
+          '</g>' +
+          // hub pills
+          '<g font-family="Nunito,system-ui" font-weight="800" font-size="13">' +
+            '<rect x="686" y="345" width="66" height="26" rx="7" fill="#0E1820" stroke="rgba(255,255,255,.14)"/><text x="719" y="362" text-anchor="middle" fill="#DDE3E9">Hub 3</text>' +
+            '<rect x="820" y="248" width="66" height="26" rx="7" fill="#0E1820" stroke="rgba(255,255,255,.14)"/><text x="853" y="265" text-anchor="middle" fill="#DDE3E9">Hub 3</text>' +
+            '<rect x="588" y="446" width="66" height="26" rx="7" fill="#0E1820" stroke="rgba(255,255,255,.14)"/><text x="621" y="463" text-anchor="middle" fill="#DDE3E9">Hub 3</text>' +
+          '</g>' +
+          // proposed (planning optimize) — amber, toggled
+          '<path id="ctrl-proposed" d="' + _CTRL_PATH_OPT + '" fill="none" stroke="#FBB303" stroke-width="3" stroke-dasharray="7 7" stroke-linecap="round" opacity=".9" style="display:' + (sim.proposed ? 'block' : 'none') + '"/>' +
+          // planned route (dashed teal) — id-driven for optimize
+          '<path id="ctrl-route" d="' + activeD + '" fill="none" stroke="#7BCBCB" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round" opacity=".9"/>' +
+          // traveled overlay (solid green) — revealed by progress via dashoffset
+          '<path id="ctrl-traveled" d="' + activeD + '" fill="none" stroke="#27A767" stroke-width="4.5" stroke-linecap="round" style="stroke-dasharray:1400;stroke-dashoffset:1400"/>' +
+          // deviation (red dashed) — toggled by situations
+          '<path id="ctrl-deviation" d="' + _CTRL_PATH_DEV + '" fill="none" stroke="#EB4343" stroke-width="2.5" stroke-dasharray="6 6" stroke-linecap="round" opacity=".85" style="display:' + (sim.deviation ? 'block' : 'none') + '"/>' +
+          // stop pins
+          '<g font-family="Nunito,system-ui" font-weight="800" font-size="12">' +
+            '<circle cx="560" cy="545" r="8" fill="#3B82F6" stroke="#0A1018" stroke-width="2.5"/>' +
+            '<rect x="682" y="410" width="20" height="20" rx="6" fill="#0E1820" stroke="rgba(255,255,255,.2)"/><text x="692" y="424" text-anchor="middle" fill="#DDE3E9">2</text>' +
+            '<circle cx="872" cy="300" r="8" fill="#3B82F6" stroke="#0A1018" stroke-width="2.5"/>' +
+            '<text x="700" y="398" text-anchor="middle" fill="rgba(255,255,255,.5)" font-size="11">Stop 10</text>' +
+          '</g>' +
+          // truck (live position, pulsing) — moved by simulation via transform
+          '<g id="ctrl-truck" transform="translate(560,545)">' +
+            '<circle r="46" fill="url(#cGlow)"/>' +
+            '<circle r="14" fill="rgba(39,167,103,.3)"><animate attributeName="r" values="14;24;14" dur="1.8s" repeatCount="indefinite"/><animate attributeName="opacity" values=".55;0;.55" dur="1.8s" repeatCount="indefinite"/></circle>' +
+            '<circle r="10" fill="#27A767" stroke="#0A1018" stroke-width="3"/>' +
+          '</g>' +
+        '</svg>';
+      map.innerHTML = S;
+      // zoom controls
+      const zBtn = (label) => el('div', { class: 'hoverable', style: { width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#C9CED2', font: '400 18px ' + F, userSelect: 'none' } }, [label]);
+      map.appendChild(el('div', { style: { position: 'absolute', right: '24px', bottom: '120px', zIndex: '12', display: 'flex', flexDirection: 'column', borderRadius: '10px', overflow: 'hidden', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)' } }, [
+        zBtn('+'),
+        el('div', { style: { height: '1px', background: 'rgba(255,255,255,.1)' } }),
+        zBtn('−')
+      ]));
+      // locate
+      map.appendChild(el('div', { class: 'hoverable', style: { position: 'absolute', right: '24px', bottom: '188px', zIndex: '12', width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#C9CED2', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)' }, html: IC.crosshair }));
+      return map;
+    }
+
+    // ── command-bar icons ──
+    const CB = {
+      play: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>',
+      pause: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+      bolt: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>',
+      shield: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+      list: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>'
+    };
+    const sevColor = { info: '#7BCBCB', warn: '#FBB303', crit: '#f87171', ok: '#27A767' };
+
+    // ── live status pill (route mode, top row next to Back) ──
+    function _livePill() {
+      const al = cd.ls[sim.activeLaneIdx] || {};
+      const mi = Math.round((al.miles || 0) * sim.progress);
+      const delayTxt = sim.delayMin > 0 ? '+' + sim.delayMin + 'm late' : 'On time';
+      return el('div', { style: { position: 'absolute', top: '20px', left: '190px', zIndex: '20', display: 'flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 15px', borderRadius: '999px', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', font: '700 12px ' + F } }, [
+        el('span', { class: 'ctrl-live-dot', style: { width: '8px', height: '8px', borderRadius: '50%', background: sim.running ? '#27A767' : '#8B939B', animation: sim.running ? '_efDotPulse 1.2s ease-in-out infinite' : 'none', flexShrink: '0' } }),
+        el('span', { style: { color: sim.running ? '#3FC281' : '#8B939B', fontWeight: '800', letterSpacing: '.04em' } }, [sim.running ? 'LIVE' : (sim.started ? 'PAUSED' : 'PLANNED')]),
+        el('span', { style: { width: '1px', height: '16px', background: 'rgba(255,255,255,.12)' } }),
+        el('span', { class: 'ctrl-live-mi', style: { color: '#DDE3E9', fontFamily: '"JetBrains Mono",monospace' } }, [mi.toLocaleString('en-US') + ' mi']),
+        el('span', { class: 'ctrl-live-pct', style: { color: '#6B7373', fontFamily: '"JetBrains Mono",monospace' } }, [Math.round(sim.progress * 100) + '%']),
+        el('span', { class: 'ctrl-live-delay', style: { color: sim.delayMin > 0 ? '#f87171' : '#27A767', fontWeight: '800' } }, [delayTxt])
+      ]);
+    }
+
+    // ── command bar (plan / execute / react) ──
+    function _cbBtn(inner, opts) {
+      opts = opts || {};
+      return el('div', { class: 'hoverable', onclick: opts.onclick, style: { position: 'relative', display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 13px', borderRadius: '10px', cursor: 'pointer', font: '800 12px ' + F, whiteSpace: 'nowrap', color: opts.on ? '#0E1820' : '#DDE3E9', background: opts.on ? (opts.onBg || '#27A767') : 'rgba(255,255,255,.04)', border: '1px solid ' + (opts.on ? (opts.onBg || '#27A767') : 'rgba(255,255,255,.08)') }, html: inner });
+    }
+    function _cbDiv() { return el('div', { style: { width: '1px', height: '22px', background: 'rgba(255,255,255,.1)', margin: '0 2px' } }); }
+    function _permCountBadge() { const n = Object.keys(sim.permissions).filter(k => sim.permissions[k]).length; return n ? '<span style="margin-left:2px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#27A767;color:#0E1820;font:900 9px ' + F + ';display:inline-flex;align-items:center;justify-content:center">' + n + '</span>' : ''; }
+    function _logCountBadge() { const n = sim.log.length; return n ? '<span style="margin-left:2px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:rgba(255,255,255,.14);color:#DDE3E9;font:900 9px ' + F + ';display:inline-flex;align-items:center;justify-content:center">' + n + '</span>' : ''; }
+    function _commandBar() {
+      const playInner = sim.running ? CB.pause + '<span>Pause</span>' : CB.play + '<span>' + (sim.started ? 'Resume' : 'Simulate') + '</span>';
+      return el('div', { style: { position: 'absolute', left: (24 + panelW + 20) + 'px', bottom: '24px', zIndex: '17', display: 'flex', alignItems: 'center', gap: '6px', padding: '7px', borderRadius: '14px', background: 'rgba(11,17,23,.92)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.5)' } }, [
+        _cbBtn(playInner, { on: sim.running, onclick: () => sim.running ? _ctrlPause(routeId) : _ctrlPlay(routeId) }),
+        _cbBtn('<span>' + sim.speed + '×</span>', { onclick: () => _ctrlSpeed(routeId) }),
+        _cbDiv(),
+        _cbBtn(IC.smart + '<span>Optimize</span>', { on: sim.variant === 'optimized' || sim.proposed, onBg: '#FBB303', onclick: () => _ctrlOptimize(routeId) }),
+        _cbBtn(CB.bolt + '<span>Scenario</span>', { on: sim.scenarioOpen, onBg: '#7BCBCB', onclick: () => { sim.scenarioOpen = !sim.scenarioOpen; setState({}); } }),
+        _cbDiv(),
+        _cbBtn(CB.shield + '<span>Permissions</span>' + _permCountBadge(), { on: sim.permOpen, onBg: '#7BCBCB', onclick: () => { sim.permOpen = !sim.permOpen; setState({}); } }),
+        _cbBtn(CB.list + '<span>Log</span>' + _logCountBadge(), { on: sim.logOpen, onBg: '#7BCBCB', onclick: () => { sim.logOpen = !sim.logOpen; setState({}); } })
+      ]);
+    }
+
+    // ── scenario popover ──
+    function _scenarioPopover() {
+      const items = [['traffic', 'Heavy traffic ahead'], ['appt', 'Appointment moved'], ['hos', 'Low on drive hours'], ['driverreq', 'Driver requests change'], ['breakdown', 'Breakdown reported'], ['backhaul', 'Better backhaul']];
+      return el('div', { style: { position: 'absolute', left: (24 + panelW + 20) + 'px', bottom: '74px', zIndex: '19', width: '252px', padding: '6px', borderRadius: '14px', background: 'rgba(11,17,23,.96)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.55)' } }, [
+        el('div', { style: { font: '800 10px ' + F, letterSpacing: '.08em', textTransform: 'uppercase', color: '#6B7373', padding: '8px 10px 6px' } }, ['Inject a situation']),
+        ...items.map(it => el('div', { class: 'hoverable', onclick: () => _ctrlInject(routeId, it[0]), style: { display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 10px', borderRadius: '9px', cursor: 'pointer', font: '700 12px ' + F, color: '#DDE3E9' } }, [
+          el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: sevColor[_CTRL_SCENARIOS[it[0]].sev], flexShrink: '0' } }),
+          it[1]
+        ]))
+      ]);
+    }
+
+    // ── situation card (react to what the driver faces) ──
+    function _situationCard() {
+      const ev = sim.events[0]; if (!ev) return null;
+      const col = sevColor[ev.sev] || '#7BCBCB';
+      return el('div', { style: { position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: '25', width: '440px', maxWidth: 'calc(100% - 540px)', borderRadius: '14px', overflow: 'hidden', background: 'rgba(13,20,27,.96)', border: '1px solid ' + col + '66', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.55)' } }, [
+        el('div', { style: { height: '3px', background: col } }),
+        el('div', { style: { padding: '13px 16px' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '4px' } }, [
+            el('span', { style: { width: '8px', height: '8px', borderRadius: '50%', background: col, flexShrink: '0', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
+            el('div', { style: { font: '800 13.5px ' + F, color: '#F4F6F8', flex: '1' } }, [ev.title]),
+            el('span', { style: { font: '700 9px ' + F, letterSpacing: '.08em', textTransform: 'uppercase', color: col } }, [ev.sev === 'crit' ? 'Critical' : ev.sev === 'warn' ? 'Attention' : 'Update'])
+          ]),
+          el('div', { style: { font: '500 11.5px ' + F, color: '#9AA6B2', lineHeight: '1.5', marginBottom: '11px', paddingLeft: '17px' } }, [ev.desc]),
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', paddingLeft: '17px' } }, ev.actions.map((a, ai) => el('div', {
+            class: 'hoverable', onclick: () => _ctrlAction(routeId, a.kind),
+            style: { padding: '7px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: ai === 0 ? '#0E1820' : '#DDE3E9', background: ai === 0 ? col : 'rgba(255,255,255,.05)', border: '1px solid ' + (ai === 0 ? col : 'rgba(255,255,255,.1)') }
+          }, [a.label])))
+        ])
+      ]);
+    }
+
+    // ── proposed-optimize bar (planning case) ──
+    function _proposedBar() {
+      return el('div', { style: { position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: '25', display: 'flex', alignItems: 'center', gap: '14px', padding: '11px 14px 11px 16px', borderRadius: '14px', background: 'rgba(13,20,27,.96)', border: '1px solid rgba(251,179,3,.5)', backdropFilter: 'blur(14px)', boxShadow: '0 20px 60px rgba(0,0,0,.55)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px' } }, [
+          svg(IC.smart, { color: '#FBB303' }),
+          el('div', {}, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#F4F6F8' } }, ['Optimized plan ready']),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#FBB303', marginTop: '1px' } }, ['Saves 52 mi · 1h 05m — preview in amber on map'])
+          ])
+        ]),
+        el('div', { style: { display: 'flex', gap: '7px' } }, [
+          el('div', { class: 'hoverable', onclick: () => _ctrlAcceptProposed(routeId), style: { padding: '8px 15px', borderRadius: '999px', background: '#FBB303', color: '#0E1820', font: '800 12px ' + F, cursor: 'pointer' } }, ['Apply']),
+          el('div', { class: 'hoverable', onclick: () => { sim.proposed = false; setState({}); }, style: { padding: '8px 14px', borderRadius: '999px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', color: '#DDE3E9', font: '800 12px ' + F, cursor: 'pointer' } }, ['Discard'])
+        ])
+      ]);
+    }
+
+    // ── permissions modal ──
+    function _permRow(key, title, desc) {
+      const on = sim.permissions[key];
+      return el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 14px', borderRadius: '11px', background: '#0E1820', border: '1px solid rgba(255,255,255,' + (on ? '.14' : '.06') + ')' } }, [
+        el('div', { style: { flex: '1', minWidth: '0' } }, [
+          el('div', { style: { font: '800 13px ' + F, color: '#E7ECF0' } }, [title]),
+          el('div', { style: { font: '500 11px ' + F, color: '#6B7373', marginTop: '2px' } }, [desc])
+        ]),
+        el('div', { onclick: () => _ctrlTogglePerm(routeId, key), style: { width: '42px', height: '24px', borderRadius: '999px', background: on ? '#27A767' : 'rgba(255,255,255,.12)', position: 'relative', cursor: 'pointer', flexShrink: '0', transition: 'background .18s' } }, [
+          el('div', { style: { position: 'absolute', top: '3px', left: on ? '21px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .18s' } })
+        ])
+      ]);
+    }
+    function _permissionsModal() {
+      const bg = el('div', { onclick: () => { sim.permOpen = false; setState({}); }, style: { position: 'absolute', inset: '0', zIndex: '30', background: 'rgba(6,12,17,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' } });
+      const modal = el('div', { onclick: e => e.stopPropagation(), style: { width: '440px', maxWidth: 'calc(100% - 48px)', borderRadius: '16px', background: '#131F27', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.6)', overflow: 'hidden' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '18px 20px 14px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
+          svg(CB.shield, { color: '#7BCBCB' }),
+          el('div', { style: { flex: '1' } }, [
+            el('div', { style: { font: '800 15px ' + F, color: '#F4F6F8' } }, ['Driver permissions']),
+            el('div', { style: { font: '500 11px ' + F, color: '#6B7373', marginTop: '2px' } }, ['What the driver can change from the mobile app'])
+          ]),
+          el('div', { class: 'hoverable', onclick: () => { sim.permOpen = false; setState({}); }, style: { width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8B939B', font: '400 18px ' + F } }, ['×'])
+        ]),
+        el('div', { style: { padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' } }, [
+          _permRow('changeRoute', 'Change route', 'Driver may re-route and choose alternate roads.'),
+          _permRow('changeStops', 'Change stops', 'Driver may add, remove or reorder stops.'),
+          _permRow('pcMiles', 'PC miles', 'Driver may log Personal Conveyance miles off-duty.')
+        ])
+      ]);
+      bg.appendChild(modal);
+      return bg;
+    }
+
+    // ── change-log slide-in panel ──
+    function _logPanel() {
+      const actorCol = { Dispatcher: '#7BCBCB', Driver: '#FBB303', System: '#8B939B' };
+      return el('div', { style: { position: 'absolute', top: '0', right: '0', height: '100%', width: '360px', zIndex: '28', display: 'flex', flexDirection: 'column', background: 'rgba(13,20,27,.97)', borderLeft: '1px solid rgba(255,255,255,.1)', boxShadow: '-20px 0 48px rgba(0,0,0,.5)', backdropFilter: 'blur(14px)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '18px 18px 14px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
+          svg(CB.list, { color: '#7BCBCB' }),
+          el('div', { style: { flex: '1', font: '800 14px ' + F, color: '#F4F6F8' } }, ['Plan change log']),
+          el('div', { class: 'hoverable', onclick: () => { sim.logOpen = false; setState({}); }, style: { width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8B939B', font: '400 18px ' + F } }, ['×'])
+        ]),
+        el('div', { class: 'ef-scroll', style: { flex: '1', overflowY: 'auto', padding: '10px 16px 18px' } }, sim.log.length ? sim.log.map(e => el('div', { style: { display: 'flex', gap: '11px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.05)' } }, [
+          el('span', { style: { width: '9px', height: '9px', borderRadius: '50%', background: sevColor[e.kind] || '#8B939B', marginTop: '4px', flexShrink: '0' } }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '600 12px ' + F, color: '#DDE3E9', lineHeight: '1.4' } }, [e.text]),
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' } }, [
+              el('span', { style: { font: '800 10px ' + F, color: actorCol[e.actor] || '#8B939B' } }, [e.actor]),
+              el('span', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#5A6A7A' } }, [e.time])
+            ])
+          ])
+        ])) : [el('div', { style: { font: '500 12px ' + F, color: '#6B7373', padding: '20px 0', textAlign: 'center' } }, ['No changes yet.'])])
+      ]);
+    }
+
+    // ── assemble ──
+    const wrap = el('div', { style: { position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', background: '#0A1018' } });
+    wrap.appendChild(_mapLayer());
+    wrap.appendChild(el('div', { class: 'hoverable', onclick: () => { sim.running = false; _ctrlSimStop(); setState({ detailTab: 'plan' }); }, style: { position: 'absolute', top: '20px', left: '24px', zIndex: '20', display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: '999px', background: 'rgba(13,20,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', cursor: 'pointer', font: '800 13px ' + F, color: '#DDE3E9' }, html: ICON.back + '<span style="margin-left:2px">Back to plan</span>' }));
+    if (!laneMode) wrap.appendChild(_livePill());
+    wrap.appendChild(_topRight());
+    const panel = laneMode ? _lanePanel() : _routePanel();
+    wrap.appendChild(panel);
+    const hasTopCard = sim.proposed || sim.events.length > 0;
+    if (laneMode && !hasTopCard) wrap.appendChild(_poiChips());
+    // collapse handle (DOM-only)
+    const collapseBtn = el('div', { class: 'hoverable', style: { position: 'absolute', top: '150px', left: (24 + panelW + 6) + 'px', zIndex: '16', width: '28px', height: '42px', borderRadius: '10px', background: 'rgba(13,20,27,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8B939B' }, html: ICON.chevLeft });
+    let _collapsed = false;
+    collapseBtn.addEventListener('click', () => {
+      _collapsed = !_collapsed;
+      panel.style.display = _collapsed ? 'none' : 'flex';
+      collapseBtn.style.left = _collapsed ? '24px' : (24 + panelW + 6) + 'px';
+      collapseBtn.innerHTML = _collapsed ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' : ICON.chevLeft;
+    });
+    wrap.appendChild(collapseBtn);
+    wrap.appendChild(_commandBar());
+    if (sim.scenarioOpen) wrap.appendChild(_scenarioPopover());
+    if (sim.proposed) wrap.appendChild(_proposedBar());
+    else if (sim.events.length > 0) wrap.appendChild(_situationCard());
+    wrap.appendChild(_hosCard());
+    wrap.appendChild(_eldCard());
+    if (sim.permOpen) wrap.appendChild(_permissionsModal());
+    if (sim.logOpen) wrap.appendChild(_logPanel());
+    // initial paint (position truck / reveal traveled) + resume ticking if running
+    setTimeout(() => _ctrlSimPaint(routeId), 0);
+    if (sim.running && !_ctrlSimTimer) _ctrlSimStart(routeId);
+    return wrap;
   }
 
   // Changelog modal
