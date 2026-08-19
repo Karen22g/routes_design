@@ -548,18 +548,25 @@ export function initApp() {
     const originVal = (document.getElementById('cr-origin-input') || {}).value || '';
     const finalDestVal = (document.getElementById('cr-dest-input') || {}).value || '';
     const routeNameVal = (document.getElementById('cr-route-name') || {}).value || '';
-    const trailerEl = document.getElementById('cr-trailer-select');
-    let trailerType = trailerEl ? trailerEl.value : 'Van';
-    if (trailerType.includes('·')) trailerType = trailerType.split('·').pop().trim();
+
+    let trailerType = 'Van';
+    if (mode === 'assign' && window.CR_PICKER && window.CR_PICKER.trailer) {
+      const trlItem = (window.CR_TRAILER_LIST || []).find(function (t) { return t.id === window.CR_PICKER.trailer; });
+      if (trlItem) trailerType = trlItem.type;
+    } else {
+      const trailerEl = document.getElementById('cr-trailer-select');
+      trailerType = (trailerEl && trailerEl.value) ? trailerEl.value : 'Van';
+    }
 
     let driver = 'Unassigned', unit = 'Unassigned';
-    if (mode === 'assign') {
-      const cabinEl = document.getElementById('cr-cabin-select');
-      const driverEl = document.getElementById('cr-driver-select');
-      if (cabinEl && cabinEl.value) {
-        unit = cabinEl.value;
-        const dTxt = driverEl ? driverEl.options[driverEl.selectedIndex].text.trim() : '';
-        driver = (dTxt && dTxt !== '—') ? dTxt : 'Unassigned';
+    if (mode === 'assign' && window.CR_PICKER) {
+      if (window.CR_PICKER.cabin) {
+        unit = window.CR_PICKER.cabin;
+        const cabinItem = (window.CR_CABIN_LIST || []).find(function (c) { return c.id === window.CR_PICKER.cabin; });
+        if (cabinItem && cabinItem.driverName) driver = cabinItem.driverName;
+      } else if (window.CR_PICKER.driver) {
+        const driverItem = (window.CR_DRIVER_LIST || []).find(function (d) { return d.id === window.CR_PICKER.driver; });
+        if (driverItem) { driver = driverItem.name; if (driverItem.cabinId) unit = driverItem.cabinId; }
       }
     }
 
@@ -666,26 +673,242 @@ export function initApp() {
     'TRK-3390': { city: 'Laredo, TX', driver: 'Ava Brooks', hasLoads: false, trailerId: 'T289', trailerType: 'Van' }
   };
 
-  const CR_TRAILER_OPTIONS_HTML = '<option selected>Van</option><option>Reefer</option><option>Flatbed</option>';
+  window.CR_DRIVER_LIST = [
+    { id: 'D001', name: 'Jeremy Davis',   avatar: 'J', color: '#27A767', cabinId: '5017', cabinType: 'diesel', trailerId: 'R11047', trailerType: 'reefer'  },
+    { id: 'D003', name: 'Ricardo Lopez',  avatar: 'R', color: '#8B5CF6', cabinId: '3dry2201',  cabinType: 'diesel', trailerId: 'D44821', trailerType: 'van' },
+    { id: 'D002', name: 'Michael Murray', avatar: 'M', color: '#F97316', cabinId: null,        cabinType: null,     trailerId: null,     trailerType: null      },
+    { id: 'D004', name: 'Sarah Chen',     avatar: 'S', color: '#3B82F6', cabinId: null,        cabinType: null,     trailerId: null,     trailerType: null      }
+  ];
+  window.CR_CABIN_LIST = [
+    { id: '5017', type: 'diesel', driverId: 'D001', driverName: 'Jeremy Davis',  driverAvatar: 'J', trailerId: 'R11047', trailerType: 'reefer',  city: 'Memphis, TN', hasLoads: true  },
+    { id: '3dry2201',  type: 'diesel', driverId: 'D003', driverName: 'Ricardo Lopez', driverAvatar: 'R', trailerId: 'D44821', trailerType: 'van', city: 'Houston, TX', hasLoads: false },
+    { id: '2058',      type: 'diesel', driverId: null,   driverName: null,             driverAvatar: null,trailerId: null,     trailerType: null,      city: 'Dallas, TX',  hasLoads: false },
+    { id: '5016',      type: 'diesel', driverId: null,   driverName: null,             driverAvatar: null,trailerId: null,     trailerType: null,      city: 'Laredo, TX',  hasLoads: false }
+  ];
+  window.CR_TRAILER_LIST = [
+    { id: 'R11047', type: 'reefer',  driverId: 'D001', driverName: 'Jeremy Davis',  driverAvatar: 'J', cabinId: '5017', cabinType: 'diesel' },
+    { id: 'D44821', type: 'van', driverId: 'D003', driverName: 'Ricardo Lopez', driverAvatar: 'R', cabinId: '3dry2201',  cabinType: 'diesel' },
+    { id: 'R11026', type: 'reefer',  driverId: null,   driverName: null,            driverAvatar: null,cabinId: null,        cabinType: null     },
+    { id: 'R11031', type: 'reefer',  driverId: null,   driverName: null,            driverAvatar: null,cabinId: null,        cabinType: null     }
+  ];
 
-  // mode: 'free' | 'assign' ; unit: CR_UNITS entry or null
-  window.crApplyTrailer = function (mode, unit) {
-    const sel = document.getElementById('cr-trailer-select');
-    if (mode === 'free') {
-      sel.disabled = false;
-      sel.innerHTML = CR_TRAILER_OPTIONS_HTML;
-      sel.value = 'Van';
-      return;
-    }
-    if (!unit) {
-      sel.disabled = false;
-      sel.innerHTML = CR_TRAILER_OPTIONS_HTML;
-      sel.value = 'Van';
-      return;
-    }
-    sel.disabled = true;
-    sel.innerHTML = '<option selected>' + unit.trailerId + ' · ' + unit.trailerType + '</option>';
+  window.CR_PICKER = { open: null, driver: null, cabin: null, trailer: null };
+
+  const _crChainIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+  const _crPersonIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>';
+  const _crBrokenIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="4" y1="4" x2="20" y2="20" stroke-width="2"/></svg>';
+  const _crChevronIcon = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg>';
+
+  window.crOpenPicker = function (type) {
+    window.crClosePicker();
+    const btn = document.getElementById('cr-' + type + '-btn');
+    const root = document.getElementById('cr-root');
+    if (!btn || !root) return;
+    const panel = document.createElement('div');
+    panel.id = 'cr-picker-panel';
+    panel.className = 'cr-picker-panel';
+    const bRect = btn.getBoundingClientRect();
+    const rRect = root.getBoundingClientRect();
+    const panelW = Math.min(Math.max(300, bRect.width), rRect.width - 16);
+    const panelL = Math.min(Math.max(0, bRect.left - rRect.left), rRect.width - panelW - 8);
+    panel.style.top   = (bRect.bottom - rRect.top + 4) + 'px';
+    panel.style.left  = panelL + 'px';
+    panel.style.width = panelW + 'px';
+    root.appendChild(panel);
+    window.CR_PICKER.open = type;
+    btn.classList.add('cr-open');
+    window.crRenderPickerPanel(type, '');
+    var inp = panel.querySelector('.cr-picker-search-input');
+    if (inp) inp.focus();
   };
+
+  window.crClosePicker = function () {
+    var panel = document.getElementById('cr-picker-panel');
+    if (panel) panel.remove();
+    if (window.CR_PICKER.open) {
+      var btn = document.getElementById('cr-' + window.CR_PICKER.open + '-btn');
+      if (btn) btn.classList.remove('cr-open');
+    }
+    window.CR_PICKER.open = null;
+  };
+
+  window.crResetPickers = function () {
+    window.CR_PICKER.driver = null;
+    window.CR_PICKER.cabin  = null;
+    window.CR_PICKER.trailer = null;
+    ['driver','cabin','trailer'].forEach(function (t) {
+      var btn = document.getElementById('cr-' + t + '-btn');
+      if (!btn) return;
+      var tx = btn.querySelector('.cr-picker-btn-text');
+      if (!tx) return;
+      tx.textContent = t === 'driver' ? 'Select a driver' : t === 'cabin' ? 'Select unit...' : 'Select a trailer';
+      tx.classList.remove('cr-has-value');
+    });
+  };
+
+  window.crRenderPickerPanel = function (type, query) {
+    var panel = document.getElementById('cr-picker-panel');
+    if (!panel) return;
+    var q = (query || '').toLowerCase().trim();
+
+    var list = [];
+    if (type === 'driver') {
+      list = window.CR_DRIVER_LIST.filter(function (d) { return !q || d.name.toLowerCase().includes(q); });
+    } else if (type === 'cabin') {
+      list = window.CR_CABIN_LIST.filter(function (c) { return !q || c.id.toLowerCase().includes(q) || (c.driverName||'').toLowerCase().includes(q); });
+    } else {
+      list = window.CR_TRAILER_LIST.filter(function (t) { return !q || t.id.toLowerCase().includes(q) || (t.driverName||'').toLowerCase().includes(q); });
+    }
+
+    function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
+
+    var _iUnit = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>';
+    var _iTrl  = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="5" width="20" height="13" rx="1"/><line x1="8" y1="5" x2="8" y2="18"/><line x1="15" y1="5" x2="15" y2="18"/><circle cx="6" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg>';
+    var _iDrv  = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>';
+    var _iLink = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+    var _iAvTrl= '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="5" width="20" height="13" rx="1"/><line x1="8" y1="5" x2="8" y2="18"/><line x1="15" y1="5" x2="15" y2="18"/><circle cx="6" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg>';
+
+    function row(item) {
+      var isLinked, displayName, tagsHtml, avContent, avExtra = '';
+
+      if (type === 'driver') {
+        isLinked = !!item.cabinId;
+        displayName = item.name;
+        avContent = item.avatar || '?';
+        avExtra = ' style="background:' + (item.color || '#3d4f5c') + ';color:#0B131B;"';
+        tagsHtml = isLinked
+          ? '<span class="cr-ptag">' + _iUnit + ' ' + item.cabinId + '</span>' +
+            '<span class="cr-ptag">' + _iTrl  + ' ' + item.trailerId + '</span>'
+          : '';
+      } else if (type === 'cabin') {
+        isLinked = !!item.driverId;
+        displayName = item.id + ' &middot; ' + cap(item.type);
+        avContent = item.id[0].toUpperCase();
+        tagsHtml = isLinked
+          ? '<span class="cr-ptag">' + _iDrv  + ' ' + item.driverName + '</span>' +
+            '<span class="cr-ptag">' + _iTrl  + ' ' + item.trailerId + '</span>'
+          : '';
+      } else {
+        isLinked = !!item.driverId;
+        displayName = 'TR ' + item.id.replace(/^[A-Z]/, '') + ' &middot; ' + cap(item.type);
+        avContent = _iAvTrl;
+        avExtra = ' class="cr-picker-avatar cr-picker-simple-avatar-icon"';
+        tagsHtml = isLinked
+          ? '<span class="cr-ptag">' + _iDrv  + ' ' + item.driverName + '</span>' +
+            '<span class="cr-ptag">' + _iUnit + ' ' + item.cabinId + '</span>'
+          : '';
+      }
+
+      var avOpen = type === 'trailer'
+        ? '<div' + avExtra + '>'
+        : '<div class="cr-picker-avatar"' + avExtra + '>';
+
+      return '<div class="cr-picker-row" onclick="crPickerSelect(\'' + type + '\',\'' + item.id + '\')">' +
+        avOpen + avContent + '</div>' +
+        '<div class="cr-picker-row-body">' +
+          '<div class="cr-picker-row-name">' + displayName + '</div>' +
+          (isLinked
+            ? '<div class="cr-picker-row-tags">' + tagsHtml + '</div>'
+            : '<div class="cr-picker-row-nolink">No linked equipment</div>'
+          ) +
+        '</div>' +
+        (isLinked ? '<span class="cr-picker-link-badge">' + _iLink + '</span>' : '') +
+      '</div>';
+    }
+
+    var placeholder = type === 'driver' ? 'drivers' : type === 'cabin' ? 'units' : 'trailers';
+    var html = '<div class="cr-picker-search">' +
+      '<svg class="cr-picker-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>' +
+      '<input class="cr-picker-search-input" placeholder="Search ' + placeholder + '..." oninput="crRenderPickerPanel(\'' + type + '\',this.value)" value="' + q.split('"').join('&quot;') + '">' +
+    '</div>';
+
+    html += list.length ? list.map(row).join('') : '<div class="cr-picker-no-results">No results</div>';
+
+    panel.innerHTML = html;
+    var inp = panel.querySelector('.cr-picker-search-input');
+    if (inp) { inp.focus(); var l = inp.value.length; inp.setSelectionRange(l, l); }
+  };
+
+  window.crPickerSetValue = function (type, id, list) {
+    if (!id) return;
+    var item = list.find(function (x) { return x.id === id; });
+    if (!item) return;
+    window.CR_PICKER[type] = id;
+    var btn = document.getElementById('cr-' + type + '-btn');
+    if (!btn) return;
+    var tx = btn.querySelector('.cr-picker-btn-text');
+    if (!tx) return;
+    tx.textContent = type === 'driver' ? item.name : item.id + (item.type ? ' · ' + item.type : '');
+    tx.classList.add('cr-has-value');
+  };
+
+  window.crPickerSelect = function (type, id) {
+    var item = null;
+    if (type === 'driver')  item = window.CR_DRIVER_LIST.find(function (d) { return d.id === id; });
+    if (type === 'cabin')   item = window.CR_CABIN_LIST.find(function (c) { return c.id === id; });
+    if (type === 'trailer') item = window.CR_TRAILER_LIST.find(function (t) { return t.id === id; });
+    if (!item) return;
+
+    window.crPickerSetValue(type, id, type === 'driver' ? window.CR_DRIVER_LIST : type === 'cabin' ? window.CR_CABIN_LIST : window.CR_TRAILER_LIST);
+
+    /* Auto-fill linked fields */
+    if (type === 'driver' && item.cabinId) {
+      window.crPickerSetValue('cabin',   item.cabinId,   window.CR_CABIN_LIST);
+      window.crPickerSetValue('trailer', item.trailerId, window.CR_TRAILER_LIST);
+    }
+    if (type === 'cabin' && item.driverId) {
+      window.crPickerSetValue('driver',  item.driverId,  window.CR_DRIVER_LIST);
+      window.crPickerSetValue('trailer', item.trailerId, window.CR_TRAILER_LIST);
+    }
+    if (type === 'trailer' && item.driverId) {
+      window.crPickerSetValue('driver',  item.driverId,  window.CR_DRIVER_LIST);
+      window.crPickerSetValue('cabin',   item.cabinId,   window.CR_CABIN_LIST);
+    }
+
+    /* Cabin-specific side effects (origin, TMS, route name) */
+    var cabinItem = type === 'cabin' ? item : (type === 'driver' && item.cabinId ? window.CR_CABIN_LIST.find(function(c){return c.id===item.cabinId;}) : null);
+    if (cabinItem) {
+      var originInput  = document.getElementById('cr-origin-input');
+      var originSource = document.getElementById('cr-origin-source');
+      var tmsBlock     = document.getElementById('cr-tms-block');
+      var routeName    = document.getElementById('cr-route-name');
+      var driverItem   = window.CR_DRIVER_LIST.find(function(d){return d.id===cabinItem.driverId;});
+      var driverLast   = driverItem ? driverItem.name.split(' ')[1] : 'Unassigned';
+      if (routeName) routeName.value = cabinItem.id + '_' + driverLast + '_2026-07-30';
+      if (cabinItem.hasLoads) {
+        if (tmsBlock) {
+          tmsBlock.classList.add('cr-visible');
+          tmsBlock.querySelectorAll('.cr-load-card').forEach(function(card) {
+            card.classList.add('cr-on');
+            var cb = card.querySelector('input[type="checkbox"]'); if (cb) cb.checked = true;
+          });
+          var cards = tmsBlock.querySelectorAll('.cr-load-card');
+          var lastCard = cards[cards.length - 1];
+          var lastDest = '';
+          if (lastCard) { var routeEl = lastCard.querySelector('.cr-load-route'); if (routeEl) { var txt = routeEl.textContent; var arrow = txt.indexOf('→'); lastDest = arrow >= 0 ? txt.substring(arrow+1).trim() : ''; } }
+          if (originInput) { originInput.value = lastDest || cabinItem.city; originInput.classList.add('cr-filled'); }
+          if (originSource) originSource.style.display = 'none';
+        }
+      } else {
+        if (tmsBlock) tmsBlock.classList.remove('cr-visible');
+        if (originInput) { originInput.value = cabinItem.city; originInput.classList.add('cr-filled'); }
+        if (originSource) originSource.style.display = 'flex';
+      }
+      window.crUpdateForecastVisibility();
+    }
+
+    window.crClosePicker();
+  };
+
+  /* Close picker on outside click */
+  document.addEventListener('click', function (e) {
+    if (!window.CR_PICKER || !window.CR_PICKER.open) return;
+    var panel = document.getElementById('cr-picker-panel');
+    var btn   = document.getElementById('cr-' + window.CR_PICKER.open + '-btn');
+    if (panel && panel.contains(e.target)) return;
+    if (btn   && btn.contains(e.target))   return;
+    window.crClosePicker();
+  }, true);
 
   window.crUpdateForecastVisibility = function () {
     const originInput = document.getElementById('cr-origin-input');
@@ -725,79 +948,31 @@ export function initApp() {
     const originSource = document.getElementById('cr-origin-source');
     const routeName = document.getElementById('cr-route-name');
 
+    var trailerSelect = document.getElementById('cr-trailer-select');
+    var trailerBtn    = document.getElementById('cr-trailer-btn');
+
     if (mode === 'free') {
       cabinRow.style.display = 'none';
+      if (trailerSelect) trailerSelect.style.display = '';
+      if (trailerBtn)    trailerBtn.style.display    = 'none';
     } else {
       cabinRow.style.display = '';
       cabinRow.classList.add('cr-fade-up');
-      document.getElementById('cr-cabin-select').value = '';
-      document.getElementById('cr-driver-select').innerHTML = '<option value="">—</option>';
+      if (trailerSelect) trailerSelect.style.display = 'none';
+      if (trailerBtn)    trailerBtn.style.display    = '';
     }
     tmsBlock.classList.remove('cr-visible');
     originInput.value = '';
     originInput.classList.remove('cr-filled');
-    originSource.style.display = 'none';
+    if (originSource) originSource.style.display = 'none';
     routeName.value = 'Unassigned_Unassigned_2026-07-30';
-    window.crApplyTrailer(mode, null);
+    window.crResetPickers();
+    window.crClosePicker();
     window.crUpdateForecastVisibility();
   };
 
-  window.crOnCabinChange = function (sel) {
-    const unit = window.CR_UNITS[sel.value];
-    const originInput = document.getElementById('cr-origin-input');
-    const originSource = document.getElementById('cr-origin-source');
-    const driverSelect = document.getElementById('cr-driver-select');
-    const tmsBlock = document.getElementById('cr-tms-block');
-    const routeName = document.getElementById('cr-route-name');
-
-    if (!unit) {
-      driverSelect.innerHTML = '<option value="">—</option>';
-      originInput.value = '';
-      originInput.classList.remove('cr-filled');
-      originSource.style.display = 'none';
-      tmsBlock.classList.remove('cr-visible');
-      routeName.value = 'Unassigned_Unassigned_2026-07-30';
-      window.crApplyTrailer('assign', null);
-      window.crUpdateForecastVisibility();
-      return;
-    }
-
-    driverSelect.innerHTML = '<option selected>' + unit.driver + '</option>';
-    routeName.value = sel.value + '_' + unit.driver.split(' ')[1] + '_2026-07-30';
-    window.crApplyTrailer('assign', unit);
-
-    if (unit.hasLoads) {
-      tmsBlock.classList.add('cr-visible');
-      // Pre-select all load cards
-      tmsBlock.querySelectorAll('.cr-load-card').forEach(function(card) {
-        card.classList.add('cr-on');
-        var cb = card.querySelector('input[type="checkbox"]');
-        if (cb) cb.checked = true;
-      });
-      // Origin = destination of last suggested load
-      var cards = tmsBlock.querySelectorAll('.cr-load-card');
-      var lastCard = cards[cards.length - 1];
-      var lastDest = '';
-      if (lastCard) {
-        var routeEl = lastCard.querySelector('.cr-load-route');
-        if (routeEl) {
-          var txt = routeEl.textContent;
-          var arrow = txt.indexOf('→');
-          lastDest = arrow >= 0 ? txt.substring(arrow + 1).trim() : '';
-        }
-      }
-      originInput.value = lastDest || unit.city;
-      originInput.classList.add('cr-filled');
-      originSource.style.display = 'none';
-    } else {
-      tmsBlock.classList.remove('cr-visible');
-      originInput.value = unit.city;
-      originInput.classList.add('cr-filled');
-      originSource.style.display = 'flex';
-    }
-
-    window.crUpdateForecastVisibility();
-  };
+  /* Logic now lives in crPickerSelect */
+  window.crOnCabinChange = function () {};
 
   window.crToggleLoad = function (card) {
     card.classList.toggle('cr-on');
@@ -902,9 +1077,10 @@ export function initApp() {
 
   window.crInitModal = function () {
     window.CR_BLOCKED = { region: [], city: [], state: [] };
-    window.CR_OPEN_PICKER = null; // panels are recreated fresh per open; nothing to remove yet
+    window.CR_OPEN_PICKER = null;
     ['region', 'city', 'state'].forEach(k => window.crRenderChips(k));
-    window.crApplyTrailer('free', null);
+    window.CR_PICKER = { open: null, driver: null, cabin: null, trailer: null };
+    window.crResetPickers();
     window.crUpdateForecastVisibility();
   };
 
@@ -929,18 +1105,25 @@ export function initApp() {
       <div id="cr-cabin-row" class="cr-row cr-row-2" style="display:none">
         <div class="cr-field">
           <div class="cr-field-label">Unit <span style="color:#EB4343">*</span></div>
-          <select class="cr-select" id="cr-cabin-select" onchange="crOnCabinChange(this)">
-            <option value="">Select unit...</option>
-            <option value="TRK-1042">TRK-1042 · Houston, TX</option>
-            <option value="TRK-2078">TRK-2078 · Dallas, TX</option>
-            <option value="TRK-3390">TRK-3390 · Laredo, TX</option>
-          </select>
+          <button type="button" class="cr-picker-btn" id="cr-cabin-btn" onclick="crOpenPicker('cabin')">
+            <div class="cr-picker-btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></div>
+            <div class="cr-picker-btn-content">
+              <span class="cr-picker-btn-text">Select unit...</span>
+              <span class="cr-picker-btn-label">Unit</span>
+            </div>
+            <svg class="cr-picker-btn-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg>
+          </button>
         </div>
         <div class="cr-field">
           <div class="cr-field-label">Driver <span style="color:#EB4343">*</span></div>
-          <select class="cr-select" id="cr-driver-select">
-            <option value="">—</option>
-          </select>
+          <button type="button" class="cr-picker-btn" id="cr-driver-btn" onclick="crOpenPicker('driver')">
+            <div class="cr-picker-btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+            <div class="cr-picker-btn-content">
+              <span class="cr-picker-btn-text">Select a driver</span>
+              <span class="cr-picker-btn-label">Driver</span>
+            </div>
+            <svg class="cr-picker-btn-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg>
+          </button>
         </div>
       </div>
 
@@ -993,10 +1176,18 @@ export function initApp() {
         <div class="cr-field" style="margin-bottom:0">
           <div class="cr-field-label">Trailer <span style="color:#EB4343">*</span></div>
           <select class="cr-select" id="cr-trailer-select">
-            <option selected>Van</option>
-            <option>Reefer</option>
-            <option>Flatbed</option>
+            <option value="Van" selected>Van</option>
+            <option value="Flatbed">Flatbed</option>
+            <option value="Reefer">Reefer</option>
           </select>
+          <button type="button" class="cr-picker-btn" id="cr-trailer-btn" onclick="crOpenPicker('trailer')" style="display:none">
+            <div class="cr-picker-btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="5" width="20" height="13" rx="1"/><line x1="8" y1="5" x2="8" y2="18"/><line x1="15" y1="5" x2="15" y2="18"/><circle cx="6" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></div>
+            <div class="cr-picker-btn-content">
+              <span class="cr-picker-btn-text">Select a trailer</span>
+              <span class="cr-picker-btn-label">Trailer</span>
+            </div>
+            <svg class="cr-picker-btn-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg>
+          </button>
           <div class="cr-power-only">
             <label class="cr-power-check">
               <input type="checkbox">
