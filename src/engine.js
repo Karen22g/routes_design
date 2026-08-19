@@ -674,22 +674,22 @@ export function initApp() {
   };
 
   window.CR_DRIVER_LIST = [
-    { id: 'D001', name: 'Jeremy Davis',   avatar: 'J', color: '#27A767', cabinId: '5017', cabinType: 'diesel', trailerId: 'R11047', trailerType: 'reefer'  },
-    { id: 'D003', name: 'Ricardo Lopez',  avatar: 'R', color: '#8B5CF6', cabinId: '3dry2201',  cabinType: 'diesel', trailerId: 'D44821', trailerType: 'van' },
+    { id: 'D001', name: 'Jeremy Davis',   avatar: 'J', color: '#27A767', cabinId: '5017', cabinType: 'diesel', trailerId: 'TR-11047', trailerType: 'reefer'  },
+    { id: 'D003', name: 'Ricardo Lopez',  avatar: 'R', color: '#8B5CF6', cabinId: '2201',  cabinType: 'diesel', trailerId: 'TR-44821', trailerType: 'van' },
     { id: 'D002', name: 'Michael Murray', avatar: 'M', color: '#F97316', cabinId: null,        cabinType: null,     trailerId: null,     trailerType: null      },
     { id: 'D004', name: 'Sarah Chen',     avatar: 'S', color: '#3B82F6', cabinId: null,        cabinType: null,     trailerId: null,     trailerType: null      }
   ];
   window.CR_CABIN_LIST = [
-    { id: '5017', type: 'diesel', driverId: 'D001', driverName: 'Jeremy Davis',  driverAvatar: 'J', trailerId: 'R11047', trailerType: 'reefer',  city: 'Memphis, TN', hasLoads: true  },
-    { id: '3dry2201',  type: 'diesel', driverId: 'D003', driverName: 'Ricardo Lopez', driverAvatar: 'R', trailerId: 'D44821', trailerType: 'van', city: 'Houston, TX', hasLoads: false },
+    { id: '5017', type: 'diesel', driverId: 'D001', driverName: 'Jeremy Davis',  driverAvatar: 'J', trailerId: 'TR-11047', trailerType: 'reefer',  city: 'Memphis, TN', hasLoads: true  },
+    { id: '2201',  type: 'diesel', driverId: 'D003', driverName: 'Ricardo Lopez', driverAvatar: 'R', trailerId: 'TR-44821', trailerType: 'van', city: 'Houston, TX', hasLoads: false },
     { id: '2058',      type: 'diesel', driverId: null,   driverName: null,             driverAvatar: null,trailerId: null,     trailerType: null,      city: 'Dallas, TX',  hasLoads: false },
     { id: '5016',      type: 'diesel', driverId: null,   driverName: null,             driverAvatar: null,trailerId: null,     trailerType: null,      city: 'Laredo, TX',  hasLoads: false }
   ];
   window.CR_TRAILER_LIST = [
-    { id: 'R11047', type: 'reefer',  driverId: 'D001', driverName: 'Jeremy Davis',  driverAvatar: 'J', cabinId: '5017', cabinType: 'diesel' },
-    { id: 'D44821', type: 'van', driverId: 'D003', driverName: 'Ricardo Lopez', driverAvatar: 'R', cabinId: '3dry2201',  cabinType: 'diesel' },
-    { id: 'R11026', type: 'reefer',  driverId: null,   driverName: null,            driverAvatar: null,cabinId: null,        cabinType: null     },
-    { id: 'R11031', type: 'reefer',  driverId: null,   driverName: null,            driverAvatar: null,cabinId: null,        cabinType: null     }
+    { id: 'TR-11047', type: 'reefer',  driverId: 'D001', driverName: 'Jeremy Davis',  driverAvatar: 'J', cabinId: '5017', cabinType: 'diesel' },
+    { id: 'TR-44821', type: 'van', driverId: 'D003', driverName: 'Ricardo Lopez', driverAvatar: 'R', cabinId: '2201',  cabinType: 'diesel' },
+    { id: 'TR-11026', type: 'reefer',  driverId: null,   driverName: null,            driverAvatar: null,cabinId: null,        cabinType: null     },
+    { id: 'TR-11031', type: 'reefer',  driverId: null,   driverName: null,            driverAvatar: null,cabinId: null,        cabinType: null     }
   ];
 
   window.CR_PICKER = { open: null, driver: null, cabin: null, trailer: null };
@@ -700,6 +700,7 @@ export function initApp() {
   const _crChevronIcon = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg>';
 
   window.crOpenPicker = function (type) {
+    if (window.CR_PICKER.open === type) { window.crClosePicker(); return; }
     window.crClosePicker();
     const btn = document.getElementById('cr-' + type + '-btn');
     const root = document.getElementById('cr-root');
@@ -720,6 +721,21 @@ export function initApp() {
     window.crRenderPickerPanel(type, '');
     var inp = panel.querySelector('.cr-picker-search-input');
     if (inp) inp.focus();
+    var modalBody = root.querySelector('.cr-modal-body');
+    if (modalBody) {
+      window.CR_PICKER._scrollEl = modalBody;
+      window.CR_PICKER._scrollHandler = function () {
+        var p = document.getElementById('cr-picker-panel');
+        var b = document.getElementById('cr-' + type + '-btn');
+        var r = document.getElementById('cr-root');
+        if (!p || !b || !r) { window.crClosePicker(); return; }
+        var bR = b.getBoundingClientRect();
+        var rR = r.getBoundingClientRect();
+        if (bR.bottom < rR.top || bR.top > rR.bottom) { window.crClosePicker(); return; }
+        p.style.top = (bR.bottom - rR.top + 4) + 'px';
+      };
+      modalBody.addEventListener('scroll', window.CR_PICKER._scrollHandler, { passive: true });
+    }
   };
 
   window.crClosePicker = function () {
@@ -728,6 +744,11 @@ export function initApp() {
     if (window.CR_PICKER.open) {
       var btn = document.getElementById('cr-' + window.CR_PICKER.open + '-btn');
       if (btn) btn.classList.remove('cr-open');
+      if (window.CR_PICKER._scrollHandler && window.CR_PICKER._scrollEl) {
+        window.CR_PICKER._scrollEl.removeEventListener('scroll', window.CR_PICKER._scrollHandler);
+        window.CR_PICKER._scrollHandler = null;
+        window.CR_PICKER._scrollEl = null;
+      }
     }
     window.CR_PICKER.open = null;
   };
@@ -783,25 +804,24 @@ export function initApp() {
       } else if (type === 'cabin') {
         isLinked = !!item.driverId;
         displayName = item.id + ' &middot; ' + cap(item.type);
-        avContent = item.id[0].toUpperCase();
+        avContent = _iUnit;
+        avExtra = ' style="background:rgba(255,255,255,.07);color:var(--cr-text-dim);"';
         tagsHtml = isLinked
           ? '<span class="cr-ptag">' + _iDrv  + ' ' + item.driverName + '</span>' +
             '<span class="cr-ptag">' + _iTrl  + ' ' + item.trailerId + '</span>'
           : '';
       } else {
         isLinked = !!item.driverId;
-        displayName = 'TR ' + item.id.replace(/^[A-Z]/, '') + ' &middot; ' + cap(item.type);
+        displayName = item.id + ' &middot; ' + cap(item.type);
         avContent = _iAvTrl;
-        avExtra = ' class="cr-picker-avatar cr-picker-simple-avatar-icon"';
+        avExtra = ' style="background:rgba(255,255,255,.07);color:var(--cr-text-dim);"';
         tagsHtml = isLinked
           ? '<span class="cr-ptag">' + _iDrv  + ' ' + item.driverName + '</span>' +
             '<span class="cr-ptag">' + _iUnit + ' ' + item.cabinId + '</span>'
           : '';
       }
 
-      var avOpen = type === 'trailer'
-        ? '<div' + avExtra + '>'
-        : '<div class="cr-picker-avatar"' + avExtra + '>';
+      var avOpen = '<div class="cr-picker-avatar"' + avExtra + '>';
 
       return '<div class="cr-picker-row" onclick="crPickerSelect(\'' + type + '\',\'' + item.id + '\')">' +
         avOpen + avContent + '</div>' +
@@ -838,7 +858,7 @@ export function initApp() {
     if (!btn) return;
     var tx = btn.querySelector('.cr-picker-btn-text');
     if (!tx) return;
-    tx.textContent = type === 'driver' ? item.name : item.id + (item.type ? ' · ' + item.type : '');
+    tx.textContent = type === 'driver' ? item.name : item.id + (item.type ? ' · ' + item.type[0].toUpperCase() + item.type.slice(1) : '');
     tx.classList.add('cr-has-value');
   };
 
@@ -7152,6 +7172,21 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '19 de agosto, 4:23pm',
+          items: [
+            'Modal "Create Route" — modo "Assign unit": campos Driver, Unit y Trailer reemplazados por pickers personalizados con ícono + texto en 2 líneas (nombre + label)',
+            'Panel de selección rediseñado: lista unificada sin separación entre equipos vinculados y no vinculados; avatar de color por conductor, tags con ícono de equipo para ítems vinculados, texto "No linked equipment" para los demás',
+            'Ícono de Unit (tractor cab) y Trailer (caja contenedor) diferenciados visualmente en botones y panel',
+            'Auto-fill: al seleccionar un driver, unit o trailer vinculado, los otros dos campos se llenan automáticamente',
+            'Modo "Any unit": campo Trailer conserva el select original con opciones Van (preseleccionado), Flatbed, Reefer',
+            'Layout modo "Assign unit": 2 columnas (Unit + Driver) en la primera fila, Trailer en fila separada',
+            'Códigos de cabinas actualizados a formato numérico (ej: 5017, 2201); códigos de trailers actualizados a formato TR-XXXXX (ej: TR-11047)',
+            'Tipo "dry van" corregido a "van" en todos los datos de equipos',
+            'Toggle del picker: hacer click sobre un campo abierto ahora lo cierra en lugar de reabrirlo',
+            'Avatar de unidades: muestra ícono de truck en lugar de letra/número; fondo gris neutro sin color de acento',
+          ]
+        },
         {
           date: '18 de agosto, 4:38pm',
           items: [
