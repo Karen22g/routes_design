@@ -660,11 +660,16 @@ export function initApp() {
 
     ROUTES.unshift(newRoute);
     newLoads.forEach(function (l) { LOADS.push(l); });
+    if (finalDestVal.trim()) _pinnedFinalDest[newId] = finalDestVal.trim();
 
-    setState({ showCreateRoute: false, openRoute: newId, view: 'routes', detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null });
-    if (tmsLoads.length === 0 && newLoads.length > 0) {
-      setTimeout(function() { _lmSt.origin = newLoads[0].origin; _doRenderLaneMap(); }, 80);
-    }
+    // Close form modal and show loading overlay while route "initializes"
+    setState({ showCreateRoute: false });
+    _showCreatingRoute(tmsLoads.length > 0, function () {
+      setState({ openRoute: newId, view: 'routes', detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null });
+      if (tmsLoads.length === 0 && newLoads.length > 0) {
+        setTimeout(function() { _lmSt.origin = newLoads[0].origin; _doRenderLaneMap(); }, 80);
+      }
+    });
   };
 
   window.CR_UNITS = {
@@ -1135,7 +1140,7 @@ export function initApp() {
           </button>
         </div>
         <div class="cr-field">
-          <div class="cr-field-label">Driver <span style="color:#EB4343">*</span></div>
+          <div class="cr-field-label">Driver <span class="cr-opt">Optional</span></div>
           <button type="button" class="cr-picker-btn" id="cr-driver-btn" onclick="crOpenPicker('driver')">
             <div class="cr-picker-btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
             <div class="cr-picker-btn-content">
@@ -1194,7 +1199,7 @@ export function initApp() {
 
       <div class="cr-row cr-row-2">
         <div class="cr-field" style="margin-bottom:0">
-          <div class="cr-field-label">Trailer <span style="color:#EB4343">*</span></div>
+          <div class="cr-field-label">Trailer <span class="cr-opt">Optional</span></div>
           <select class="cr-select" id="cr-trailer-select">
             <option value="Van" selected>Van</option>
             <option value="Flatbed">Flatbed</option>
@@ -2997,6 +3002,7 @@ export function initApp() {
   let _lbTimer = null;
   const _lbSearch = {}, _lbCount = {}, _lbIgnored = new Set();
   const _rebuildLoads = {}; // rId → [{origin,dest,miles,income,pickup,customer,equipment}]
+  const _pinnedFinalDest = {}; // rId → city string (final destination user set in create-route form)
   const _syncingRoutes = new Set();
   const _syncDone = {}; // routeId → bool (button disabled after sync)
   const _autoAddFromLoads = {}; // routeId → bool (toggle state per route)
@@ -3280,7 +3286,7 @@ export function initApp() {
       btn.addEventListener('click', function(e) {
         e.stopPropagation();
         var ld = SAMPLE[parseInt(btn.dataset.si)];
-        var _destChanged = false;
+        var _destChanged = false, _cascadeResult = null;
         if (_slRid !== null && _slLIdx !== null) {
           var tgt = loadsOf(_slRid)[_slLIdx];
           if (tgt) {
@@ -3290,14 +3296,19 @@ export function initApp() {
             var _avgIncome = Math.round((parseFloat(_revParts[0]) + parseFloat(_revParts[1] || _revParts[0])) / 2);
             tgt.origin = originCity; tgt.dest = ld.dest; tgt.miles = ld.miles;
             tgt.income = _avgIncome; tgt.status = 'Booked';
-            if (ld.dest !== _oldDest) { _cascadeLane(_slRid, _slLIdx, ld.dest); _destChanged = true; }
+            if (ld.dest !== _oldDest) { _cascadeResult = _cascadeLane(_slRid, _slLIdx, ld.dest); _destChanged = true; }
             var _after = _snapStats(_slRid);
           }
         }
         var slEl = document.getElementById('_ef-sl'); if (slEl) slEl.remove();
         _hideLbBar(); _hideLbNotif();
         setState({});
-        if (_destChanged && typeof _before !== 'undefined') _showAdaptingPlan(function() { _showRebalanceModal(_before, _after); });
+        _showAddingLoad(function() {
+          if (_destChanged && typeof _before !== 'undefined') {
+            var _opts = { pinnedDest: _pinnedFinalDest[_slRid] || null, deadEnd: _cascadeResult && _cascadeResult.deadEnd, deadCity: _cascadeResult && _cascadeResult.deadCity };
+            _showAdaptingPlan(function() { _showRebalanceModal(_before, _after, _opts); });
+          }
+        });
       });
     });
     modal.appendChild(list);
@@ -3338,16 +3349,32 @@ export function initApp() {
       'Savannah, GA':       { dest: 'Atlanta, GA',          miles: 252 },
     };
     var all = loadsOf(rId);
+    var deadEnd = false, deadCity = null;
+    // Find last Unbooked lane index so we can pin it to the user's target destination
+    var lastUnbookedIdx = -1;
+    for (var k = changedIdx + 1; k < all.length; k++) {
+      if (all[k].status === 'Unbooked') lastUnbookedIdx = k; else break;
+    }
     for (var j = changedIdx + 1; j < all.length; j++) {
       if (all[j].status === 'Unbooked') {
         var prevDest = all[j - 1].dest;
         all[j].origin = prevDest;
-        var nd = NEXT_DEST[prevDest];
-        if (nd) { all[j].dest = nd.dest; all[j].miles = nd.miles; }
+        // Last Unbooked lane: keep the user's pinned final destination instead of the lookup value
+        var pinnedDest = _pinnedFinalDest[rId];
+        if (j === lastUnbookedIdx && pinnedDest) {
+          all[j].dest = pinnedDest;
+          // Recalculate miles estimate (rough: 1 mi per 2 min at 55mph ≈ keep existing or 300 as fallback)
+          all[j].miles = all[j].miles || 300;
+        } else {
+          var nd = NEXT_DEST[prevDest];
+          if (nd) { all[j].dest = nd.dest; all[j].miles = nd.miles; }
+          else { deadEnd = true; deadCity = prevDest; break; }
+        }
       } else {
         break;
       }
     }
+    return { deadEnd: deadEnd, deadCity: deadCity };
   }
 
   function _openRebuildModal(rId) {
@@ -3428,9 +3455,11 @@ export function initApp() {
           if (_rebuildLoads[rId].length === 0) delete _rebuildLoads[rId];
           _renderList();
           // Rebalance always if dest doesn't match the next lane's origin
-          var _loadsNow = loadsOf(rId);
-          var _newIdx = _loadsNow.findIndex(function(l){ return l.id === newLd.id; });
-          _rebalancePlanChain(rId, _newIdx + 1);
+          _showAddingLoad(function() {
+            var _loadsNow = loadsOf(rId);
+            var _newIdx = _loadsNow.findIndex(function(l){ return l.id === newLd.id; });
+            _rebalancePlanChain(rId, _newIdx + 1);
+          });
         });
         card.appendChild(addBtn);
         list.appendChild(card);
@@ -3484,13 +3513,22 @@ export function initApp() {
     var driveMins = loads.reduce(function(s,l){ return s + (l.miles||0)/55*60; }, 0);
     var days = Math.max(1, Math.ceil(driveMins/60/11));
     var rpm  = miles > 0 ? income/miles : 0;
-    return { income:income, miles:miles, days:days, rpm:rpm };
+    var cost = miles * 2.4;
+    var profit = income - cost;
+    return { income:income, miles:miles, days:days, rpm:rpm, cost:cost, profit:profit };
   }
 
   // ── Rebalance chain: update downstream Unbooked origins ─────────────────
   function _rebalancePlanChain(routeId, fromIdx) {
     var loads = loadsOf(routeId);
     var before = _snapStats(routeId);
+    // Pin the last Unbooked lane's dest to the user's target destination if set
+    var pinnedDest = _pinnedFinalDest[routeId];
+    if (pinnedDest) {
+      for (var p = loads.length - 1; p >= fromIdx; p--) {
+        if (loads[p].status === 'Unbooked') { loads[p].dest = pinnedDest; break; }
+      }
+    }
     var prevDest = fromIdx > 0 ? loads[fromIdx-1].dest : null;
     for (var i = fromIdx; i < loads.length; i++) {
       if (loads[i].status === 'Unbooked') {
@@ -3502,7 +3540,64 @@ export function initApp() {
     }
     var after = _snapStats(routeId);
     setState({});
-    _showAdaptingPlan(function() { _showRebalanceModal(before, after); });
+    var _rOpts = { pinnedDest: _pinnedFinalDest[routeId] || null, deadEnd: false, deadCity: null };
+    _showAdaptingPlan(function() { _showRebalanceModal(before, after, _rOpts); });
+  }
+
+  // ── "Adding the load" mini loading modal ────────────────────────────────
+  function _showAddingLoad(then) {
+    var ex = document.getElementById('_ef-adding-load'); if (ex) ex.remove();
+    var ov = document.createElement('div');
+    ov.id = '_ef-adding-load';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9025;display:flex;align-items:center;justify-content:center;background:rgba(6,12,17,.5);pointer-events:none';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#0E1820;border:1px solid rgba(63,194,129,.2);border-radius:16px;padding:22px 28px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 56px rgba(0,0,0,.8);min-width:260px;pointer-events:none';
+    box.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px">' +
+        '<div style="position:relative;width:28px;height:28px;flex-shrink:0">' +
+          '<svg style="position:absolute;inset:0;animation:_efAdaptSpin 1s linear infinite" width="28" height="28" viewBox="0 0 28 28" fill="none">' +
+            '<circle cx="14" cy="14" r="10" stroke="rgba(39,167,103,.15)" stroke-width="2.5"></circle>' +
+            '<path d="M14 4 A10 10 0 0 1 24 14" stroke="#27A767" stroke-width="2.5" stroke-linecap="round"></path>' +
+          '</svg>' +
+        '</div>' +
+        '<span style="font:800 14px Nunito,system-ui;color:#FBFBFB;letter-spacing:-.01em">Adding the load</span>' +
+      '</div>' +
+      '<div style="font:400 12px Nunito,system-ui;color:#8B939B;line-height:1.5">Please hold on — we\'re <span style="color:#3FC281;font-weight:700">adding the load</span> to your selected lane</div>';
+    document.body.appendChild(ov);
+    ov.appendChild(box);
+    setTimeout(function() { ov.remove(); if (then) then(); }, 900);
+  }
+
+  // ── "Creating route" loading modal ──────────────────────────────────────
+  // hasBookedLoads: true  → user added TMS loads; route starts with booked lanes
+  //                false → blank slate; all lanes will be Unbooked
+  function _showCreatingRoute(hasBookedLoads, then) {
+    var ex = document.getElementById('_ef-creating-route'); if (ex) ex.remove();
+    var ov = document.createElement('div');
+    ov.id = '_ef-creating-route';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9025;display:flex;align-items:center;justify-content:center;background:rgba(6,12,17,.6)';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#0E1820;border:1px solid rgba(63,194,129,.25);border-radius:16px;padding:28px 36px;display:flex;flex-direction:column;align-items:center;gap:18px;box-shadow:0 20px 56px rgba(0,0,0,.8);min-width:240px';
+    var titleText    = hasBookedLoads ? 'Creating route'                                                    : 'Creating route...';
+    var subtitleText = hasBookedLoads ? 'Considering current loads and optimizing the rest of your plan.'  : 'Setting up lanes and your trip plan.';
+    var iconInner = hasBookedLoads
+      ? '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>'   // activity / booked loads
+      : '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>'; // house / blank plan
+    box.innerHTML =
+      '<div style="position:relative;width:48px;height:48px;flex-shrink:0">' +
+        '<svg style="position:absolute;inset:0;animation:_efAdaptSpin 1s linear infinite" width="48" height="48" viewBox="0 0 48 48" fill="none">' +
+          '<circle cx="24" cy="24" r="18" stroke="rgba(39,167,103,.15)" stroke-width="3"></circle>' +
+          '<path d="M24 6 A18 18 0 0 1 42 24" stroke="#27A767" stroke-width="3" stroke-linecap="round"></path>' +
+        '</svg>' +
+        '<svg style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3FC281" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+iconInner+'</svg>' +
+      '</div>' +
+      '<div style="text-align:center">' +
+        '<div style="font:800 14px Nunito,system-ui;color:#FBFBFB;letter-spacing:-.01em">'+titleText+'</div>' +
+        '<div style="font:400 11.5px Nunito,system-ui;color:#6B7373;margin-top:4px">'+subtitleText+'</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.appendChild(box);
+    setTimeout(function() { ov.remove(); if (then) then(); }, 1400);
   }
 
   // ── "Adaptando plan" mini loading modal ─────────────────────────────────
@@ -3524,8 +3619,8 @@ export function initApp() {
         '</svg>' +
       '</div>' +
       '<div>' +
-        '<div style="font:800 14px Nunito,system-ui;color:#FBFBFB;letter-spacing:-.01em">Adaptando plan</div>' +
-        '<div style="font:400 11.5px Nunito,system-ui;color:#6B7373;margin-top:3px">Recalculando lanes y costos...</div>' +
+        '<div style="font:800 14px Nunito,system-ui;color:#FBFBFB;letter-spacing:-.01em">Updating plan</div>' +
+        '<div style="font:400 11.5px Nunito,system-ui;color:#6B7373;margin-top:3px">Recalculating lanes and costs...</div>' +
       '</div>';
     document.body.appendChild(ov);
     ov.appendChild(box);
@@ -3533,14 +3628,19 @@ export function initApp() {
   }
 
   // ── Informative rebalance modal ──────────────────────────────────────────
-  function _showRebalanceModal(before, after) {
+  function _showRebalanceModal(before, after, opts) {
+    opts = opts || {};
     var ex = document.getElementById('_ef-rebal'); if (ex) ex.remove();
     var F = 'Nunito,system-ui';
+    var MN = '\'JetBrains Mono\',monospace';
+
     var ov = document.createElement('div'); ov.id = '_ef-rebal';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.65);display:flex;align-items:center;justify-content:center';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.72);display:flex;align-items:center;justify-content:center';
+
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(63,194,129,.2);border-radius:14px;width:440px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
-    // Header
+    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(63,194,129,.2);border-radius:14px;width:480px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
+
+    // ── Header ──
     var hdr = document.createElement('div');
     hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,.07)';
     hdr.innerHTML =
@@ -3548,50 +3648,93 @@ export function initApp() {
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3FC281" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>' +
       '</div>' +
       '<div style="flex:1">' +
-        '<div style="font:800 13px '+F+';color:#FBFBFB">Plan rebalanced</div>' +
-        '<div style="font:400 11px '+F+';color:#8B939B;margin-top:2px">Downstream Unbooked lanes updated to the new route chain.</div>' +
+        '<div style="font:800 13px '+F+';color:#FBFBFB">Updating plan</div>' +
+        '<div style="font:400 11px '+F+';color:#8B939B;margin-top:2px">Adjusting the rest of your plan to maintain profitability and connectivity.</div>' +
       '</div>';
     modal.appendChild(hdr);
-    // Before / After grid
-    var body = document.createElement('div');
-    body.style.cssText = 'padding:18px 20px';
-    function _statRow(label, bVal, aVal, color) {
-      var changed = bVal !== aVal;
-      var row = document.createElement('div');
-      row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)';
-      row.innerHTML =
-        '<span style="font:400 11px '+F+';color:#8B939B">'+label+'</span>' +
-        '<span style="font:600 11px \'JetBrains Mono\',monospace;color:rgba(255,255,255,.35);text-decoration:line-through">'+bVal+'</span>' +
-        '<span style="font:800 12px \'JetBrains Mono\',monospace;color:'+(changed?(color||'#3FC281'):'rgba(255,255,255,.5)')+'">'+aVal+(changed?'':'')+'</span>';
-      return row;
+
+    // ── Warnings (pinned dest + dead-end) ──
+    var hasWarnings = opts.pinnedDest || opts.deadEnd;
+    if (hasWarnings) {
+      var warn = document.createElement('div');
+      warn.style.cssText = 'padding:10px 20px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.02)';
+      if (opts.pinnedDest) {
+        var wPin = document.createElement('div');
+        wPin.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;background:rgba(123,203,203,.06);border:1px solid rgba(123,203,203,.18)';
+        wPin.innerHTML =
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' +
+          '<span style="font:400 11px '+F+';color:#7BCBCB">Planning toward your target destination: <strong style="font-weight:800">'+opts.pinnedDest+'</strong></span>';
+        warn.appendChild(wPin);
+      }
+      if (opts.deadEnd) {
+        var wDead = document.createElement('div');
+        wDead.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;background:rgba(235,67,67,.07);border:1px solid rgba(235,67,67,.25)';
+        wDead.innerHTML =
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EB4343" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+          '<span style="font:400 11px '+F+';color:#EB4343">Plan had to be fully reset — no known routes out of <strong style="font-weight:800">'+(opts.deadCity||'this city')+'</strong>. Unbooked lanes need to be reassigned manually.</span>';
+        warn.appendChild(wDead);
+      }
+      modal.appendChild(warn);
     }
-    // Column headers
-    var colHdr = document.createElement('div');
-    colHdr.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;padding:0 0 8px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:2px';
-    colHdr.innerHTML =
-      '<span style="font:700 9px '+F+';letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.2)">Metric</span>' +
-      '<span style="font:700 9px '+F+';letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.2)">Before</span>' +
-      '<span style="font:700 9px '+F+';letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.2)">After</span>';
-    body.appendChild(colHdr);
+
+    // ── Metric rows ──
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:14px 20px 10px';
+
+    // helpers
     var fmt$ = function(n){ return '$'+Math.round(n).toLocaleString('en-US'); };
     var fmtRpm = function(n){ return '$'+n.toFixed(2)+'/mi'; };
-    body.appendChild(_statRow('Total income',  fmt$(before.income),  fmt$(after.income),  after.income>before.income?'#3FC281':'#EB4343'));
-    body.appendChild(_statRow('Avg RPM',        fmtRpm(before.rpm),   fmtRpm(after.rpm),   after.rpm>before.rpm?'#3FC281':'#EB4343'));
-    body.appendChild(_statRow('Total days',     before.days+' days',  after.days+' days',  after.days<before.days?'#3FC281':'#FBB303'));
-    body.appendChild(_statRow('Total miles',    before.miles.toLocaleString('en-US')+' mi', after.miles.toLocaleString('en-US')+' mi', '#7BCBCB'));
+    var pct = function(bv, av){ if (!bv) return null; var d = (av - bv) / Math.abs(bv) * 100; return (d >= 0 ? '+' : '') + d.toFixed(1) + '%'; };
+    var pctColor = function(bv, av, higherIsBetter) {
+      if (av === bv) return 'rgba(255,255,255,.4)';
+      var better = higherIsBetter ? av > bv : av < bv;
+      return better ? '#3FC281' : '#EB4343';
+    };
+
+    // column header
+    var colHdr = document.createElement('div');
+    colHdr.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr 72px;padding:0 0 8px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:2px';
+    colHdr.innerHTML =
+      '<span style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2)">Metric</span>' +
+      '<span style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2)">Before</span>' +
+      '<span style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2)">After</span>' +
+      '<span style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2)">Change</span>';
+    body.appendChild(colHdr);
+
+    function _row(label, bFmt, aFmt, bv, av, higherIsBetter) {
+      var pctStr = pct(bv, av);
+      var col = pctColor(bv, av, higherIsBetter);
+      var row = document.createElement('div');
+      row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr 72px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)';
+      row.innerHTML =
+        '<span style="font:600 11px '+F+';color:#8B939B">'+label+'</span>' +
+        '<span style="font:500 11px '+MN+';color:rgba(255,255,255,.32);text-decoration:line-through">'+bFmt+'</span>' +
+        '<span style="font:800 11.5px '+MN+';color:'+(bv!==av?'#FBFBFB':'rgba(255,255,255,.45)')+'">'+aFmt+'</span>' +
+        '<span style="font:700 10.5px '+F+';color:'+col+'">'+((pctStr && bv!==av) ? pctStr : '—')+'</span>';
+      return row;
+    }
+
+    body.appendChild(_row('Profit',   fmt$(before.profit), fmt$(after.profit), before.profit, after.profit, true));
+    body.appendChild(_row('Income',   fmt$(before.income), fmt$(after.income), before.income, after.income, true));
+    body.appendChild(_row('RPM',      fmtRpm(before.rpm),  fmtRpm(after.rpm),  before.rpm,   after.rpm,   true));
+    body.appendChild(_row('Est. cost',fmt$(before.cost),   fmt$(after.cost),   before.cost,  after.cost,  false));
+    body.appendChild(_row('Distance', before.miles.toLocaleString('en-US')+' mi', after.miles.toLocaleString('en-US')+' mi', before.miles, after.miles, false));
+    body.appendChild(_row('Duration', before.days+' d',    after.days+' d',    before.days,  after.days,  false));
     modal.appendChild(body);
-    // Footer
+
+    // ── Footer — manual confirm only ──
     var ftr = document.createElement('div');
     ftr.style.cssText = 'padding:14px 20px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:flex-end';
-    var gotIt = document.createElement('button');
-    gotIt.style.cssText = 'padding:8px 24px;background:#27A767;border:none;border-radius:10px;color:#0B131B;font:800 13px '+F+';cursor:pointer';
-    gotIt.textContent = 'Got it';
-    gotIt.addEventListener('click', function(){ ov.remove(); });
-    ftr.appendChild(gotIt);
+    var confirmBtn = document.createElement('button');
+    confirmBtn.style.cssText = 'padding:9px 28px;background:#27A767;border:none;border-radius:10px;color:#0B131B;font:800 13px '+F+';cursor:pointer;letter-spacing:.01em';
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.addEventListener('click', function(){ ov.remove(); });
+    ftr.appendChild(confirmBtn);
     modal.appendChild(ftr);
+
     ov.appendChild(modal);
     document.body.appendChild(ov);
-    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    // No backdrop-click-to-close — user must hit Confirm
   }
 
   // ── TMS Sync ─────────────────────────────────────────────────────────────
@@ -4321,13 +4464,22 @@ export function initApp() {
                 return;
               }
               var tgt=loadsOf(rId)[parseInt(lIdx)];
+              var _alBefore=_snapStats(rId), _alDestChanged=false, _alCascadeResult=null;
               if (tgt) {
                 var _oldDest=tgt.dest;
                 tgt.origin=originCity; tgt.dest=load.dest; tgt.miles=load.miles;
                 tgt.income=load.income; tgt.status='Booked'; tgt.customer=load.customer;
-                if (load.dest!==_oldDest) _cascadeLane(rId, parseInt(lIdx), load.dest);
+                if (load.dest!==_oldDest) { _alCascadeResult=_cascadeLane(rId, parseInt(lIdx), load.dest); _alDestChanged=true; }
               }
-              ov.remove(); _hideLbBar(); _hideLbNotif(); setState({});
+              var _alAfter=_snapStats(rId);
+              ov.remove(); _hideLbBar(); _hideLbNotif();
+              _showAddingLoad(function() {
+                setState({});
+                if (_alDestChanged) {
+                  var _opts={ pinnedDest: _pinnedFinalDest[rId]||null, deadEnd: _alCascadeResult&&_alCascadeResult.deadEnd, deadCity: _alCascadeResult&&_alCascadeResult.deadCity };
+                  _showAdaptingPlan(function(){ _showRebalanceModal(_alBefore, _alAfter, _opts); });
+                }
+              });
             });
           })(ld);
           actCell.appendChild(addBtn);
@@ -4405,13 +4557,22 @@ export function initApp() {
         e.stopPropagation();
         var ld = LOADS_DATA[parseInt(btn.dataset.li)];
         var tgt = loadsOf(rId)[parseInt(lIdx)];
+        var _mlBefore = _snapStats(rId), _mlDestChanged = false, _mlCascadeResult = null;
         if (tgt) {
           var _oldDest = tgt.dest;
           tgt.origin = originCity; tgt.dest = ld.dest; tgt.miles = ld.miles;
           tgt.income = Math.round((ld.rm[0]+ld.rm[1])/2); tgt.status = 'Booked';
-          if (ld.dest !== _oldDest) _cascadeLane(rId, parseInt(lIdx), ld.dest);
+          if (ld.dest !== _oldDest) { _mlCascadeResult = _cascadeLane(rId, parseInt(lIdx), ld.dest); _mlDestChanged = true; }
         }
-        _closeMyLoads(); setState({});
+        var _mlAfter = _snapStats(rId);
+        _closeMyLoads();
+        _showAddingLoad(function() {
+          setState({});
+          if (_mlDestChanged) {
+            var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: _mlCascadeResult && _mlCascadeResult.deadEnd, deadCity: _mlCascadeResult && _mlCascadeResult.deadCity };
+            _showAdaptingPlan(function() { _showRebalanceModal(_mlBefore, _mlAfter, _opts); });
+          }
+        });
       });
     });
   }
@@ -4487,7 +4648,8 @@ export function initApp() {
         var ld = NL_LOADS[li];
         var prevLoad = (loadsOf(routeId).slice(-1)[0]||{});
         LOADS.push({ id:'ef-nb-'+Math.random().toString(36).slice(2,8), route:routeId, origin:originCity, dest:ld.dest, miles:ld.miles, income:Math.round((ld.incMin+ld.incMax)/2), status:'Booked', pickup:'08/10/2026', pickupTime:'08:00 - 12:00', delivery:'08/11/2026', deliveryTime:'12:00 - 16:00', customer:ld.customer, eta:'--', onTime:'--', stops:1, truck:prevLoad.truck||'--', equipment:prevLoad.equipment||'Van 53' });
-        ov.remove(); setState({});
+        ov.remove();
+        _showAddingLoad(function() { setState({}); });
       });
     });
   }
@@ -5888,9 +6050,11 @@ export function initApp() {
                     if (_dotEl) _dotEl.style.display = 'none';
                   }
                   _closeDrop();
-                  var _loadsNow = loadsOf(rId);
-                  var _newIdx = _loadsNow.findIndex(function(l){ return l.id===newLd.id; });
-                  _rebalancePlanChain(rId, _newIdx+1);
+                  _showAddingLoad(function() {
+                    var _loadsNow = loadsOf(rId);
+                    var _newIdx = _loadsNow.findIndex(function(l){ return l.id===newLd.id; });
+                    _rebalancePlanChain(rId, _newIdx+1);
+                  });
                 });
               })(ld, li);
               card.appendChild(info); card.appendChild(addBtn); cycleSection.appendChild(card);
