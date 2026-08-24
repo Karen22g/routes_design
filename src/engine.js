@@ -2232,7 +2232,7 @@ export function initApp() {
                 onclick: e => { e.stopPropagation(); setState({ view: 'routes', openRoute: r.id, openLoad: null, detailTab: 'plan', controlMode: 'route', controlLane: null }); },
                 style: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#7BCBCB', fontWeight: '700', fontSize: '12px', cursor: 'pointer', borderBottom: '1px dashed rgba(123,203,203,.4)' }
               }, [iconEl('route'), routeNameShort]),
-              el('div', { style: { color: '#6B7373', fontSize: '10.5px', marginTop: '2px' } }, ['Leg ' + idx + ' of ' + loadsOf(l.route).length])
+              el('div', { style: { color: '#6B7373', fontSize: '10.5px', marginTop: '2px' } }, ['Lane ' + idx + ' of ' + loadsOf(l.route).length])
             ])
           : el('div', { style: { padding: '13px 8px 13px 0', color: '#6B7373', fontWeight: '600', fontSize: '12px', fontStyle: 'italic' } }, ['No route']),
         origin: el('div', { style: { padding: '13px 8px 13px 0', color: '#7BCBCB', fontWeight: '600', fontSize: '12.5px' } }, [l.origin]),
