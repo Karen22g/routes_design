@@ -1193,7 +1193,7 @@ export function initApp() {
         </div>
         <div class="cr-field">
           <div class="cr-field-label">Departure date <span style="color:#EB4343">*</span></div>
-          <input class="cr-input" type="date" value="2026-07-30">
+          <input class="cr-input" id="cr-departure-date" type="date" value="2026-07-30">
         </div>
       </div>
 
@@ -3003,6 +3003,59 @@ export function initApp() {
   const _lbSearch = {}, _lbCount = {}, _lbIgnored = new Set();
   const _rebuildLoads = {}; // rId → [{origin,dest,miles,income,pickup,customer,equipment}]
   const _pinnedFinalDest = {}; // rId → city string (final destination user set in create-route form)
+  const _NEXT_DEST = {
+    'Memphis, TN':        { dest: 'Nashville, TN',      miles: 212 },
+    'Nashville, TN':      { dest: 'Louisville, KY',     miles: 175 },
+    'Louisville, KY':     { dest: 'Columbus, OH',        miles: 185 },
+    'Columbus, OH':       { dest: 'Pittsburgh, PA',      miles: 185 },
+    'Pittsburgh, PA':     { dest: 'Newark, NJ',          miles: 370 },
+    'St. Louis, MO':      { dest: 'Indianapolis, IN',    miles: 240 },
+    'Indianapolis, IN':   { dest: 'Columbus, OH',        miles: 175 },
+    'Kansas City, MO':    { dest: 'St. Louis, MO',       miles: 248 },
+    'Fresno, CA':         { dest: 'Las Vegas, NV',        miles: 285 },
+    'Las Vegas, NV':      { dest: 'Salt Lake City, UT',  miles: 420 },
+    'Salt Lake City, UT': { dest: 'Denver, CO',           miles: 525 },
+    'Denver, CO':         { dest: 'Kansas City, MO',      miles: 602 },
+    'Phoenix, AZ':        { dest: 'Albuquerque, NM',      miles: 295 },
+    'Albuquerque, NM':    { dest: 'Oklahoma City, OK',    miles: 540 },
+    'Oklahoma City, OK':  { dest: 'Kansas City, MO',      miles: 340 },
+    'Dallas, TX':         { dest: 'Oklahoma City, OK',    miles: 205 },
+    'Houston, TX':        { dest: 'Dallas, TX',           miles: 239 },
+    'Atlanta, GA':        { dest: 'Charlotte, NC',        miles: 245 },
+    'Charlotte, NC':      { dest: 'Newark, NJ',           miles: 630 },
+    'Chicago, IL':        { dest: 'Indianapolis, IN',     miles: 182 },
+    'Newark, NJ':         { dest: 'Philadelphia, PA',     miles: 95  },
+    'Philadelphia, PA':   { dest: 'Baltimore, MD',        miles: 100 },
+    'Laredo, TX':         { dest: 'San Antonio, TX',      miles: 155 },
+    'San Antonio, TX':    { dest: 'Houston, TX',          miles: 196 },
+    'Savannah, GA':       { dest: 'Atlanta, GA',          miles: 252 },
+  };
+  // Dead-end → nearest hub within 300 mi that has outbound routes in _NEXT_DEST
+  const _REALLO_DH = {
+    'Baltimore, MD':     { hub: 'Philadelphia, PA', miles: 100 },
+    'Newark, NJ':        { hub: 'Philadelphia, PA', miles:  95 },
+    'Miami, FL':         null,  // >300 mi from any hub in our network
+    'Jacksonville, FL':  { hub: 'Savannah, GA',     miles: 140 },
+    'Orlando, FL':       null,
+    'Tampa, FL':         null,
+    'New Orleans, LA':   { hub: 'Houston, TX',      miles: 349 },  // borderline; flag as fail
+    'Birmingham, AL':    { hub: 'Atlanta, GA',       miles: 147 },
+    'Memphis, TN':       null,  // IS in _NEXT_DEST, won't be dead-end
+    'Louisville, KY':    null,  // IS in _NEXT_DEST, won't be dead-end
+    'Portland, OR':      null,
+    'Seattle, WA':       null,
+    'Los Angeles, CA':   null,
+    'San Diego, CA':     null,
+  };
+  function _ralloHub(deadCity) {
+    if (_REALLO_DH.hasOwnProperty(deadCity)) {
+      var r = _REALLO_DH[deadCity];
+      if (!r || r.miles > 300) return null;
+      return r;
+    }
+    // Unknown city: no hub found
+    return null;
+  }
   const _syncingRoutes = new Set();
   const _syncDone = {}; // routeId → bool (button disabled after sync)
   const _autoAddFromLoads = {}; // routeId → bool (toggle state per route)
@@ -3305,8 +3358,14 @@ export function initApp() {
         setState({});
         _showAddingLoad(function() {
           if (_destChanged && typeof _before !== 'undefined') {
-            var _opts = { pinnedDest: _pinnedFinalDest[_slRid] || null, deadEnd: _cascadeResult && _cascadeResult.deadEnd, deadCity: _cascadeResult && _cascadeResult.deadCity };
-            _showAdaptingPlan(function() { _showRebalanceModal(_before, _after, _opts); });
+            if (_cascadeResult && _cascadeResult.caseB) {
+              _showAdaptingPlan(function() { _showCaseBModal(_slRid, _before, _after, _cascadeResult); });
+            } else if (_cascadeResult && _cascadeResult.deadEnd) {
+              _showAdaptingPlan(function() { _showCaseCModal(_slRid, _cascadeResult.deadCity); });
+            } else {
+              var _opts = { pinnedDest: _pinnedFinalDest[_slRid] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: ld.dest };
+              _showAdaptingPlan(function() { _showRebalanceModal(_before, _after, _opts); });
+            }
           }
         });
       });
@@ -3321,36 +3380,8 @@ export function initApp() {
   // When a load is added to lane lIdx and its dest differs from the old dest,
   // cascade the new origin down every subsequent Unbooked lane so the plan re-routes.
   function _cascadeLane(rId, changedIdx, newDest) {
-    var NEXT_DEST = {
-      'Memphis, TN':        { dest: 'Nashville, TN',      miles: 212 },
-      'Nashville, TN':      { dest: 'Louisville, KY',     miles: 175 },
-      'Louisville, KY':     { dest: 'Columbus, OH',        miles: 185 },
-      'Columbus, OH':       { dest: 'Pittsburgh, PA',      miles: 185 },
-      'Pittsburgh, PA':     { dest: 'Newark, NJ',          miles: 370 },
-      'St. Louis, MO':      { dest: 'Indianapolis, IN',    miles: 240 },
-      'Indianapolis, IN':   { dest: 'Columbus, OH',        miles: 175 },
-      'Kansas City, MO':    { dest: 'St. Louis, MO',       miles: 248 },
-      'Fresno, CA':         { dest: 'Las Vegas, NV',        miles: 285 },
-      'Las Vegas, NV':      { dest: 'Salt Lake City, UT',  miles: 420 },
-      'Salt Lake City, UT': { dest: 'Denver, CO',           miles: 525 },
-      'Denver, CO':         { dest: 'Kansas City, MO',      miles: 602 },
-      'Phoenix, AZ':        { dest: 'Albuquerque, NM',      miles: 295 },
-      'Albuquerque, NM':    { dest: 'Oklahoma City, OK',    miles: 540 },
-      'Oklahoma City, OK':  { dest: 'Kansas City, MO',      miles: 340 },
-      'Dallas, TX':         { dest: 'Oklahoma City, OK',    miles: 205 },
-      'Houston, TX':        { dest: 'Dallas, TX',           miles: 239 },
-      'Atlanta, GA':        { dest: 'Charlotte, NC',        miles: 245 },
-      'Charlotte, NC':      { dest: 'Newark, NJ',           miles: 630 },
-      'Chicago, IL':        { dest: 'Indianapolis, IN',     miles: 182 },
-      'Newark, NJ':         { dest: 'Philadelphia, PA',     miles: 95  },
-      'Philadelphia, PA':   { dest: 'Baltimore, MD',        miles: 100 },
-      'Laredo, TX':         { dest: 'San Antonio, TX',      miles: 155 },
-      'San Antonio, TX':    { dest: 'Houston, TX',          miles: 196 },
-      'Savannah, GA':       { dest: 'Atlanta, GA',          miles: 252 },
-    };
     var all = loadsOf(rId);
     var deadEnd = false, deadCity = null;
-    // Find last Unbooked lane index so we can pin it to the user's target destination
     var lastUnbookedIdx = -1;
     for (var k = changedIdx + 1; k < all.length; k++) {
       if (all[k].status === 'Unbooked') lastUnbookedIdx = k; else break;
@@ -3359,14 +3390,12 @@ export function initApp() {
       if (all[j].status === 'Unbooked') {
         var prevDest = all[j - 1].dest;
         all[j].origin = prevDest;
-        // Last Unbooked lane: keep the user's pinned final destination instead of the lookup value
         var pinnedDest = _pinnedFinalDest[rId];
         if (j === lastUnbookedIdx && pinnedDest) {
           all[j].dest = pinnedDest;
-          // Recalculate miles estimate (rough: 1 mi per 2 min at 55mph ≈ keep existing or 300 as fallback)
           all[j].miles = all[j].miles || 300;
         } else {
-          var nd = NEXT_DEST[prevDest];
+          var nd = _NEXT_DEST[prevDest];
           if (nd) { all[j].dest = nd.dest; all[j].miles = nd.miles; }
           else { deadEnd = true; deadCity = prevDest; break; }
         }
@@ -3374,7 +3403,22 @@ export function initApp() {
         break;
       }
     }
-    return { deadEnd: deadEnd, deadCity: deadCity };
+    // Case B: pinned dest was forced but doesn't follow naturally from the last Unbooked lane's origin
+    var caseB = false, caseBNaturalDest = null, caseBNaturalMiles = 0;
+    if (!deadEnd && lastUnbookedIdx >= 0) {
+      var _pinned = _pinnedFinalDest[rId];
+      if (_pinned) {
+        var lastOrigin = all[lastUnbookedIdx].origin;
+        var naturalNext = _NEXT_DEST[lastOrigin];
+        if (!naturalNext || naturalNext.dest !== _pinned) {
+          caseB = true;
+          caseBNaturalDest = naturalNext ? naturalNext.dest : null;
+          caseBNaturalMiles = naturalNext ? naturalNext.miles : 0;
+        }
+      }
+    }
+    var caseBLastOrigin = (caseB && lastUnbookedIdx >= 0) ? all[lastUnbookedIdx].origin : null;
+    return { deadEnd: deadEnd, deadCity: deadCity, caseB: caseB, caseBNaturalDest: caseBNaturalDest, caseBNaturalMiles: caseBNaturalMiles, caseBLastOrigin: caseBLastOrigin };
   }
 
   function _openRebuildModal(rId) {
@@ -3544,6 +3588,260 @@ export function initApp() {
     _showAdaptingPlan(function() { _showRebalanceModal(before, after, _rOpts); });
   }
 
+  // ── Case B: plan doesn't naturally reach pinned destination ─────────────
+  function _showCaseBModal(rId, before, after, cascadeResult) {
+    var ex = document.getElementById('_ef-caseb'); if (ex) ex.remove();
+    var F = 'Nunito,system-ui';
+    var MN = '\'JetBrains Mono\',monospace';
+    var pinned = _pinnedFinalDest[rId] || '';
+    var naturalDest   = cascadeResult.caseBNaturalDest;
+    var naturalMiles  = cascadeResult.caseBNaturalMiles;
+    var lastOriginCity = cascadeResult.caseBLastOrigin || '';
+
+    var ov = document.createElement('div'); ov.id = '_ef-caseb';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.72);display:flex;align-items:center;justify-content:center';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(251,179,3,.3);border-radius:14px;width:480px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,.07)';
+    hdr.innerHTML =
+      '<div style="width:34px;height:34px;border-radius:10px;background:rgba(251,179,3,.1);border:1px solid rgba(251,179,3,.3);display:grid;place-items:center;flex-shrink:0">' +
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FBB303" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>' +
+      '</div>' +
+      '<div style="flex:1">' +
+        '<div style="font:800 13px '+F+';color:#FBFBFB">Plan no longer reaches '+pinned+'</div>' +
+        '<div style="font:400 11px '+F+';color:#8B939B;margin-top:2px">Adding this load shifted the route away from your target destination.</div>' +
+      '</div>';
+    modal.appendChild(hdr);
+
+    // Natural end info
+    var infoRow = document.createElement('div');
+    infoRow.style.cssText = 'padding:12px 20px;display:flex;gap:10px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.02)';
+    infoRow.innerHTML =
+      '<div style="flex:1;padding:10px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px">' +
+        '<div style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:6px">Best plan found ends at</div>' +
+        '<div style="font:800 13px '+F+';color:#FBFBFB">'+(naturalDest || 'Current city')+'</div>' +
+        (naturalMiles ? '<div style="font:400 10.5px '+F+';color:#6B7373;margin-top:3px">'+naturalMiles+' mi from '+(lastOriginCity||'previous stop')+'</div>' : '') +
+      '</div>' +
+      '<div style="display:flex;align-items:center;color:#6B7373;font-size:16px">→</div>' +
+      '<div style="flex:1;padding:10px 12px;background:rgba(251,179,3,.06);border:1px solid rgba(251,179,3,.2);border-radius:10px">' +
+        '<div style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(251,179,3,.6);margin-bottom:6px">Your target destination</div>' +
+        '<div style="font:800 13px '+F+';color:#FBB303">'+pinned+'</div>' +
+        '<div style="font:400 10.5px '+F+';color:rgba(251,179,3,.5);margin-top:3px">Connection requires extra routing</div>' +
+      '</div>';
+    modal.appendChild(infoRow);
+
+    // Stats comparison — before vs after table
+    var statsRow = document.createElement('div');
+    statsRow.style.cssText = 'padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.07)';
+    var fmt$ = function(n){ return '$'+Math.round(n).toLocaleString('en-US'); };
+    var fmtPct = function(a, b) {
+      if (!b || b === 0) return { txt: '—', clr: '#6B7373' };
+      var p = ((a - b) / Math.abs(b)) * 100;
+      var s = (p >= 0 ? '+' : '') + p.toFixed(1) + '%';
+      return { txt: s, clr: p > 0 ? '#3FC281' : p < 0 ? '#EB4343' : '#6B7373' };
+    };
+    // For cost/distance/duration: lower is better (invert color logic)
+    var fmtPctInv = function(a, b) {
+      var r = fmtPct(a, b);
+      if (r.clr === '#3FC281') r.clr = '#EB4343';
+      else if (r.clr === '#EB4343') r.clr = '#3FC281';
+      return r;
+    };
+    var rows = [
+      { label:'Profit',    bVal: fmt$(before.profit),                aVal: fmt$(after.profit),                chg: fmtPct(after.profit, before.profit),    aClr: after.profit >= 0 ? '#3FC281' : '#EB4343' },
+      { label:'Income',    bVal: fmt$(before.income),                aVal: fmt$(after.income),                chg: fmtPct(after.income, before.income),     aClr: '#FBFBFB' },
+      { label:'RPM',       bVal: '$'+before.rpm.toFixed(2)+'/mi',    aVal: '$'+after.rpm.toFixed(2)+'/mi',    chg: fmtPct(after.rpm, before.rpm),          aClr: '#FBFBFB' },
+      { label:'Est. cost', bVal: fmt$(before.cost),                  aVal: fmt$(after.cost),                  chg: fmtPctInv(after.cost, before.cost),     aClr: '#FBFBFB' },
+      { label:'Distance',  bVal: before.miles.toLocaleString('en-US')+' mi', aVal: after.miles.toLocaleString('en-US')+' mi', chg: fmtPctInv(after.miles, before.miles), aClr: '#FBFBFB' },
+      { label:'Duration',  bVal: before.days+' d',                   aVal: after.days+' d',                   chg: fmtPctInv(after.days, before.days),     aClr: '#FBFBFB' },
+    ];
+    var tblHtml =
+      '<div style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2);margin-bottom:8px">Comparison if you change your final destination</div>' +
+      '<table style="width:100%;border-collapse:collapse">' +
+        '<thead><tr>' +
+          '<td style="font:600 9.5px '+F+';color:#4B5563;text-transform:uppercase;letter-spacing:.06em;padding:0 0 6px">Metric</td>' +
+          '<td style="font:600 9.5px '+F+';color:#4B5563;text-transform:uppercase;letter-spacing:.06em;padding:0 0 6px;text-align:right">Before</td>' +
+          '<td style="font:600 9.5px '+F+';color:#4B5563;text-transform:uppercase;letter-spacing:.06em;padding:0 0 6px;text-align:right">Keep '+pinned.split(',')[0]+'</td>' +
+          '<td style="font:600 9.5px '+F+';color:#4B5563;text-transform:uppercase;letter-spacing:.06em;padding:0 0 6px;text-align:right">Δ</td>' +
+        '</tr></thead><tbody>';
+    rows.forEach(function(r, i) {
+      var bg = i % 2 === 0 ? '' : 'background:rgba(255,255,255,.025);';
+      tblHtml +=
+        '<tr style="'+bg+'">' +
+          '<td style="font:600 12px '+F+';color:#9BA3AB;padding:6px 0">'+r.label+'</td>' +
+          '<td style="font:400 11.5px '+MN+';color:#4B5563;text-align:right;padding:6px 0;text-decoration:line-through">'+r.bVal+'</td>' +
+          '<td style="font:700 12px '+MN+';color:'+r.aClr+';text-align:right;padding:6px 0">'+r.aVal+'</td>' +
+          '<td style="font:700 11.5px '+MN+';color:'+r.chg.clr+';text-align:right;padding:6px 0">'+r.chg.txt+'</td>' +
+        '</tr>';
+    });
+    tblHtml += '</tbody></table>';
+    statsRow.innerHTML = tblHtml;
+    modal.appendChild(statsRow);
+
+    // Footer — two choices
+    var ftr = document.createElement('div');
+    ftr.style.cssText = 'padding:14px 20px;border-top:1px solid rgba(255,255,255,.07);display:flex;gap:10px;justify-content:flex-end';
+
+    var acceptBtn = document.createElement('button');
+    acceptBtn.style.cssText = 'padding:9px 20px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#8B939B;font:700 12px '+F+';cursor:pointer';
+    acceptBtn.textContent = 'Change plan';
+    acceptBtn.addEventListener('click', function() {
+      // Accept: let the plan end at the natural destination, clear the pinned dest
+      var loads = loadsOf(rId);
+      for (var i = loads.length - 1; i >= 0; i--) {
+        if (loads[i].status === 'Unbooked') {
+          if (naturalDest) { loads[i].dest = naturalDest; loads[i].miles = naturalMiles || loads[i].miles; }
+          break;
+        }
+      }
+      delete _pinnedFinalDest[rId];
+      setState({});
+      ov.remove();
+    });
+
+    var keepBtn = document.createElement('button');
+    keepBtn.style.cssText = 'padding:9px 20px;background:#FBB303;border:none;border-radius:10px;color:#0B131B;font:800 12px '+F+';cursor:pointer';
+    keepBtn.textContent = 'Keep ' + pinned.split(',')[0];
+    keepBtn.addEventListener('click', function() {
+      // Keep: maintain the forced last lane to pinnedDest as-is
+      ov.remove();
+    });
+
+    ftr.appendChild(acceptBtn);
+    ftr.appendChild(keepBtn);
+    modal.appendChild(ftr);
+    ov.appendChild(modal);
+    document.body.appendChild(ov);
+    // No backdrop click — user must choose
+  }
+
+  // ── Case C: dead-end — no outbound routes at all ─────────────────────────
+  function _showCaseCModal(rId, deadCity) {
+    var ex = document.getElementById('_ef-casec'); if (ex) ex.remove();
+    var F  = 'Nunito,system-ui';
+    var MN = '\'JetBrains Mono\',monospace';
+
+    var hub = _ralloHub(deadCity);  // { hub, miles } or null
+
+    var ov = document.createElement('div'); ov.id = '_ef-casec';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.76);display:flex;align-items:center;justify-content:center';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(251,152,3,.35);border-radius:14px;width:480px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'background:rgba(251,152,3,.1);border-bottom:1px solid rgba(251,152,3,.25);padding:20px 24px 16px;display:flex;align-items:flex-start;gap:14px';
+    hdr.innerHTML =
+      '<div style="width:36px;height:36px;border-radius:50%;background:rgba(251,152,3,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FB9803" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>' +
+          '<line x1="12" y1="9" x2="12" y2="13"></line>' +
+          '<line x1="12" y1="17" x2="12.01" y2="17"></line>' +
+        '</svg>' +
+      '</div>' +
+      '<div>' +
+        '<div style="font:800 15px '+F+';color:#FBFBFB;letter-spacing:-.015em">Plan reached a dead end</div>' +
+        '<div style="font:400 12px '+F+';color:#8B939B;margin-top:4px">No outbound routes from <span style="font-family:'+MN+';color:#FB9803;font-weight:600">' + deadCity + '</span></div>' +
+      '</div>';
+    modal.appendChild(hdr);
+
+    // Body
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:20px 24px';
+
+    if (hub) {
+      // Reallocator found a hub
+      var nextFromHub = _NEXT_DEST[hub.hub] ? _NEXT_DEST[hub.hub].dest : '—';
+      body.innerHTML =
+        '<div style="font:600 12px '+F+';color:#9BA3AB;margin-bottom:14px;text-transform:uppercase;letter-spacing:.06em">Suggested repositioning</div>' +
+        '<div style="background:#0B131B;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-family:'+MN+';font-size:12px;color:#FB9803;font-weight:700">DH</span>' +
+            '<span style="font:600 12px '+F+';color:#FBFBFB">' + deadCity + '</span>' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+            '<span style="font:600 12px '+F+';color:#FBFBFB">' + hub.hub + '</span>' +
+            '<span style="font:400 11px '+F+';color:#6B7373;margin-left:auto">' + hub.miles + ' mi DH</span>' +
+          '</div>' +
+          '<div style="height:1px;background:rgba(255,255,255,.07)"></div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-family:'+MN+';font-size:12px;color:#3FC281;font-weight:700">→</span>' +
+            '<span style="font:600 12px '+F+';color:#FBFBFB">' + hub.hub + '</span>' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+            '<span style="font:600 12px '+F+';color:#FBFBFB">' + nextFromHub + '</span>' +
+            '<span style="font:400 11px '+F+';color:#6B7373;margin-left:auto">connected</span>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font:400 12px '+F+';color:#6B7373;margin-top:12px;line-height:1.5">Repositioning adds <strong style="color:#FBFBFB">' + hub.miles + ' deadhead miles</strong> to your plan, then continues from <strong style="color:#FBFBFB">' + hub.hub + '</strong>.</div>';
+    } else {
+      // No hub found within 300 mi
+      body.innerHTML =
+        '<div style="background:rgba(251,152,3,.08);border:1px solid rgba(251,152,3,.2);border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:10px">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FB9803" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+          '<div style="font:400 12.5px '+F+';color:#9BA3AB;line-height:1.55">No hub found within <strong style="color:#FBFBFB">300 mi</strong> of <span style="font-family:'+MN+';color:#FB9803">' + deadCity + '</span>. The Reallocator can\'t build a plan from here.</div>' +
+        '</div>' +
+        '<div style="font:400 12px '+F+';color:#6B7373;margin-top:12px;line-height:1.5">Use <strong style="color:#FBFBFB">Hunter Mode</strong> to manually search for any available load from this location.</div>';
+    }
+    modal.appendChild(body);
+
+    // Footer
+    var ftr = document.createElement('div');
+    ftr.style.cssText = 'padding:0 24px 20px;display:flex;align-items:center;justify-content:flex-end;gap:10px';
+
+    if (hub) {
+      var hmBtn = document.createElement('button');
+      hmBtn.style.cssText = 'padding:9px 18px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#9BA3AB;font:600 12px '+F+';cursor:pointer';
+      hmBtn.textContent = 'Hunter Mode instead';
+      hmBtn.addEventListener('click', function() {
+        ov.remove();
+        // Open the load search so the user can pick any available lane from deadCity
+        _openMyLoads(rId, null, deadCity);
+      });
+
+      var confBtn = document.createElement('button');
+      confBtn.style.cssText = 'padding:9px 22px;background:#FB9803;border:none;border-radius:10px;color:#0B131B;font:800 12px '+F+';cursor:pointer';
+      confBtn.textContent = 'Confirm repositioning';
+      confBtn.addEventListener('click', function() {
+        // Add a DH Unbooked lane from deadCity to hub
+        var prevLoad = (loadsOf(rId).slice(-1)[0] || {});
+        LOADS.push({
+          id: 'ef-dh-' + Math.random().toString(36).slice(2, 8),
+          route: rId, origin: deadCity, dest: hub.hub, miles: hub.miles, income: 0,
+          status: 'Unbooked', pickup: '--', pickupTime: '--', delivery: '--', deliveryTime: '--',
+          customer: 'DH Repositioning', eta: '--', onTime: '--', stops: 0,
+          truck: prevLoad.truck || '--', equipment: prevLoad.equipment || 'Van 53',
+        });
+        ov.remove();
+        setState({});
+      });
+
+      ftr.appendChild(hmBtn);
+      ftr.appendChild(confBtn);
+    } else {
+      var hmOnlyBtn = document.createElement('button');
+      hmOnlyBtn.style.cssText = 'padding:9px 22px;background:#FB9803;border:none;border-radius:10px;color:#0B131B;font:800 12px '+F+';cursor:pointer';
+      hmOnlyBtn.textContent = 'Open Hunter Mode';
+      hmOnlyBtn.addEventListener('click', function() {
+        ov.remove();
+        _openMyLoads(rId, null, deadCity);
+      });
+      var cancelBtn = document.createElement('button');
+      cancelBtn.style.cssText = 'padding:9px 16px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#6B7373;font:600 12px '+F+';cursor:pointer';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', function() { ov.remove(); });
+      ftr.appendChild(cancelBtn);
+      ftr.appendChild(hmOnlyBtn);
+    }
+
+    modal.appendChild(ftr);
+    ov.appendChild(modal);
+    document.body.appendChild(ov);
+    // No backdrop click — user must choose
+  }
+
   // ── "Adding the load" mini loading modal ────────────────────────────────
   function _showAddingLoad(then) {
     var ex = document.getElementById('_ef-adding-load'); if (ex) ex.remove();
@@ -3643,13 +3941,16 @@ export function initApp() {
     // ── Header ──
     var hdr = document.createElement('div');
     hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,.07)';
+    var _rebalSub = (opts.fromDest && opts.toDest)
+      ? 'Changed from <strong style="color:#FBFBFB">' + opts.fromDest.split(',')[0] + '</strong> to <strong style="color:#FBFBFB">' + opts.toDest.split(',')[0] + '</strong> — we adjusted the plan to maintain profitability and connectivity.'
+      : 'The destination of your lane changed — we adjusted the plan to maintain profitability and connectivity.';
     hdr.innerHTML =
       '<div style="width:34px;height:34px;border-radius:10px;background:rgba(63,194,129,.1);border:1px solid rgba(63,194,129,.25);display:grid;place-items:center;flex-shrink:0">' +
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3FC281" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>' +
       '</div>' +
       '<div style="flex:1">' +
         '<div style="font:800 13px '+F+';color:#FBFBFB">Updating plan</div>' +
-        '<div style="font:400 11px '+F+';color:#8B939B;margin-top:2px">Adjusting the rest of your plan to maintain profitability and connectivity.</div>' +
+        '<div style="font:400 11px '+F+';color:#8B939B;margin-top:2px">'+_rebalSub+'</div>' +
       '</div>';
     modal.appendChild(hdr);
 
@@ -3708,7 +4009,7 @@ export function initApp() {
       row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr 72px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)';
       row.innerHTML =
         '<span style="font:600 11px '+F+';color:#8B939B">'+label+'</span>' +
-        '<span style="font:500 11px '+MN+';color:rgba(255,255,255,.32);text-decoration:line-through">'+bFmt+'</span>' +
+        '<span style="font:500 11px '+MN+';color:rgba(255,255,255,.38)">'+bFmt+'</span>' +
         '<span style="font:800 11.5px '+MN+';color:'+(bv!==av?'#FBFBFB':'rgba(255,255,255,.45)')+'">'+aFmt+'</span>' +
         '<span style="font:700 10.5px '+F+';color:'+col+'">'+((pctStr && bv!==av) ? pctStr : '—')+'</span>';
       return row;
@@ -4476,8 +4777,14 @@ export function initApp() {
               _showAddingLoad(function() {
                 setState({});
                 if (_alDestChanged) {
-                  var _opts={ pinnedDest: _pinnedFinalDest[rId]||null, deadEnd: _alCascadeResult&&_alCascadeResult.deadEnd, deadCity: _alCascadeResult&&_alCascadeResult.deadCity };
-                  _showAdaptingPlan(function(){ _showRebalanceModal(_alBefore, _alAfter, _opts); });
+                  if (_alCascadeResult && _alCascadeResult.caseB) {
+                    _showAdaptingPlan(function() { _showCaseBModal(rId, _alBefore, _alAfter, _alCascadeResult); });
+                  } else if (_alCascadeResult && _alCascadeResult.deadEnd) {
+                    _showAdaptingPlan(function() { _showCaseCModal(rId, _alCascadeResult.deadCity); });
+                  } else {
+                    var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: load.dest };
+                    _showAdaptingPlan(function() { _showRebalanceModal(_alBefore, _alAfter, _opts); });
+                  }
                 }
               });
             });
@@ -4569,8 +4876,14 @@ export function initApp() {
         _showAddingLoad(function() {
           setState({});
           if (_mlDestChanged) {
-            var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: _mlCascadeResult && _mlCascadeResult.deadEnd, deadCity: _mlCascadeResult && _mlCascadeResult.deadCity };
-            _showAdaptingPlan(function() { _showRebalanceModal(_mlBefore, _mlAfter, _opts); });
+            if (_mlCascadeResult && _mlCascadeResult.caseB) {
+              _showAdaptingPlan(function() { _showCaseBModal(rId, _mlBefore, _mlAfter, _mlCascadeResult); });
+            } else if (_mlCascadeResult && _mlCascadeResult.deadEnd) {
+              _showAdaptingPlan(function() { _showCaseCModal(rId, _mlCascadeResult.deadCity); });
+            } else {
+              var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: ld.dest };
+              _showAdaptingPlan(function() { _showRebalanceModal(_mlBefore, _mlAfter, _opts); });
+            }
           }
         });
       });
@@ -4908,11 +5221,43 @@ export function initApp() {
     var rect = anchorEl.getBoundingClientRect();
     var menu = document.createElement('div'); menu.id = '_ef-add-menu';
     menu.style.cssText = 'position:fixed;z-index:9010;background:#101B23;border:1px solid rgba(255,255,255,.18);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.6);overflow:hidden;min-width:240px;left:'+rect.left+'px;top:'+(rect.bottom+6)+'px';
-    [
+    // "Add route" only makes sense when outbound routes exist from this city
+    var _hasOutbound = !!_NEXT_DEST[originCity];
+    var _items = [
       { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>', label:'Add load', sub:'Search or register a load', fn:function() { menu.remove(); _openNewLoadModal(routeId, originCity); } },
       { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>', label:'Add lane', sub:'Add a new lane', fn:function() { menu.remove(); _openAddLaneModal(routeId, originCity); } },
-      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>', label:'Add route', sub:'Add bi-hauls, tri-hauls, or loops', fn:function() { menu.remove(); _openAddRoutePanel(routeId, originCity); } },
-    ].forEach(function(item) {
+    ];
+    if (_hasOutbound) {
+      _items.push({ svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>', label:'Add route', sub:'Let the system find the next route for you', fn:function() {
+        menu.remove();
+        var _lastLoad = (loadsOf(routeId).slice(-1)[0] || {});
+        // Departure = last lane delivery date + 1 day (stored as MM/DD/YYYY)
+        var _dep = '';
+        if (_lastLoad.delivery && _lastLoad.delivery !== '--') {
+          var _dp = _lastLoad.delivery.split('/');
+          if (_dp.length === 3) {
+            var _d = new Date(+_dp[2], +_dp[0]-1, +_dp[1]+1);
+            _dep = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0');
+          }
+        }
+        var _prefillCabinId = _lastLoad.truck || null;
+        setState({ showCreateRoute: true });
+        setTimeout(function() {
+          // Pre-fill cabin/driver/trailer (crPickerSelect also auto-fills linked fields)
+          if (_prefillCabinId && window.crPickerSelect) {
+            var _cab = (window.CR_CABIN_LIST||[]).find(function(c){ return c.id === _prefillCabinId; });
+            if (_cab) window.crPickerSelect('cabin', _cab.id);
+          }
+          // Pre-fill origin (override whatever crPickerSelect may have set from cabin city)
+          var _oi = document.getElementById('cr-origin-input');
+          if (_oi) { _oi.value = originCity; _oi.classList.add('cr-filled'); if (window.crUpdateForecastVisibility) window.crUpdateForecastVisibility(); }
+          // Pre-fill departure date
+          if (_dep) { var _di = document.getElementById('cr-departure-date'); if (_di) _di.value = _dep; }
+          // Final destination stays empty
+        }, 60);
+      } });
+    }
+    _items.forEach(function(item) {
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer';
       var icon = document.createElement('div');
