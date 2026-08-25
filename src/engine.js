@@ -3566,6 +3566,9 @@ export function initApp() {
   function _rebalancePlanChain(routeId, fromIdx) {
     var loads = loadsOf(routeId);
     var before = _snapStats(routeId);
+    // Capture from/to cities before the loop updates origins
+    var _fromDest = (loads[fromIdx] && loads[fromIdx].origin) ? loads[fromIdx].origin : null;
+    var _toDest   = (fromIdx > 0 && loads[fromIdx-1]) ? loads[fromIdx-1].dest : null;
     // Pin the last Unbooked lane's dest to the user's target destination if set
     var pinnedDest = _pinnedFinalDest[routeId];
     if (pinnedDest) {
@@ -3584,7 +3587,7 @@ export function initApp() {
     }
     var after = _snapStats(routeId);
     setState({});
-    var _rOpts = { pinnedDest: _pinnedFinalDest[routeId] || null, deadEnd: false, deadCity: null };
+    var _rOpts = { pinnedDest: _pinnedFinalDest[routeId] || null, deadEnd: false, deadCity: null, fromDest: _fromDest, toDest: _toDest };
     _showAdaptingPlan(function() { _showRebalanceModal(before, after, _rOpts); });
   }
 
@@ -3651,12 +3654,12 @@ export function initApp() {
       return r;
     };
     var rows = [
-      { label:'Profit',    bVal: fmt$(before.profit),                aVal: fmt$(after.profit),                chg: fmtPct(after.profit, before.profit),    aClr: after.profit >= 0 ? '#3FC281' : '#EB4343' },
-      { label:'Income',    bVal: fmt$(before.income),                aVal: fmt$(after.income),                chg: fmtPct(after.income, before.income),     aClr: '#FBFBFB' },
-      { label:'RPM',       bVal: '$'+before.rpm.toFixed(2)+'/mi',    aVal: '$'+after.rpm.toFixed(2)+'/mi',    chg: fmtPct(after.rpm, before.rpm),          aClr: '#FBFBFB' },
-      { label:'Est. cost', bVal: fmt$(before.cost),                  aVal: fmt$(after.cost),                  chg: fmtPctInv(after.cost, before.cost),     aClr: '#FBFBFB' },
-      { label:'Distance',  bVal: before.miles.toLocaleString('en-US')+' mi', aVal: after.miles.toLocaleString('en-US')+' mi', chg: fmtPctInv(after.miles, before.miles), aClr: '#FBFBFB' },
-      { label:'Duration',  bVal: before.days+' d',                   aVal: after.days+' d',                   chg: fmtPctInv(after.days, before.days),     aClr: '#FBFBFB' },
+      { label:'Income',        bVal: fmt$(before.income),                aVal: fmt$(after.income),                chg: fmtPct(after.income, before.income),     aClr: '#FBFBFB' },
+      { label:'Cost',          bVal: fmt$(before.cost),                  aVal: fmt$(after.cost),                  chg: fmtPctInv(after.cost, before.cost),     aClr: '#FBFBFB' },
+      { label:'Profit',        bVal: fmt$(before.profit),                aVal: fmt$(after.profit),                chg: fmtPct(after.profit, before.profit),    aClr: after.profit >= 0 ? '#3FC281' : '#EB4343' },
+      { label:'Rate per mile', bVal: '$'+before.rpm.toFixed(2)+'/mi',    aVal: '$'+after.rpm.toFixed(2)+'/mi',    chg: fmtPct(after.rpm, before.rpm),          aClr: '#FBFBFB' },
+      { label:'Distance',      bVal: before.miles.toLocaleString('en-US')+' mi', aVal: after.miles.toLocaleString('en-US')+' mi', chg: fmtPctInv(after.miles, before.miles), aClr: '#FBFBFB' },
+      { label:'Duration',      bVal: before.days+' d',                   aVal: after.days+' d',                   chg: fmtPctInv(after.days, before.days),     aClr: '#FBFBFB' },
     ];
     var tblHtml =
       '<div style="font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2);margin-bottom:8px">Comparison if you change your final destination</div>' +
@@ -4015,12 +4018,12 @@ export function initApp() {
       return row;
     }
 
-    body.appendChild(_row('Profit',   fmt$(before.profit), fmt$(after.profit), before.profit, after.profit, true));
-    body.appendChild(_row('Income',   fmt$(before.income), fmt$(after.income), before.income, after.income, true));
-    body.appendChild(_row('RPM',      fmtRpm(before.rpm),  fmtRpm(after.rpm),  before.rpm,   after.rpm,   true));
-    body.appendChild(_row('Est. cost',fmt$(before.cost),   fmt$(after.cost),   before.cost,  after.cost,  false));
-    body.appendChild(_row('Distance', before.miles.toLocaleString('en-US')+' mi', after.miles.toLocaleString('en-US')+' mi', before.miles, after.miles, false));
-    body.appendChild(_row('Duration', before.days+' d',    after.days+' d',    before.days,  after.days,  false));
+    body.appendChild(_row('Income',       fmt$(before.income), fmt$(after.income), before.income, after.income, true));
+    body.appendChild(_row('Cost',         fmt$(before.cost),   fmt$(after.cost),   before.cost,  after.cost,  false));
+    body.appendChild(_row('Profit',       fmt$(before.profit), fmt$(after.profit), before.profit, after.profit, true));
+    body.appendChild(_row('Rate per mile',fmtRpm(before.rpm),  fmtRpm(after.rpm),  before.rpm,   after.rpm,   true));
+    body.appendChild(_row('Distance',     before.miles.toLocaleString('en-US')+' mi', after.miles.toLocaleString('en-US')+' mi', before.miles, after.miles, false));
+    body.appendChild(_row('Duration',     before.days+' d',    after.days+' d',    before.days,  after.days,  false));
     modal.appendChild(body);
 
     // ── Footer — manual confirm only ──
@@ -7681,6 +7684,22 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '24 de agosto, 2:36pm',
+          items: [
+            'Sistema "Fix Route": cuando el destino de una lane cambia al agregar o cambiar una carga, el sistema recalcula automáticamente las lanes Unbooked downstream para mantener conectividad y rentabilidad',
+            'Crear ruta desde cero: el plan se encadena con _NEXT_DEST a partir del origen hasta alcanzar la duración configurada; si el usuario fijó un Final destination se respeta en el último lane Unbooked',
+            'Modal de espera (plan vacío): título "Creating route…", subtítulo "Setting up lanes and your trip plan.", ícono de casa, duración ~1.4 s',
+            'Modal de espera (plan con cargas): título "Creating route", subtítulo "Considering current loads and optimizing the rest of your plan.", ícono de pulso/actividad',
+            'Auto Hunter Mode: al terminar el spinner de creación de ruta, se abre automáticamente el modal de HM (My Loads) solo cuando la ruta parte completamente desde cero — Any Unit sin cargas o Assign Unit con camión sin ciclo activo',
+            'Botón "Add route" en el menú Add+: pre-llena el formulario de creación con Cabin/Driver/Trailer de la última carga del plan, Origin = destino de la última lane, Departure date = fecha de entrega + 1 día, Final destination vacío',
+            'Botón "Add route" oculto cuando el último destino es un dead-end (sin salida en _NEXT_DEST)',
+            'Spinner de transición "Updating plan" (~950 ms): subtítulo explícito "Changed from [Dest A] to [Dest B]" con los nombres de ciudad reales (ej: "Changed from Louisville to Columbus")',
+            'Modal de reajuste: tabla Before / After con 6 métricas — Profit, Income, RPM (verde si suben), Est. cost, Distance, Duration (verde si bajan); columna Before en dimmed sin tachado',
+            'Modal de reajuste: solo se cierra con el botón Confirm, no al hacer clic fuera',
+            '"Leg" renombrado a "Lane" en la vista de detalle de ruta (ej: "Lane 1 of 3")',
+          ]
+        },
         {
           date: '19 de agosto, 4:23pm',
           items: [
