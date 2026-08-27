@@ -1,3 +1,90 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   efRouting Design System — tokens (extracted live from Figma via MCP)
+   Tokens file: YJA8mb0uRnCalmJZC6VXEJ · dark mode
+   These are the canonical token values. Inline-styled views (e.g. the On Road /
+   Control view in engine.js) apply the same hex values directly because SVG
+   presentation attributes can't consume CSS custom properties.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── Typography ── */
+  --ds-font: "General Sans", Nunito, Manrope, system-ui, sans-serif;
+  --ds-font-mono: "JetBrains Mono", monospace;
+  /* weights: Regular 400 · Medium 500 · Semibold 600 */
+  /* type scale (size / line-height / tracking):
+     Display L 48/44/-2 · Display M 40/36/-2 · Display S 36/32/-2
+     Headline L 32/32/-1 · Headline M 28/28/-1 · Headline S 24/24/-1
+     Title/Label L 20|16/24/0 · M 16|14/24|20/0 · S 14|12/20|16/0
+     Body L 14/20/0 · Body M 12/16/0 · Body S 11/16/0 */
+
+  /* ── Surface / background (neutral, dark mode) ── */
+  --ds-background:        #141414; /* background/primary  → neutral/8  */
+  --ds-surface-1:         #1a1a1a; /* surface/primary     → neutral/10 */
+  --ds-surface-2:         #1f1f1f; /* surface/secondary   → neutral/12 */
+  --ds-surface-3:         #242424; /* surface/tertiary    → neutral/14 */
+  --ds-surface-4:         #292929; /* surface/cuaternary  → neutral/16 */
+  --ds-surface-inverse:   #000000; /* surface/inverse     → neutral/black */
+
+  /* ── Text (dark mode) ── */
+  --ds-text-primary:      #e6e6e6; /* text/primary   → neutral/90 */
+  --ds-text-secondary:    #b3b3b3; /* text/secondary → neutral/70 */
+  --ds-text-tertiary:     #808080; /* text/tertiary  → neutral/50 */
+  --ds-text-muted:        #666666; /* neutral/40 (extra tier below tertiary) */
+  --ds-text-disabled:     #333333; /* text/disabled  → neutral/20 */
+  --ds-text-on-inverse:   #ffffff; /* text/on_inverse → white */
+  --ds-text-strong:       #f5f5f5; /* neutral/96 (crisp heading) */
+
+  /* ── Border (dark mode) ── */
+  --ds-border-subtle:     #333333; /* border/subtle → neutral/20 */
+  --ds-border-strong:     #666666; /* border/strong → neutral/40 */
+  --ds-border-focus:      #808080; /* border/focus  → neutral/50 */
+
+  /* ── State layers (dark mode) ── */
+  --ds-state-hover:       rgba(255,255,255,.04); /* alpha/white/4 */
+  --ds-state-pressed:     rgba(255,255,255,.08); /* alpha/white/8 */
+  --ds-state-selected:    rgba(255,255,255,.08); /* alpha/white/8 */
+
+  /* ── Accent / brand (green) ── */
+  --ds-accent:            #2e9975; /* accent·brand secondary → green/brand 60 */
+  --ds-accent-strong:     #1a805e; /* brand/50 */
+  --ds-accent-deep:       #1a805e;
+  --ds-accent-surface:    #182921; /* green/16 */
+  --ds-on-accent:         #141414; /* dark text on accent */
+
+  /* ── Feedback: success (green) ── */
+  --ds-success:           #47b26b; /* success/tertiary  → green/70 */
+  --ds-success-2:         #1a804d; /* success/secondary → green/50 */
+  --ds-success-surface:   #182921; /* success/primary   → green/16 */
+
+  /* ── Feedback: info (blue) ── */
+  --ds-info:              #6688cc; /* info/tertiary  → blue/80 */
+  --ds-info-2:            #2e5299; /* info/secondary → blue/60 */
+  --ds-info-surface:      #19202e; /* info/primary   → blue/18 */
+
+  /* ── Feedback: warning (yellow) ── */
+  --ds-warning:           #b28835; /* warning/tertiary  → yellow/70 */
+  --ds-warning-2:         #805a0d; /* warning/secondary → yellow/50 */
+  --ds-warning-surface:   #2e2617; /* warning/primary   → yellow/18 */
+
+  /* ── Feedback: error (red) ── */
+  --ds-error:             #cc666f; /* error/tertiary  → red/80 */
+  --ds-error-2:           #992e40; /* error/secondary → red/60 */
+  --ds-error-surface:     #331f20; /* error/primary   → red/20 */
+
+  /* ── Spacing (Layout scale) ── */
+  --ds-space-xs:   6px;  --ds-space-sm: 8px;  --ds-space-md: 12px;
+  --ds-space-lg:  16px;  --ds-space-xl: 20px; --ds-space-2xl: 24px;
+  --ds-space-3xl: 32px;  --ds-space-4xl: 40px;
+
+  /* ── Radius ── */
+  --ds-radius-xs: 8px; --ds-radius-s: 12px; --ds-radius-m: 16px; --ds-radius-l: 24px;
+  --ds-radius-full: 999px;
+  --ds-border-width: 1px; --ds-border-width-focus: 2px;
+
+  /* ── Elevation ── */
+  --ds-shadow: 2px 2px 4px 0 rgba(0,0,0,.16), 0 0 1px 0 rgba(0,0,0,.32);
+  --ds-overlay-1: rgba(0,0,0,.08);
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #0B131B; color: #FBFBFB; font-family: Nunito, Manrope, system-ui, sans-serif; font-size: 13px; height: 100%; overflow: hidden; }
 #root { height: 100%; }
