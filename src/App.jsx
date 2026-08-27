@@ -37,12 +37,12 @@ export default function App() {
       <div id="ef-row">
         <nav id="ef-sidebar">
           <div id="ef-sb-logomark">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#27A767" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2e9975" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18M3 12h13M3 18h15" />
             </svg>
           </div>
           <button id="ef-changelog-btn" title="Historial de cambios" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', border: '1px solid rgba(255,255,255,.12)', borderRadius: '6px', background: 'transparent', cursor: 'pointer', marginTop: '4px' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8B939B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#808080" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
