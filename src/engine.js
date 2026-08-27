@@ -8716,6 +8716,24 @@ export function initApp() {
     const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * k) * Math.cos(b[0] * k) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
+  // Plan-vs-actual (synthesized): the driver's real deviation off the planned polyline.
+  // Only departed lanes have "actual" telemetry. Deterministic per segment.
+  const _orActual = {};
+  function _orActualFor(routeId, key) {
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
+    if (!seg || seg.truckMi < 0) return null;                 // not started → no actual yet
+    if (!_orActual[routeId]) _orActual[routeId] = {};
+    if (!(key in _orActual[routeId])) {
+      const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      _orActual[routeId][key] = { f0: 0.30, f1: 0.66, side: (h % 2 ? 1 : -1), mag: 0.20, detourMi: 22 + (h % 5) * 7 };
+    }
+    return _orActual[routeId][key];
+  }
+  // Reconciled = the plan now has a stop inside the deviation window (dispatcher matched what the driver did).
+  function _orReconciled(routeId, key, act) {
+    const miles = _orSegMiles(routeId, key);
+    return _orStopsGet(routeId, key).some(s => { const f = s.frac != null ? s.frac : (miles ? s.distanceMi / miles : .5); return f >= act.f0 - 0.12 && f <= act.f1 + 0.12; });
+  }
   // Fuel optimizer (mock): insert optimal fuel stops with gallons + cost + savings.
   function _orRunFuel(routeId, laneIdx) {
     const miles = _orSegMiles(routeId, laneIdx);
@@ -8959,7 +8977,6 @@ export function initApp() {
         _statusDrop(row.exec),
         el('div', { class: 'hoverable', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: expanded ? '#6688cc' : '#666666', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
-      if (expanded) segItems.push(_segExpansion(row));
     });
     const segList = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
     // ───────────────────── LANE DETAIL (stop management) ──────────────────
@@ -9212,8 +9229,27 @@ export function initApp() {
         el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer' } }, ['Cancel'])
       ]) : null;
 
-      return el('div', { class: 'row-hoverable-none', style: { margin: '2px 8px 6px', borderRadius: '14px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.14)', overflow: 'hidden' } }, [
-        progressBar, metrics, laneAlertsSection, impactStrip, addingHint, actions, fuelBanner, stopsBody
+      // plan-vs-actual banner: driver deviated from the planned polyline
+      const _dact = _orActualFor(routeId, key);
+      const _drec = _dact ? _orReconciled(routeId, key, _dact) : true;
+      let deviationBanner = null;
+      if (_dact && !_drec) {
+        deviationBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '10px 16px 0', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.34)' } }, [
+          el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#F4F6F8' } }, ['Driver went off the planned route (~' + _dact.detourMi + ' mi)']),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#cc666f', marginTop: '1px' } }, ['Add the stop the driver made so the plan matches what actually happened.'])
+          ]),
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { font: '800 11px ' + F, color: '#cc666f', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(204,102,111,.4)', whiteSpace: 'nowrap' } }, ['Add stop'])
+        ]);
+      } else if (_dact && _drec) {
+        deviationBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', margin: '10px 16px 0', padding: '10px 13px', borderRadius: '12px', background: 'rgba(46,153,117,.10)', border: '1px solid rgba(46,153,117,.32)' } }, [
+          el('div', { style: { color: '#47b26b', display: 'flex', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' }),
+          el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ["Plan matches the driver's actual route"])
+        ]);
+      }
+      return el('div', { class: 'row-hoverable-none', style: { flexShrink: '0', margin: '2px 8px 6px', borderRadius: '14px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.14)', overflow: 'hidden' } }, [
+        progressBar, metrics, deviationBanner, laneAlertsSection, impactStrip, addingHint, actions, fuelBanner, stopsBody
       ]);
     }
 
@@ -9316,13 +9352,31 @@ export function initApp() {
 
     // ─────────────────────── RIGHT: map + cards ───────────────────────────
     const addMode = laneMode && !!state.orAddType;   // adding a stop → map grows to pick
-    const mapPanel = el('div', { style: addMode
-      ? { position: 'relative', flex: '1', minHeight: '460px', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(102,136,204,.3)' }
+    const mapPanel = el('div', { style: laneMode
+      ? { position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', background: '#1a1a1a' }
       : { position: 'relative', height: '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
     const mapEl = el('div', { id: 'ef-onroad-map', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
-    if (!addMode) {
+    if (laneMode && !addMode) {
+      // immersive lane manager: back to the On Road list
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1200' } }, [
+        el('div', { class: 'hoverable', onclick: () => setState({ orLane: null, orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 14px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(6px)', color: '#e6e6e6', font: '800 13px ' + F, cursor: 'pointer' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg><span>On Road</span>' })
+      ]));
+      // plan-vs-actual legend (bottom-right) — only when this lane has actual telemetry
+      const _lact = _orActualFor(routeId, state.orLane);
+      if (_lact) {
+        const _lrec = _orReconciled(routeId, state.orLane, _lact);
+        const _leg = (col, dash, label) => '<div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:0;border-top:3px ' + (dash ? 'dashed' : 'solid') + ' ' + col + '"></span><span style="font:700 11px ' + F + ';color:#cfd3d6">' + label + '</span></div>';
+        mapPanel.appendChild(el('div', { style: { position: 'absolute', right: '14px', bottom: '30px', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
+          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _lrec ? '#47b26b' : '#cc666f', marginBottom: '2px' } }, [_lrec ? 'Plan matches driver ✓' : 'Driver off-plan']),
+          el('div', { html: _leg('#6688cc', true, 'Planned') }),
+          el('div', { html: _leg('#cc666f', true, 'Driver actual') }),
+          el('div', { html: _leg('#2e9975', false, 'On-plan') })
+        ]));
+      }
+    }
+    if (!addMode && !laneMode) {
       // top-left controls
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '12px', left: '12px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '8px' } }, [
         _mapCtl(IC.locate),
@@ -9345,7 +9399,8 @@ export function initApp() {
         ]),
         el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 13px', borderRadius: '999px', background: '#6688cc', color: '#141414', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync })
       ]));
-    } else {
+    }
+    if (addMode) {
       // ── add-stop map overlays: header + type picker OR candidate list ──
       const isPick = state.orAddType === '__pick';
       const svc = _OR_SVC[state.orAddType];
@@ -9438,22 +9493,50 @@ export function initApp() {
           const truckMi = seg.truckMi;
           const done = truckMi > laneMiles;
           const truckFrac = truckMi >= 0 ? Math.max(0, Math.min(1, truckMi / laneMiles)) : -1;
-          L.polyline([a, b], { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round' }).addTo(map);
           const pinFor = (svgHtml, col) => '<div style="position:relative;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + col + ';border:2.5px solid #141414;box-shadow:0 2px 8px rgba(0,0,0,.5);color:#141414">' + svgHtml + '</div>';
+          // route the planned polyline THROUGH the added stops (a detour bends the line)
+          const _sorted = _orLaneStopsSorted(routeId, state.orLane);
+          const _stopLL = (s) => {
+            const t = s.frac != null ? s.frac : (laneMiles ? s.distanceMi / laneMiles : .5);
+            const side = (s.id && s.id.charCodeAt(s.id.length - 1) % 2) ? 1 : -1;
+            const mag = s.type === 'fuel' ? (0.03 + (s.detourMi || 0.5) * 0.05) : (0.10 + (s.detourMi || 0.6) * 0.10);
+            return _orOffset(a, b, t, side * mag);
+          };
+          const _sLLs = _sorted.map(_stopLL);
+          const pathPts = [a].concat(_sLLs).concat([b]);
+          const _pathAt = (pts, frac) => {
+            let total = 0; const segs = [];
+            for (let i = 1; i < pts.length; i++) { const dl = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(dl); total += dl; }
+            let target = frac * total, acc = 0; const prefix = [pts[0]];
+            for (let i = 1; i < pts.length; i++) { if (segs[i - 1] > 0 && acc + segs[i - 1] >= target) { const r = (target - acc) / segs[i - 1]; const pt = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * r, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * r]; prefix.push(pt); return { pt: pt, prefix: prefix }; } acc += segs[i - 1]; prefix.push(pts[i]); }
+            return { pt: pts[pts.length - 1], prefix: pts.slice() };
+          };
+          const _act = _orActualFor(routeId, state.orLane);
+          const _recon = _act ? _orReconciled(routeId, state.orLane, _act) : true;
+          if (_act && !_recon) {
+            // driver deviated from the planned polyline → blue planned / red actual / green matched ends
+            const pf0 = _orLerp(a, b, _act.f0), pf1 = _orLerp(a, b, _act.f1), apex = _orOffset(a, b, (_act.f0 + _act.f1) / 2, _act.side * _act.mag);
+            L.polyline([a, pf0], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
+            L.polyline([pf1, b], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
+            L.polyline([pf0, pf1], { color: '#6688cc', weight: 3.5, opacity: .9, dashArray: '2 9', lineCap: 'round' }).addTo(map).bindTooltip('Planned route', { sticky: true });
+            L.polyline([pf0, apex, pf1], { color: '#cc666f', weight: 4, opacity: .95, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(map).bindTooltip('Driver — actual route', { sticky: true });
+            L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(map).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
+          } else {
+            L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(map);
+          }
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(seg.dest, { direction: 'top' });
-          if (truckFrac > 0 && truckFrac < 1) {
-            L.polyline([a, _orLerp(a, b, truckFrac)], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
+          if (truckFrac > 0 && truckFrac < 1 && _recon) {
+            L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(map);
           }
-          // added stops
-          _orLaneStopsSorted(routeId, state.orLane).forEach((s, i) => {
-            const t = s.frac != null ? s.frac : (laneMiles ? s.distanceMi / laneMiles : .5);
-            const ll = _orOffset(a, b, t, (i % 2 ? 1 : -1) * 0.04);
+          // stop markers sit ON the routed waypoint positions
+          _sorted.forEach((s, i) => {
+            const ll = _sLLs[i];
             const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
             const isPassed = truckMi >= 0 && s.distanceMi <= truckMi;
             const col = isPassed ? '#2e9975' : (s.type === 'fuel' ? '#b28835' : '#6688cc');
             const inner = isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon;
-            L.marker(ll, { icon: L.divIcon({ className: '', html: pinFor(inner, col) + (isPassed ? '' : ''), iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .75 : 1 }).addTo(map).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
+            L.marker(ll, { icon: L.divIcon({ className: '', html: pinFor(inner, col), iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .8 : 1 }).addTo(map).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
           });
           // candidate markers while browsing a service type
           if (addType && addType !== '__pick') {
@@ -9469,7 +9552,7 @@ export function initApp() {
           }
           // truck at its live position on this lane
           if (truckFrac > 0 && truckFrac < 1) {
-            const tll = _orLerp(a, b, truckFrac);
+            const tll = _pathAt(pathPts, truckFrac).pt;
             L.marker(tll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:40px;height:40px"><div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:14px;height:14px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(map);
           }
           // feasibility alert cues on this lane
@@ -9490,10 +9573,12 @@ export function initApp() {
               L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1200 }).addTo(map).bindTooltip(meta.label, { direction: 'top' });
             }
           });
-          const _lb = L.latLngBounds([a, b]);
-          map.fitBounds(_lb, { padding: [45, 45] });
+          const _lb = L.latLngBounds(pathPts);
           _orMap = map;
-          setTimeout(() => { try { map.invalidateSize(); map.fitBounds(_lb, { padding: [45, 45] }); } catch (e) {} }, 90);
+          const _fit = () => { try { map.invalidateSize(); if (_lb.isValid()) map.fitBounds(_lb, { padding: [45, 45] }); } catch (e) {} };
+          _fit();
+          requestAnimationFrame(() => { _fit(); requestAnimationFrame(_fit); });
+          [120, 350, 700].forEach(ms => setTimeout(_fit, ms));
         } else { map.setView([37.8, -96], 4); _orMap = map; }
         return;
       }
@@ -9604,6 +9689,26 @@ export function initApp() {
       el('div', { class: 'hoverable', onclick: _orApplyUndo, style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12px ' + F, color: '#6688cc', cursor: 'pointer', padding: '6px 12px', borderRadius: '9px', border: '1px solid rgba(102,136,204,.3)' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg><span>Undo</span>' })
     ]) : null;
 
+    if (laneMode) {
+      let stopsPanel = null;
+      if (!addMode) {
+        const _mrow = cd.rows.find(r => r.segKey === state.orLane) || {};
+        const _mseg = _orSegReg[routeId][state.orLane];
+        stopsPanel = el('div', { style: { position: 'absolute', left: '18px', top: '64px', bottom: '18px', width: '444px', maxWidth: 'calc(100% - 36px)', zIndex: '1050', display: 'flex', flexDirection: 'column', borderRadius: '16px', overflow: 'hidden', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.55)', backdropFilter: 'blur(10px)' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
+            _badge(_mrow),
+            el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 18px 1fr', alignItems: 'center', gap: '8px', flex: '1', minWidth: '0' } }, [
+              _endpoint(_mseg.origin, _mrow.originDate || '', null, false),
+              el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
+              _endpoint(_mseg.dest, _mrow.destDate || '', null, false)
+            ]),
+            _statusDrop(_mrow.exec || 'Booked')
+          ]),
+          el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto' } }, [_segExpansion(_mrow)])
+        ]);
+      }
+      return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [mapPanel, stopsPanel, loadingOverlay, profileModal, toast]);
+    }
     return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast]);
   }
 
