@@ -8601,6 +8601,7 @@ export function initApp() {
   const _orAlerts = {};     // routeId -> [alert]  (feasibility alerts during execution)
   const _orSegReg = {};     // routeId -> segKey -> { miles, origin, dest, truckMi, isLoad, loadIdx, income }  (loads AND deadheads)
   let _orLoading = false;   // fuel-optimizer loading overlay flag
+  let _orSaving = false;    // "Save changes" loading overlay flag (closes the manage-stops modal)
   // Undo (changes go live to the driver immediately → every edit is revertible)
   let _orUndo = null;       // { routeId, laneIdx, stops, fuel, label }
   let _orToast = null;      // toast label string
@@ -8961,12 +8962,37 @@ export function initApp() {
       const m = M[exec] || M.Booked;
       return el('div', { class: 'hoverable', style: { display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 12px', borderRadius: '10px', background: m.bg, border: m.bd, color: m.fg, font: '800 12.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
     }
+    // inline dropdown: quick read-only view of a lane's current stops (chevron toggles it)
+    function _segStopsPreview(row) {
+      const key = row.segKey;
+      const seg = _orSegReg[routeId][key];
+      const stops = _orLaneStopsSorted(routeId, key);
+      const _pin = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+      const mini = (icon, col, title, sub) => el('div', { style: { display: 'grid', gridTemplateColumns: '26px 1fr', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', background: '#101820' } }, [
+        el('div', { style: { width: '26px', height: '26px', borderRadius: '8px', display: 'grid', placeItems: 'center', background: col + '22', color: col }, html: icon }),
+        el('div', { style: { minWidth: '0' } }, [
+          el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [title]),
+          sub ? el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px' } }, [sub]) : null
+        ])
+      ]);
+      const items = [mini(_pin, '#47b26b', 'Pick up · ' + seg.origin, null)];
+      stops.forEach(s => { const svc = _OR_SVC[s.type] || _OR_SVC.fuel; items.push(mini(svc.icon, s.type === 'fuel' ? '#b28835' : '#6688cc', s.type === 'fuel' ? s.brand : s.name, svc.label + ' · at ' + s.distanceMi.toLocaleString('en-US') + ' mi')); });
+      items.push(mini(_pin, '#6688cc', 'Drop off · ' + seg.dest, null));
+      return el('div', { style: { flexShrink: '0', margin: '2px 8px 6px', padding: '10px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.14)', display: 'flex', flexDirection: 'column', gap: '6px' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' } }, [
+          el('div', { style: { font: '800 11px ' + F, color: '#808080', letterSpacing: '.04em' } }, ['Stops (' + stops.length + ' added)']),
+          el('div', { class: 'hoverable', onclick: () => setState({ orLane: key, orExpanded: null, orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 11px ' + F, color: '#6688cc', cursor: 'pointer', padding: '5px 10px', borderRadius: '8px', border: '1px solid rgba(102,136,204,.3)' }, html: '<span>Manage stops</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
+        ]),
+        ...items
+      ]);
+    }
     const segItems = [];
     cd.rows.forEach(row => {
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
-      const expanded = row.segKey === state.orLane;
-      segItems.push(el('div', { class: 'row-hoverable', onclick: () => setState({ orLane: expanded ? null : row.segKey, orAddType: null, orReplace: null }), style: { display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto auto 34px', alignItems: 'center', gap: '16px', padding: '18px 16px', borderRadius: '14px', background: expanded ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (expanded || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !expanded ? '.5' : '1', cursor: 'pointer' } }, [
+      const isOpen = row.segKey === state.orExpanded;      // inline dropdown open
+      const isManaging = row.segKey === state.orLane;       // modal open for this lane
+      segItems.push(el('div', { class: 'row-hoverable', onclick: () => setState({ orLane: row.segKey, orExpanded: null, orAddType: null, orReplace: null }), style: { display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto auto 34px', alignItems: 'center', gap: '16px', padding: '18px 16px', borderRadius: '14px', background: (isOpen || isManaging) ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isOpen || isManaging || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isOpen ? '.5' : '1', cursor: 'pointer' } }, [
         _badge(row),
         el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 22px 1fr', alignItems: 'center', gap: '10px', minWidth: '0' } }, [
           _endpoint(row.origin, row.originDate, null, false),
@@ -8975,8 +9001,9 @@ export function initApp() {
         ]),
         _etaChip(row),
         _statusDrop(row.exec),
-        el('div', { class: 'hoverable', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: expanded ? '#6688cc' : '#666666', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
+        el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); setState({ orExpanded: isOpen ? null : row.segKey }); }, title: isOpen ? 'Hide stops' : 'Show stops', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isOpen ? '#6688cc' : '#666666', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
+      if (isOpen) segItems.push(_segStopsPreview(row));
     });
     const segList = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
     // ───────────────────── LANE DETAIL (stop management) ──────────────────
@@ -9359,10 +9386,7 @@ export function initApp() {
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
     if (laneMode && !addMode) {
-      // immersive lane manager: back to the On Road list
-      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1200' } }, [
-        el('div', { class: 'hoverable', onclick: () => setState({ orLane: null, orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 14px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(6px)', color: '#e6e6e6', font: '800 13px ' + F, cursor: 'pointer' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg><span>On Road</span>' })
-      ]));
+      // (modal header carries Save / close — no floating back button needed on the map)
       // plan-vs-actual legend (bottom-right) — only when this lane has actual telemetry
       const _lact = _orActualFor(routeId, state.orLane);
       if (_lact) {
@@ -9689,27 +9713,39 @@ export function initApp() {
       el('div', { class: 'hoverable', onclick: _orApplyUndo, style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12px ' + F, color: '#6688cc', cursor: 'pointer', padding: '6px 12px', borderRadius: '9px', border: '1px solid rgba(102,136,204,.3)' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg><span>Undo</span>' })
     ]) : null;
 
+    let manageModal = null;
     if (laneMode) {
-      let stopsPanel = null;
-      if (!addMode) {
-        const _mrow = cd.rows.find(r => r.segKey === state.orLane) || {};
-        const _mseg = _orSegReg[routeId][state.orLane];
-        stopsPanel = el('div', { style: { position: 'absolute', left: '18px', top: '64px', bottom: '18px', width: '444px', maxWidth: 'calc(100% - 36px)', zIndex: '1050', display: 'flex', flexDirection: 'column', borderRadius: '16px', overflow: 'hidden', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.55)', backdropFilter: 'blur(10px)' } }, [
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
-            _badge(_mrow),
-            el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 18px 1fr', alignItems: 'center', gap: '8px', flex: '1', minWidth: '0' } }, [
-              _endpoint(_mseg.origin, _mrow.originDate || '', null, false),
-              el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
-              _endpoint(_mseg.dest, _mrow.destDate || '', null, false)
-            ]),
-            _statusDrop(_mrow.exec || 'Booked')
+      const _mrow = cd.rows.find(r => r.segKey === state.orLane) || {};
+      const _mseg = _orSegReg[routeId][state.orLane];
+      const _saveOverlay = _orSaving ? el('div', { style: { position: 'absolute', inset: '0', zIndex: '60', background: 'rgba(10,10,10,.84)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(3px)' } }, [
+        el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' } }, [
+          el('div', { style: { width: '40px', height: '40px', color: '#6688cc', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' }),
+          el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Saving changes…']),
+          el('div', { style: { font: '500 12px ' + F, color: '#808080' } }, ['Updating the recorded plan for this lane.'])
+        ])
+      ]) : null;
+      const modalCard = el('div', { onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); }, style: { position: 'relative', width: 'min(1180px, 95%)', height: '88%', display: 'flex', flexDirection: 'column', borderRadius: '16px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 32px 80px rgba(0,0,0,.6)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 14px', borderBottom: '1px solid rgba(255,255,255,.08)', flexShrink: '0' } }, [
+          _badge(_mrow),
+          el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 18px 1fr', alignItems: 'center', gap: '8px', minWidth: '0', maxWidth: '420px' } }, [
+            _endpoint(_mseg.origin, _mrow.originDate || '', null, false),
+            el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
+            _endpoint(_mseg.dest, _mrow.destDate || '', null, false)
           ]),
-          el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto' } }, [_segExpansion(_mrow)])
-        ]);
-      }
-      return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [mapPanel, stopsPanel, loadingOverlay, profileModal, toast]);
+          _statusDrop(_mrow.exec || 'Booked'),
+          el('div', { style: { flex: '1' } }),
+          el('div', { class: 'hoverable', onclick: () => { if (_orSaving) return; _orSaving = true; setState({}); setTimeout(() => { _orSaving = false; setState({ orLane: null, orAddType: null, orReplace: null }); }, 1200); }, style: { display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 18px', borderRadius: '10px', background: '#2e9975', color: '#0d1a13', font: '800 13px ' + F, cursor: 'pointer' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Save</span>' }),
+          el('div', { class: 'hoverable', onclick: () => setState({ orLane: null, orAddType: null, orReplace: null }), style: { width: '36px', height: '36px', borderRadius: '9px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', background: '#242424', border: '1px solid rgba(255,255,255,.1)', font: '400 20px ' + F, flexShrink: '0' } }, ['×'])
+        ]),
+        el('div', { style: { display: 'flex', flex: '1', minHeight: '0' } }, [
+          mapPanel,
+          el('div', { class: 'ef-scroll', style: { width: '404px', flexShrink: '0', borderLeft: '1px solid rgba(255,255,255,.08)', overflowY: 'auto', background: '#161616' } }, [_segExpansion(_mrow)])
+        ]),
+        _saveOverlay
+      ]);
+      manageModal = el('div', { onclick: () => setState({ orLane: null, orAddType: null, orReplace: null }), style: { position: 'absolute', inset: '0', zIndex: '300', background: 'rgba(10,10,10,.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' } }, [modalCard]);
     }
-    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast]);
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, manageModal]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
