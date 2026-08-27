@@ -2922,7 +2922,7 @@ export function initApp() {
 
   function renderPnlOpsCards(d) {
     const s = state;
-    const pnlSelectStyle = { background: '#17242E', border: '1px solid rgba(255,255,255,.1)', borderRadius: '999px', color: '#DDE3E9', fontFamily: 'inherit', fontSize: '11px', fontWeight: '800', height: '24px', padding: '0 8px', cursor: 'pointer', outline: 'none' };
+    const pnlSelectStyle = { background: '#292929', border: '1px solid rgba(255,255,255,.1)', borderRadius: '999px', color: '#e6e6e6', fontFamily: 'inherit', fontSize: '11px', fontWeight: '800', height: '24px', padding: '0 8px', cursor: 'pointer', outline: 'none' };
 
     const pnl = {
       total: { inc: d.incomeNum, cst: d.totalCostNum, pft: d.incomeNum - d.totalCostNum },
@@ -2940,24 +2940,24 @@ export function initApp() {
 
     function row(label, valueNode) {
       return el('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' } }, [
-        el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#8B939B' } }, [label]),
+        el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#808080' } }, [label]),
         valueNode
       ]);
     }
     function divider() { return el('div', { style: { height: '1px', background: 'rgba(255,255,255,.08)' } }); }
 
-    const profitLabel = el('span', { style: { fontSize: '12px', fontWeight: '700', color: '#FBFBFB' } }, [
+    const profitLabel = el('span', { style: { fontSize: '12px', fontWeight: '700', color: '#f5f5f5' } }, [
       'Profit ',
-      el('span', { style: { color: '#6B7373', fontSize: '11px', fontWeight: '400' } }, ['(' + profitPctDisplay + '%)'])
+      el('span', { style: { color: '#666666', fontSize: '11px', fontWeight: '400' } }, ['(' + profitPctDisplay + '%)'])
     ]);
     const profitRow = el('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' } }, [
       profitLabel,
-      el('span', { style: { fontSize: '20px', fontWeight: '900', color: '#FBFBFB' } }, [pnlFmt(pnl.pft)])
+      el('span', { style: { fontSize: '20px', fontWeight: '900', color: '#f5f5f5' } }, [pnlFmt(pnl.pft)])
     ]);
 
-    const pnlCard = el('div', { style: { flex: '1.15', background: '#131F27', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' } }, [
+    const pnlCard = el('div', { style: { flex: '1.15', background: '#242424', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } }, [
-        el('span', { style: { fontSize: '10.5px', fontWeight: '800', letterSpacing: '.04em', textTransform: 'uppercase', color: '#8B939B' } }, ['Financial']),
+        el('span', { style: { fontSize: '10.5px', fontWeight: '800', letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Financial']),
         el('select', {
           value: s.detailPnlUnit, style: pnlSelectStyle,
           onchange: e => setState({ detailPnlUnit: e.target.value })
@@ -2967,24 +2967,24 @@ export function initApp() {
           el('option', { value: 'mile' }, ['Per mile'])
         ])
       ]),
-      row(el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#27A767' } }, ['Income']), el('span', { style: { fontSize: '18px', fontWeight: '900' } }, [pnlFmt(pnl.inc)])),
-      row(el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#EB4343' } }, ['Cost']), el('span', { style: { fontSize: '18px', fontWeight: '900', color: '#8B939B' } }, [pnlFmt(pnl.cst)])),
+      row(el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#2e9975' } }, ['Income']), el('span', { style: { fontSize: '18px', fontWeight: '900' } }, [pnlFmt(pnl.inc)])),
+      row(el('span', { style: { fontSize: '12px', fontWeight: '400', color: '#cc666f' } }, ['Cost']), el('span', { style: { fontSize: '18px', fontWeight: '900', color: '#808080' } }, [pnlFmt(pnl.cst)])),
       divider(),
       profitRow
     ]);
 
     const durationValue = el('span', { style: { fontSize: '14px', fontWeight: '900', whiteSpace: 'nowrap' } }, [
       d.totalDriving,
-      el('span', { style: { fontSize: '11px', fontWeight: '700', color: '#6B7373' } }, [' / ' + d.daysNum + ' d'])
+      el('span', { style: { fontSize: '11px', fontWeight: '700', color: '#666666' } }, [' / ' + d.daysNum + ' d'])
     ]);
     const deadheadValue = el('span', {}, [
-      el('span', { style: { fontSize: '14px', fontWeight: '900', color: '#8B939B' } }, [Math.round(ops.dh).toLocaleString('en-US') + ' mi']),
-      el('span', { style: { fontSize: '11px', fontWeight: '700', color: '#6B7373' } }, [' ' + dhPct + '%'])
+      el('span', { style: { fontSize: '14px', fontWeight: '900', color: '#808080' } }, [Math.round(ops.dh).toLocaleString('en-US') + ' mi']),
+      el('span', { style: { fontSize: '11px', fontWeight: '700', color: '#666666' } }, [' ' + dhPct + '%'])
     ]);
 
-    const opsCard = el('div', { style: { flex: '1', background: '#131F27', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' } }, [
+    const opsCard = el('div', { style: { flex: '1', background: '#242424', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } }, [
-        el('span', { style: { fontSize: '10.5px', fontWeight: '800', letterSpacing: '.04em', textTransform: 'uppercase', color: '#8B939B' } }, ['Operations']),
+        el('span', { style: { fontSize: '10.5px', fontWeight: '800', letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Operations']),
         el('select', {
           value: s.detailOpsUnit, style: pnlSelectStyle,
           onchange: e => setState({ detailOpsUnit: e.target.value })
@@ -2998,7 +2998,7 @@ export function initApp() {
       row('Emissions', el('span', { style: { fontSize: '14px', fontWeight: '900' } }, [Math.round(ops.co2).toLocaleString('en-US') + ' kg CO₂']))
     ]);
 
-    return el('div', { style: { display: 'flex', gap: '12px' } }, [pnlCard, opsCard]);
+    return el('div', { style: { display: 'flex', gap: '12px', fontFamily: '"General Sans", Nunito, system-ui' } }, [pnlCard, opsCard]);
   }
 
   // ── Unbooked lane hover bar + map modal ────────────────────────────────
@@ -6980,6 +6980,7 @@ export function initApp() {
   const _orFuel = {};       // routeId -> laneIdx -> { applied, savings, count, totalGal, totalCost, ppg }
   const _orCandCache = {};  // key routeId|laneIdx|type -> [candidate]
   const _orAlerts = {};     // routeId -> [alert]  (feasibility alerts during execution)
+  const _orSegReg = {};     // routeId -> segKey -> { miles, origin, dest, truckMi, isLoad, loadIdx, income }  (loads AND deadheads)
   let _orLoading = false;   // fuel-optimizer loading overlay flag
   // Undo (changes go live to the driver immediately → every edit is revertible)
   let _orUndo = null;       // { routeId, laneIdx, stops, fuel, label }
@@ -7007,10 +7008,10 @@ export function initApp() {
 
   // ── Feasibility alerts (execution goes off-plan → dispatcher must react) ──
   const _OR_ALERT_META = {
-    missed:    { label: 'Missed stop',            sev: 'warn', color: '#FBB303', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><line x1="9" y1="7" x2="15" y2="13"/><line x1="15" y1="7" x2="9" y2="13"/></svg>' },
-    deviation: { label: 'Off optimal route',      sev: 'warn', color: '#FBB303', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L10 8 L15 15 L20 4"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>' },
-    fuel:      { label: 'Low fuel',               sev: 'crit', color: '#f87171', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>' },
-    hos:       { label: 'HOS runs out before break', sev: 'crit', color: '#f87171', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' }
+    missed:    { label: 'Missed stop',            sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><line x1="9" y1="7" x2="15" y2="13"/><line x1="15" y1="7" x2="9" y2="13"/></svg>' },
+    deviation: { label: 'Off optimal route',      sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L10 8 L15 15 L20 4"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>' },
+    fuel:      { label: 'Low fuel',               sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>' },
+    hos:       { label: 'HOS runs out before break', sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' }
   };
   function _orAlertsGet(routeId) { if (!_orAlerts[routeId]) _orAlerts[routeId] = []; return _orAlerts[routeId]; }
   function _orAlertCount(routeId) { return _orAlertsGet(routeId).length; }
@@ -7024,7 +7025,7 @@ export function initApp() {
     let desc = '', impact = '', stopId = null;
     if (type === 'missed') {
       const truckMi = s.progress * l.miles;
-      const passed = _orLaneStopsSorted(routeId, li).filter(st => st.distanceMi <= truckMi);
+      const passed = _orLaneStopsSorted(routeId, 'L' + li).filter(st => st.distanceMi <= truckMi);
       const sp = passed[passed.length - 1];
       stopId = sp ? sp.id : null;
       const nm = sp ? (sp.type === 'fuel' ? sp.brand : sp.name) : 'a planned stop';
@@ -7040,35 +7041,35 @@ export function initApp() {
       desc = 'Drive hours end in ~2h 10m; the planned break is ~4h 30m ahead.';
       impact = 'Break needed by 14:10 · planned 16:30';
     }
-    _orAlertsGet(routeId).unshift({ id: 'al_' + type + '_' + Math.floor(Math.random() * 99999), type: type, sev: meta.sev, laneIdx: li, stopId: stopId, desc: desc, impact: impact, time: _hhmm() });
+    _orAlertsGet(routeId).unshift({ id: 'al_' + type + '_' + Math.floor(Math.random() * 99999), type: type, sev: meta.sev, laneIdx: li, segKey: 'L' + li, stopId: stopId, desc: desc, impact: impact, time: _hhmm() });
   }
   function _orResolveAlert(routeId, id) { if (_orAlerts[routeId]) _orAlerts[routeId] = _orAlerts[routeId].filter(a => a.id !== id); }
   function _orEmergencyFuel(routeId, laneIdx) {
-    const s = _ctrlSimGet(routeId); const l = loadsOf(routeId)[laneIdx]; if (!l) return;
-    const truckMi = laneIdx === s.activeLaneIdx ? s.progress * l.miles : 0;
-    const dist = Math.max(5, Math.min(l.miles - 5, Math.round(truckMi + 35)));
-    const frac = dist / l.miles;
+    const miles = _orSegMiles(routeId, laneIdx);
+    const truckMi = Math.max(0, _orTruckMi(routeId, laneIdx));
+    const dist = Math.max(5, Math.min(miles - 5, Math.round(truckMi + 35)));
+    const frac = dist / miles;
     const price = +(3.6 + Math.random() * 0.4).toFixed(2);
     const gal = 65;
     _orStopsGet(routeId, laneIdx).push({ id: 'ef' + Math.floor(Math.random() * 99999), type: 'fuel', added: true, emergency: true, brand: _OR_BRANDS[Math.floor(Math.random() * _OR_BRANDS.length)], pricePerGal: price, gallons: gal, cost: +(gal * price).toFixed(2), distanceMi: dist, frac: frac, rank: 'ok', rating: 3.9, detourMi: 0.6, address: _OR_ADDR[Math.floor(Math.random() * _OR_ADDR.length)] });
   }
   function _orAddRestBeforeLimit(routeId, laneIdx) {
-    const s = _ctrlSimGet(routeId); const l = loadsOf(routeId)[laneIdx]; if (!l) return;
-    const truckMi = laneIdx === s.activeLaneIdx ? s.progress * l.miles : 0;
-    const dist = Math.max(5, Math.min(l.miles - 5, Math.round(truckMi + 85)));
-    const frac = dist / l.miles;
+    const miles = _orSegMiles(routeId, laneIdx);
+    const truckMi = Math.max(0, _orTruckMi(routeId, laneIdx));
+    const dist = Math.max(5, Math.min(miles - 5, Math.round(truckMi + 85)));
+    const frac = dist / miles;
     _orStopsGet(routeId, laneIdx).push({ id: 'rb' + Math.floor(Math.random() * 99999), type: 'rest', added: true, hosBreak: true, name: 'Rest Area (HOS break)', distanceMi: dist, frac: frac, rating: 4.1, detourMi: 0.3, address: _OR_ADDR[Math.floor(Math.random() * _OR_ADDR.length)] });
   }
   const _OR_BRANDS = ["Pilot", "Love's", "TA Travel", "Flying J", "Chevron", "Speedway"];
   const _OR_ADDR = ['4270 E Platte Ave, Colorado Springs, CO', '1845 Cedar Grove Rd, Amarillo, TX', '640 Riverside Dr, Oklahoma City, OK', '118 Old Mill Rd, Little Rock, AR', '5521 Beacon St, Nashville, TN', '89 Harbor View Ln, Memphis, TN', '2972 Thornbridge Cir, Effingham, IL'];
   const _OR_SVC = {
-    fuel:    { label: 'Fuel',       color: '#FBB303', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>' },
-    wash:    { label: 'Washout',    color: '#7BCBCB', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-3-3-7-7-11-4 4-7 8-7 11a7 7 0 0 0 7 7z"/></svg>' },
-    parking: { label: 'Parking',    color: '#7BCBCB', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>' },
-    rest:    { label: 'Rest area',  color: '#7BCBCB', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v12M2 12h14a4 4 0 0 1 4 4v4M2 20h20M6 8h6v4H6z"/></svg>' },
-    food:    { label: 'Food',       color: '#7BCBCB', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a3 3 0 0 0 6 0V2M6 2v20M16 2c-2 0-3 2-3 5s1 5 3 5 3-2 3-5-1-5-3-5zM16 12v10"/></svg>' },
-    scale:   { label: 'Weigh scale',color: '#7BCBCB', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M6 21h12M4 8h16l-3 6H7z"/></svg>' },
-    repair:  { label: 'Repair',     color: '#7BCBCB', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>' }
+    fuel:    { label: 'Fuel',       color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>' },
+    wash:    { label: 'Washout',    color: '#6688cc', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-3-3-7-7-11-4 4-7 8-7 11a7 7 0 0 0 7 7z"/></svg>' },
+    parking: { label: 'Parking',    color: '#6688cc', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>' },
+    rest:    { label: 'Rest area',  color: '#6688cc', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v12M2 12h14a4 4 0 0 1 4 4v4M2 20h20M6 8h6v4H6z"/></svg>' },
+    food:    { label: 'Food',       color: '#6688cc', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a3 3 0 0 0 6 0V2M6 2v20M16 2c-2 0-3 2-3 5s1 5 3 5 3-2 3-5-1-5-3-5zM16 12v10"/></svg>' },
+    scale:   { label: 'Weigh scale',color: '#6688cc', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M6 21h12M4 8h16l-3 6H7z"/></svg>' },
+    repair:  { label: 'Repair',     color: '#6688cc', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>' }
   };
   const _OR_PLACE_NAMES = {
     wash:    ['Blue Beacon Truck Wash', 'Super Wash Truck', 'Kwik Truck Wash', 'Interstate Washout', 'Clean Rig Center'],
@@ -7086,17 +7087,19 @@ export function initApp() {
   function _orLaneStopsSorted(routeId, laneIdx) {
     return _orStopsGet(routeId, laneIdx).slice().sort((a, b) => a.distanceMi - b.distanceMi);
   }
-  // truck miles into a lane (for passed/past detection). <0 = not started.
-  function _orTruckMi(routeId, laneIdx) {
-    const s = _ctrlSimGet(routeId); const l = loadsOf(routeId)[laneIdx]; if (!l) return -1;
-    if (laneIdx < s.activeLaneIdx) return l.miles + 1;                 // whole lane already elapsed
-    if (laneIdx === s.activeLaneIdx && s.started) return s.progress * l.miles;
-    return -1;                                                          // not started
+  // segment lookups (loads AND deadheads) via the per-render registry
+  function _orTruckMi(routeId, key) { const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; return seg ? seg.truckMi : -1; }
+  function _orSegMiles(routeId, key) { const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; return seg ? seg.miles : 400; }
+  function _orGeoMiles(ca, cb) {
+    const a = _OR_COORD[ca], b = _OR_COORD[cb]; if (!a || !b) return null;
+    const R = 3959, k = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * k, dLng = (b[1] - a[1]) * k;
+    const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * k) * Math.cos(b[0] * k) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
   // Fuel optimizer (mock): insert optimal fuel stops with gallons + cost + savings.
   function _orRunFuel(routeId, laneIdx) {
-    const l = loadsOf(routeId)[laneIdx]; if (!l) return;
-    const miles = l.miles;
+    const miles = _orSegMiles(routeId, laneIdx);
     const n = miles > 700 ? 3 : miles > 320 ? 2 : 1;
     const totalGal = Math.max(45, Math.round(miles / 6.4));
     const arr = _orStopsGet(routeId, laneIdx).filter(s => !s.fuelPlan); // drop previous fuel plan
@@ -7129,7 +7132,7 @@ export function initApp() {
   function _orCandidates(routeId, laneIdx, type) {
     const key = routeId + '|' + laneIdx + '|' + type;
     if (_orCandCache[key]) return _orCandCache[key];
-    const l = loadsOf(routeId)[laneIdx]; const miles = l ? l.miles : 400;
+    const miles = _orSegMiles(routeId, laneIdx);
     const isFuel = type === 'fuel';
     const names = isFuel ? _OR_BRANDS : (_OR_PLACE_NAMES[type] || ['Option A', 'Option B', 'Option C', 'Option D', 'Option E']);
     const arr = names.map((nm, i) => {
@@ -7157,8 +7160,7 @@ export function initApp() {
     const arr = _orStopsGet(routeId, laneIdx);
     if (arr.some(s => s.id === cand.id)) return;
     if (cand.type === 'fuel') {
-      const l = loadsOf(routeId)[laneIdx];
-      const gallons = (opts && opts.gallons) || Math.max(30, Math.round((l ? l.miles : 400) / 6.4 / 2));
+      const gallons = (opts && opts.gallons) || Math.max(30, Math.round(_orSegMiles(routeId, laneIdx) / 6.4 / 2));
       arr.push({ id: cand.id, type: 'fuel', added: true, adjusted: !!(opts && opts.adjusted), brand: cand.brand || cand.name, pricePerGal: cand.pricePerGal, gallons: gallons, cost: +(gallons * cand.pricePerGal).toFixed(2), distanceMi: cand.distanceMi, frac: cand.frac, rank: cand.badge, rating: cand.rating, detourMi: cand.detourMi, address: cand.address });
     } else {
       arr.push({ id: cand.id, type: cand.type, name: cand.name, distanceMi: cand.distanceMi, frac: cand.frac, rating: cand.rating, detourMi: cand.detourMi, address: cand.address, added: true, adjusted: !!(opts && opts.adjusted) });
@@ -7180,13 +7182,34 @@ export function initApp() {
   }
 
   function renderControl(routeId) {
-    const F = 'Nunito,system-ui';
+    const F = '"General Sans", Nunito, system-ui';
     const d = buildDetailRows(routeId);
     const cd = buildControlData(routeId);
     const r = d.r;
     const sim = _ctrlSimGet(routeId);
     const curIncome = cd.currentIncome;
     const estIncome = d.incomeNum;
+
+    // ── segment registry: every row (loaded lane OR deadhead) is a manageable segment ──
+    _orSegReg[routeId] = {};
+    (function () {
+      let dhN = 0;
+      cd.rows.forEach(row => {
+        const isLoad = row.kind === 'load';
+        const key = isLoad ? ('L' + row.loadIdx) : ('DH' + (dhN++));
+        row.segKey = key;
+        const miles = isLoad ? row.load.miles : Math.max(8, Math.round(_orGeoMiles(row.origin, row.dest) || 42));
+        let truckMi;
+        if (isLoad) {
+          if (row.exec === 'Completed' || row.loadIdx < sim.activeLaneIdx) truckMi = miles + 1;
+          else if (row.loadIdx === sim.activeLaneIdx && sim.started) truckMi = sim.progress * miles;
+          else truckMi = -1;
+        } else {
+          truckMi = row.exec === 'Completed' ? miles + 1 : (row.exec === 'In progress' ? miles * 0.5 : -1);
+        }
+        _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0 };
+      });
+    })();
 
     // ── inline icons ──
     const IC = {
@@ -7208,42 +7231,42 @@ export function initApp() {
 
     // ─────────────────────────────── HEADER ───────────────────────────────
     const _stMap = {
-      'In progress': { t: 'In Progress', c: '#7BCBCB', ic: IC.spin },
-      'Planned':     { t: 'Planned',     c: '#FBB303', ic: IC.clock },
-      'Completed':   { t: 'Completed',   c: '#3FC281', ic: IC.check }
+      'In progress': { t: 'In Progress', c: '#6688cc', ic: IC.spin },
+      'Planned':     { t: 'Planned',     c: '#b28835', ic: IC.clock },
+      'Completed':   { t: 'Completed',   c: '#47b26b', ic: IC.check }
     };
     const _st = _stMap[r.status] || _stMap['Planned'];
-    const backBtn = el('div', { class: 'hoverable', onclick: () => setState({ openRoute: null }), style: { width: '34px', height: '34px', borderRadius: '8px', background: '#17202A', border: '1px solid rgba(255,255,255,.08)', color: '#ABABAB', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' });
+    const backBtn = el('div', { class: 'hoverable', onclick: () => setState({ openRoute: null }), style: { width: '34px', height: '34px', borderRadius: '8px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' });
     const nameBlock = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0', maxWidth: '220px' } }, [
-      el('span', { style: { font: '800 15px ' + F, letterSpacing: '-.01em', color: '#DDE3E9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [r.name]),
-      el('div', { class: 'hoverable', style: { width: '26px', height: '26px', borderRadius: '7px', background: '#17202A', border: '1px solid rgba(255,255,255,.06)', color: '#7BCBCB', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: IC.pencil })
+      el('span', { style: { font: '800 15px ' + F, letterSpacing: '-.01em', color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [r.name]),
+      el('div', { class: 'hoverable', style: { width: '26px', height: '26px', borderRadius: '7px', background: '#292929', border: '1px solid rgba(255,255,255,.06)', color: '#6688cc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: IC.pencil })
     ]);
-    const statusPillHdr = el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 13px', borderRadius: '999px', background: 'rgba(123,203,203,.10)', border: '1px solid ' + _st.c + '44', color: _st.c, font: '800 12.5px ' + F, flexShrink: '0' }, html: _st.ic + '<span>' + _st.t + '</span>' });
+    const statusPillHdr = el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 13px', borderRadius: '999px', background: 'rgba(102,136,204,.10)', border: '1px solid ' + _st.c + '44', color: _st.c, font: '800 12.5px ' + F, flexShrink: '0' }, html: _st.ic + '<span>' + _st.t + '</span>' });
     const _incPct = estIncome ? Math.min(100, curIncome / estIncome * 100) : 0;
-    const incomeBar = el('div', { style: { position: 'relative', flex: '1', minWidth: '160px', height: '44px', borderRadius: '12px', background: '#0A1119', border: '1px solid rgba(255,255,255,.07)', overflow: 'hidden' } }, [
-      el('div', { style: { position: 'absolute', top: '0', left: '0', bottom: '0', width: _incPct + '%', background: 'linear-gradient(90deg,#1E8C56,#27A767)', opacity: '.22' } }),
+    const incomeBar = el('div', { style: { position: 'relative', flex: '1', minWidth: '160px', height: '44px', borderRadius: '12px', background: '#141414', border: '1px solid rgba(255,255,255,.07)', overflow: 'hidden' } }, [
+      el('div', { style: { position: 'absolute', top: '0', left: '0', bottom: '0', width: _incPct + '%', background: 'linear-gradient(90deg,#1a805e,#2e9975)', opacity: '.22' } }),
       el('div', { style: { position: 'relative', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px' } }, [
-        el('span', { style: { font: '900 15px ' + F, color: curIncome > 0 ? '#27A767' : '#8B939B' } }, [money(curIncome)]),
-        el('span', { style: { font: '700 12px ' + F, color: '#6B7373' } }, ['Est. ' + money(estIncome)])
+        el('span', { style: { font: '900 15px ' + F, color: curIncome > 0 ? '#2e9975' : '#808080' } }, [money(curIncome)]),
+        el('span', { style: { font: '700 12px ' + F, color: '#666666' } }, ['Est. ' + money(estIncome)])
       ])
     ]);
-    const finishBtn = el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 16px', borderRadius: '999px', background: '#27A767', color: '#0E1820', font: '800 13px ' + F, cursor: 'pointer', flexShrink: '0' }, html: '<span>Finish route</span>' + IC.check });
+    const finishBtn = el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 16px', borderRadius: '999px', background: '#2e9975', color: '#1a1a1a', font: '800 13px ' + F, cursor: 'pointer', flexShrink: '0' }, html: '<span>Finish route</span>' + IC.check });
     const _noDriver = !r.driver || r.driver === 'Unassigned';
     const _noUnit = !r.unit || r.unit === 'Unassigned';
-    const driverUnitPill = el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 12px 0 5px', borderRadius: '999px', background: '#17202A', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' } }, [
+    const driverUnitPill = el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 12px 0 5px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' } }, [
       _noDriver
-        ? el('div', { style: { width: '28px', height: '28px', borderRadius: '50%', background: '#22303C', color: '#6B7373', display: 'grid', placeItems: 'center', font: '800 11px ' + F, flexShrink: '0' } }, ['--'])
+        ? el('div', { style: { width: '28px', height: '28px', borderRadius: '50%', background: '#292929', color: '#666666', display: 'grid', placeItems: 'center', font: '800 11px ' + F, flexShrink: '0' } }, ['--'])
         : avatar(r.driver, 28),
-      el('span', { style: { font: '700 12px ' + F, color: _noDriver ? '#8B939B' : '#DDE3E9', whiteSpace: 'nowrap' } }, [_noDriver ? 'No driver' : r.driver]),
+      el('span', { style: { font: '700 12px ' + F, color: _noDriver ? '#808080' : '#e6e6e6', whiteSpace: 'nowrap' } }, [_noDriver ? 'No driver' : r.driver]),
       el('span', { style: { width: '1px', height: '18px', background: 'rgba(255,255,255,.12)' } }),
-      el('span', { style: { display: 'flex', color: '#8B939B' }, html: IC.truck }),
-      el('span', { style: { font: '700 12px ' + F, color: '#B8C0C8', whiteSpace: 'nowrap' } }, [_noUnit ? '--' : r.unit])
+      el('span', { style: { display: 'flex', color: '#808080' }, html: IC.truck }),
+      el('span', { style: { font: '700 12px ' + F, color: '#b3b3b3', whiteSpace: 'nowrap' } }, [_noUnit ? '--' : r.unit])
     ]);
-    const settingsBtn = el('div', { class: 'hoverable', style: { width: '38px', height: '38px', borderRadius: '999px', background: '#17202A', border: '1px solid rgba(255,255,255,.08)', color: '#C9CED2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: IC.sliders });
+    const settingsBtn = el('div', { class: 'hoverable', style: { width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: IC.sliders });
     const _alCount = _orAlertCount(routeId);
     const _alCrit = _orAlertsCrit(routeId);
-    const bellBtn = el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: !state.orAlertsOpen, orLane: null, orAddType: null }), title: 'Feasibility alerts', style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: state.orAlertsOpen ? 'rgba(123,203,203,.14)' : '#17202A', border: '1px solid ' + (state.orAlertsOpen ? 'rgba(123,203,203,.4)' : 'rgba(255,255,255,.08)'), color: _alCount ? (_alCrit ? '#f87171' : '#FBB303') : '#C9CED2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' + (_alCount ? '<span style="position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:' + (_alCrit ? '#EB4343' : '#FBB303') + ';color:#0E1820;font:900 9.5px ' + F + ';display:flex;align-items:center;justify-content:center;' + (_alCrit ? 'animation:_efDotPulse 1.2s ease-in-out infinite' : '') + '">' + _alCount + '</span>' : '') });
-    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#0D141B', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [
+    const bellBtn = el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: !state.orAlertsOpen, orLane: null, orAddType: null }), title: 'Feasibility alerts', style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: state.orAlertsOpen ? 'rgba(102,136,204,.14)' : '#292929', border: '1px solid ' + (state.orAlertsOpen ? 'rgba(102,136,204,.4)' : 'rgba(255,255,255,.08)'), color: _alCount ? (_alCrit ? '#cc666f' : '#b28835') : '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' + (_alCount ? '<span style="position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:' + (_alCrit ? '#cc666f' : '#b28835') + ';color:#1a1a1a;font:900 9.5px ' + F + ';display:flex;align-items:center;justify-content:center;' + (_alCrit ? 'animation:_efDotPulse 1.2s ease-in-out infinite' : '') + '">' + _alCount + '</span>' : '') });
+    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [
       backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, bellBtn, settingsBtn
     ]);
 
@@ -7252,12 +7275,12 @@ export function initApp() {
       const active = state.detailTab === id;
       return el('div', {
         onclick: id === 'report' ? undefined : (() => setState({ detailTab: id })),
-        style: { display: 'flex', alignItems: 'center', padding: '12px', font: '800 12.5px ' + F, color: active ? '#27A767' : '#8B939B', boxShadow: active ? 'inset 0 -2px 0 0 #27A767' : 'none', cursor: id === 'report' ? 'default' : 'pointer', opacity: id === 'report' ? '.5' : '1' },
+        style: { display: 'flex', alignItems: 'center', padding: '12px', font: '800 12.5px ' + F, color: active ? '#2e9975' : '#808080', boxShadow: active ? 'inset 0 -2px 0 0 #2e9975' : 'none', cursor: id === 'report' ? 'default' : 'pointer', opacity: id === 'report' ? '.5' : '1' },
         html: icon + '<span style="margin-left:7px">' + label + '</span>'
       });
     }
-    const listBtn = el('div', { class: 'hoverable', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#7BCBCB', background: 'rgba(123,203,203,.1)', border: '1px solid rgba(123,203,203,.25)' }, html: IC.list });
-    const tabBar = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)', padding: '0 20px' } }, [
+    const listBtn = el('div', { class: 'hoverable', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.25)' }, html: IC.list });
+    const tabBar = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#1a1a1a', borderBottom: '1px solid rgba(255,255,255,.07)', padding: '0 20px' } }, [
       _tab('plan', ICON.plan, 'Plan'),
       _tab('control', ICON.onroad, 'On Road'),
       _tab('report', ICON.report, 'Report'),
@@ -7267,90 +7290,90 @@ export function initApp() {
 
     // ───────────────────────── LEFT: segment list ─────────────────────────
     function _badge(row) {
-      if (row.kind === 'dh') return el('div', { style: { display: 'grid', placeItems: 'center', width: '40px', height: '40px', borderRadius: '50%', background: 'transparent', border: '1px dashed rgba(255,255,255,.16)', color: '#6B7373', font: '800 10px ' + F, flexShrink: '0' } }, ['DH']);
+      if (row.kind === 'dh') return el('div', { style: { display: 'grid', placeItems: 'center', width: '40px', height: '40px', borderRadius: '50%', background: 'transparent', border: '1px dashed rgba(255,255,255,.16)', color: '#666666', font: '800 10px ' + F, flexShrink: '0' } }, ['DH']);
       const done = row.exec === 'Completed', active = row.exec === 'In progress';
-      const bg = done ? '#27A767' : active ? '#7BCBCB' : '#1B2A36';
-      const fg = done ? '#0E1820' : active ? '#0B131B' : '#DDE3E9';
+      const bg = done ? '#2e9975' : active ? '#6688cc' : '#292929';
+      const fg = done ? '#1a1a1a' : active ? '#141414' : '#e6e6e6';
       return el('div', { style: { display: 'grid', placeItems: 'center', width: '40px', height: '40px', borderRadius: '50%', background: bg, color: fg, font: '800 13px ' + F, flexShrink: '0' } }, [row.num]);
     }
     function _endpoint(name, date, etaLabel, alignEnd) {
       return el('div', { style: { minWidth: '0', textAlign: alignEnd ? 'right' : 'left' } }, [
-        el('div', { style: { font: '800 15px ' + F, color: '#E7ECF0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [name]),
-        etaLabel ? el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.08em', textTransform: 'uppercase', color: '#7BCBCB', marginTop: '3px' } }, [etaLabel]) : null,
-        el('div', { style: { font: '500 11px "JetBrains Mono",monospace', color: '#6B7373', marginTop: '2px', whiteSpace: 'nowrap' } }, [date])
+        el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [name]),
+        etaLabel ? el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.08em', textTransform: 'uppercase', color: '#6688cc', marginTop: '3px' } }, [etaLabel]) : null,
+        el('div', { style: { font: '500 11px "JetBrains Mono",monospace', color: '#666666', marginTop: '2px', whiteSpace: 'nowrap' } }, [date])
       ]);
     }
     function _etaChip(row) {
       if (row.kind !== 'load') return el('div', {});
       return el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '9px', padding: '9px 13px', borderRadius: '10px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)', whiteSpace: 'nowrap' } }, [
-        el('span', { style: { font: '800 13px ' + F, color: '#E7ECF0' } }, [drive(row.load.miles)]),
-        el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 11px ' + F, color: '#3FC281' } }, [
-          el('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: '#27A767', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
+        el('span', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [drive(row.load.miles)]),
+        el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 11px ' + F, color: '#47b26b' } }, [
+          el('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
           'live'
         ]),
-        el('span', { style: { display: 'flex', color: '#6B7373' }, html: IC.sync })
+        el('span', { style: { display: 'flex', color: '#666666' }, html: IC.sync })
       ]);
     }
     function _statusDrop(exec) {
       const M = {
-        'Completed':   { label: 'Completed',  ic: IC.check, fg: '#3FC281', bg: 'rgba(39,167,103,.12)', bd: '1px solid transparent' },
-        'In progress': { label: 'In-transit', ic: IC.truck, fg: '#7BCBCB', bg: 'rgba(123,203,203,.12)', bd: '1px solid transparent' },
-        'Booked':      { label: 'Booked',     ic: IC.box,   fg: '#B8C0C8', bg: 'rgba(255,255,255,.05)', bd: '1px solid rgba(255,255,255,.08)' },
-        'Upcoming':    { label: 'Upcoming',   ic: IC.clock, fg: '#8B939B', bg: 'transparent',           bd: '1px solid rgba(255,255,255,.1)' }
+        'Completed':   { label: 'Completed',  ic: IC.check, fg: '#47b26b', bg: 'rgba(46,153,117,.12)', bd: '1px solid transparent' },
+        'In progress': { label: 'In-transit', ic: IC.truck, fg: '#6688cc', bg: 'rgba(102,136,204,.12)', bd: '1px solid transparent' },
+        'Booked':      { label: 'Booked',     ic: IC.box,   fg: '#b3b3b3', bg: 'rgba(255,255,255,.05)', bd: '1px solid rgba(255,255,255,.08)' },
+        'Upcoming':    { label: 'Upcoming',   ic: IC.clock, fg: '#808080', bg: 'transparent',           bd: '1px solid rgba(255,255,255,.1)' }
       };
       const m = M[exec] || M.Booked;
-      return el('div', { class: 'hoverable', style: { display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 12px', borderRadius: '10px', background: m.bg, border: m.bd, color: m.fg, font: '800 12.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#6B7373">' + IC.chevDown + '</span>' });
+      return el('div', { class: 'hoverable', style: { display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 12px', borderRadius: '10px', background: m.bg, border: m.bd, color: m.fg, font: '800 12.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
     }
     const segItems = [];
     cd.rows.forEach(row => {
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
-      const expanded = row.kind === 'load' && row.loadIdx === state.orLane;
-      segItems.push(el('div', { class: 'row-hoverable', onclick: row.kind === 'load' ? (() => setState({ orLane: expanded ? null : row.loadIdx, orAddType: null, orReplace: null })) : undefined, style: { display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto auto 34px', alignItems: 'center', gap: '16px', padding: '18px 16px', borderRadius: '14px', background: expanded ? 'rgba(123,203,203,.08)' : (active ? 'rgba(123,203,203,.05)' : 'transparent'), border: (expanded || active) ? '1px solid rgba(123,203,203,.16)' : '1px solid transparent', opacity: done ? '.5' : '1', cursor: row.kind === 'load' ? 'pointer' : 'default' } }, [
+      const expanded = row.segKey === state.orLane;
+      segItems.push(el('div', { class: 'row-hoverable', onclick: () => setState({ orLane: expanded ? null : row.segKey, orAddType: null, orReplace: null }), style: { display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto auto 34px', alignItems: 'center', gap: '16px', padding: '18px 16px', borderRadius: '14px', background: expanded ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (expanded || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !expanded ? '.5' : '1', cursor: 'pointer' } }, [
         _badge(row),
         el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 22px 1fr', alignItems: 'center', gap: '10px', minWidth: '0' } }, [
           _endpoint(row.origin, row.originDate, null, false),
-          el('div', { style: { display: 'flex', justifyContent: 'center', color: '#5A6A7A' }, html: IC.arrowLeft }),
+          el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
           _endpoint(row.dest, row.destDate, active ? 'ETA' : null, false)
         ]),
         _etaChip(row),
         _statusDrop(row.exec),
-        el('div', { class: 'hoverable', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: expanded ? '#7BCBCB' : '#6B7373', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
+        el('div', { class: 'hoverable', style: { width: '34px', height: '34px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: expanded ? '#6688cc' : '#666666', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
-      if (expanded) segItems.push(_laneExpansion(row.loadIdx));
+      if (expanded) segItems.push(_segExpansion(row));
     });
     const segList = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
     // ───────────────────── LANE DETAIL (stop management) ──────────────────
-    const laneMode = state.orLane != null && !!cd.ls[state.orLane];
+    const laneMode = !!(state.orLane != null && _orSegReg[routeId] && _orSegReg[routeId][state.orLane]);
     const addType = state.orAddType || null;
 
     function _rankPill(rank) {
-      const M = { best: { t: 'Best price', c: '#3FC281', bg: 'rgba(39,167,103,.14)' }, ok: { t: 'Fair', c: '#FBB303', bg: 'rgba(251,179,3,.14)' }, high: { t: 'Pricey', c: '#8B939B', bg: 'rgba(255,255,255,.06)' } };
+      const M = { best: { t: 'Best price', c: '#47b26b', bg: 'rgba(46,153,117,.14)' }, ok: { t: 'Fair', c: '#b28835', bg: 'rgba(178,136,53,.14)' }, high: { t: 'Pricey', c: '#808080', bg: 'rgba(255,255,255,.06)' } };
       const m = M[rank] || M.ok;
       return el('span', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: m.c, background: m.bg, padding: '3px 8px', borderRadius: '999px', whiteSpace: 'nowrap' } }, [m.t]);
     }
     function _badgePill(badge) {
-      const M = { best: { t: 'Recommended', c: '#3FC281', bg: 'rgba(39,167,103,.14)' }, ok: { t: 'Good', c: '#7BCBCB', bg: 'rgba(123,203,203,.12)' }, high: { t: 'Far detour', c: '#8B939B', bg: 'rgba(255,255,255,.06)' } };
+      const M = { best: { t: 'Recommended', c: '#47b26b', bg: 'rgba(46,153,117,.14)' }, ok: { t: 'Good', c: '#6688cc', bg: 'rgba(102,136,204,.12)' }, high: { t: 'Far detour', c: '#808080', bg: 'rgba(255,255,255,.06)' } };
       const m = M[badge] || M.ok;
       return el('span', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: m.c, background: m.bg, padding: '3px 8px', borderRadius: '999px', whiteSpace: 'nowrap' } }, [m.t]);
     }
     function _svcIconBox(type, size) {
       const s = _OR_SVC[type] || _OR_SVC.fuel;
-      return el('div', { style: { width: size + 'px', height: size + 'px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: 'rgba(' + (type === 'fuel' ? '251,179,3' : '123,203,203') + ',.12)', color: s.color }, html: s.icon });
+      return el('div', { style: { width: size + 'px', height: size + 'px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: 'rgba(' + (type === 'fuel' ? '178,136,53' : '102,136,204') + ',.12)', color: s.color }, html: s.icon });
     }
     function _miniAction(label, onClick, danger) {
-      return el('div', { class: 'hoverable', onclick: onClick, style: { font: '800 11px ' + F, color: danger ? '#f87171' : '#8B939B', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.08)', whiteSpace: 'nowrap' } }, [label]);
+      return el('div', { class: 'hoverable', onclick: onClick, style: { font: '800 11px ' + F, color: danger ? '#cc666f' : '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.08)', whiteSpace: 'nowrap' } }, [label]);
     }
     function _fixedStop(label, address, date, isLast, status) {
       const passed = status === 'passed';
       const pin = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
       const box = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>';
-      return el('div', { style: { display: 'grid', gridTemplateColumns: '34px 1fr auto', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#0E1820', border: '1px solid rgba(255,255,255,.06)', opacity: passed ? '.6' : '1' } }, [
-        el('div', { style: { width: '34px', height: '34px', borderRadius: '9px', display: 'grid', placeItems: 'center', background: isLast ? 'rgba(59,130,246,.14)' : 'rgba(39,167,103,.14)', color: isLast ? '#6AA8FF' : '#3FC281', flexShrink: '0' }, html: box }),
+      return el('div', { style: { display: 'grid', gridTemplateColumns: '34px 1fr auto', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.06)', opacity: passed ? '.6' : '1' } }, [
+        el('div', { style: { width: '34px', height: '34px', borderRadius: '9px', display: 'grid', placeItems: 'center', background: isLast ? 'rgba(46,82,153,.14)' : 'rgba(46,153,117,.14)', color: isLast ? '#6688cc' : '#47b26b', flexShrink: '0' }, html: box }),
         el('div', { style: { minWidth: '0' } }, [
-          el('div', { style: { font: '800 12.5px ' + F, color: '#E7ECF0' } }, [label]),
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '600 10.5px ' + F, color: '#8B939B', marginTop: '3px', minWidth: '0' } }, [
-            el('span', { style: { display: 'flex', color: '#6B7373', flexShrink: '0' }, html: pin }),
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [label]),
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '600 10.5px ' + F, color: '#808080', marginTop: '3px', minWidth: '0' } }, [
+            el('span', { style: { display: 'flex', color: '#666666', flexShrink: '0' }, html: pin }),
             el('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [address])
           ])
         ]),
@@ -7359,18 +7382,18 @@ export function initApp() {
     }
     function _truckDivider(mi) {
       return el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '3px 4px' } }, [
-        el('div', { style: { width: '34px', display: 'flex', justifyContent: 'center', flexShrink: '0' } }, [el('div', { style: { width: '12px', height: '12px', borderRadius: '50%', background: '#27A767', boxShadow: '0 0 0 4px rgba(39,167,103,.18)' } })]),
-        el('div', { style: { flex: '1', height: '2px', borderRadius: '2px', background: 'linear-gradient(90deg,#27A767,rgba(39,167,103,.08))' } }),
-        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', color: '#3FC281', whiteSpace: 'nowrap' } }, ['Truck is here · ' + mi.toLocaleString('en-US') + ' mi'])
+        el('div', { style: { width: '34px', display: 'flex', justifyContent: 'center', flexShrink: '0' } }, [el('div', { style: { width: '12px', height: '12px', borderRadius: '50%', background: '#2e9975', boxShadow: '0 0 0 4px rgba(46,153,117,.18)' } })]),
+        el('div', { style: { flex: '1', height: '2px', borderRadius: '2px', background: 'linear-gradient(90deg,#2e9975,rgba(46,153,117,.08))' } }),
+        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', color: '#47b26b', whiteSpace: 'nowrap' } }, ['Truck is here · ' + mi.toLocaleString('en-US') + ' mi'])
       ]);
     }
     function _impChip(html, tone) {
-      const c = tone === 'green' ? '#3FC281' : tone === 'amber' ? '#FBB303' : '#B8C0C8';
+      const c = tone === 'green' ? '#47b26b' : tone === 'amber' ? '#b28835' : '#b3b3b3';
       return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10.5px ' + F, color: c, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)', padding: '5px 10px', borderRadius: '999px', whiteSpace: 'nowrap' }, html: html });
     }
     function _statusChip(status) {
-      if (status === 'passed') return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8B939B', background: 'rgba(255,255,255,.06)', padding: '2px 7px', borderRadius: '999px' }, html: '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Passed</span>' });
-      if (status === 'next') return el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#3FC281', background: 'rgba(39,167,103,.16)', padding: '2px 7px', borderRadius: '999px' } }, ['Next stop']);
+      if (status === 'passed') return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#808080', background: 'rgba(255,255,255,.06)', padding: '2px 7px', borderRadius: '999px' }, html: '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Passed</span>' });
+      if (status === 'next') return el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '2px 7px', borderRadius: '999px' } }, ['Next stop']);
       return null;
     }
     function _stopCard(stop, laneIdx, status) {
@@ -7382,45 +7405,45 @@ export function initApp() {
         _svcIconBox(stop.type, 34),
         el('div', { style: { minWidth: '0' } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
-            el('div', { style: { font: '800 13px ' + F, color: '#E7ECF0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [isFuel ? stop.brand : stop.name]),
+            el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [isFuel ? stop.brand : stop.name]),
             _statusChip(status),
-            (stop.added && !passed && !next && !stop.adjusted) ? el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#27A767', background: 'rgba(39,167,103,.14)', padding: '1px 6px', borderRadius: '999px' } }, ['Added']) : null,
-            stop.adjusted ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#FBB303', background: 'rgba(251,179,3,.16)', padding: '2px 7px', borderRadius: '999px' }, html: '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Adjusted</span>' }) : null
+            (stop.added && !passed && !next && !stop.adjusted) ? el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#2e9975', background: 'rgba(46,153,117,.14)', padding: '1px 6px', borderRadius: '999px' } }, ['Added']) : null,
+            stop.adjusted ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#b28835', background: 'rgba(178,136,53,.16)', padding: '2px 7px', borderRadius: '999px' }, html: '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Adjusted</span>' }) : null
           ]),
-          el('div', { style: { font: '600 10.5px ' + F, color: '#6B7373', marginTop: '2px', whiteSpace: 'nowrap' } }, [svc.label + ' · at ' + stop.distanceMi.toLocaleString('en-US') + ' mi' + (isFuel ? '' : ' · ★ ' + stop.rating)])
+          el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '2px', whiteSpace: 'nowrap' } }, [svc.label + ' · at ' + stop.distanceMi.toLocaleString('en-US') + ' mi' + (isFuel ? '' : ' · ★ ' + stop.rating)])
         ]),
         isFuel ? _rankPill(stop.rank) : null
       ]);
       const children = [head];
       if (isFuel) {
         children.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', marginTop: '11px', paddingLeft: '46px' } }, [
-          el('div', {}, [el('div', { style: { font: '900 13px ' + F, color: '#E7ECF0' } }, ['$' + stop.pricePerGal.toFixed(2)]), el('div', { style: { font: '600 9px ' + F, color: '#6B7373', marginTop: '1px' } }, ['per gal'])]),
+          el('div', {}, [el('div', { style: { font: '900 13px ' + F, color: '#e6e6e6' } }, ['$' + stop.pricePerGal.toFixed(2)]), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['per gal'])]),
           el('div', { style: { width: '1px', height: '22px', background: 'rgba(255,255,255,.08)' } }),
-          el('div', {}, [el('div', { style: { font: '900 13px ' + F, color: '#7BCBCB' } }, [stop.gallons + ' gal']), el('div', { style: { font: '600 9px ' + F, color: '#6B7373', marginTop: '1px' } }, ['optimal fill'])]),
+          el('div', {}, [el('div', { style: { font: '900 13px ' + F, color: '#6688cc' } }, [stop.gallons + ' gal']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['optimal fill'])]),
           el('div', { style: { width: '1px', height: '22px', background: 'rgba(255,255,255,.08)' } }),
-          el('div', {}, [el('div', { style: { font: '900 13px ' + F, color: '#3FC281' } }, [money(Math.round(stop.cost))]), el('div', { style: { font: '600 9px ' + F, color: '#6B7373', marginTop: '1px' } }, ['stop cost'])])
+          el('div', {}, [el('div', { style: { font: '900 13px ' + F, color: '#47b26b' } }, [money(Math.round(stop.cost))]), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['stop cost'])])
         ]));
       }
       children.push(el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '11px', paddingLeft: '46px' } }, [
-        el('div', { class: 'hoverable', onclick: () => setState({ orProfile: stop.id }), style: { font: '800 11px ' + F, color: '#7BCBCB', cursor: 'pointer' } }, ['View full profile']),
+        el('div', { class: 'hoverable', onclick: () => setState({ orProfile: stop.id }), style: { font: '800 11px ' + F, color: '#6688cc', cursor: 'pointer' } }, ['View full profile']),
         el('div', { style: { display: 'flex', gap: '6px' } }, [
           _miniAction(passed ? 'Adjust' : 'Replace', () => setState({ orAddType: stop.type, orReplace: stop.id })),
           _miniAction(passed ? 'Remove' : 'Delete', () => { _orPushUndo(routeId, laneIdx, passed ? 'Recorded stop removed' : 'Stop removed'); _orRemoveStop(routeId, laneIdx, stop.id); setState({}); }, true)
         ])
       ]));
-      return el('div', { style: { padding: '13px 14px', borderRadius: '13px', background: next ? 'rgba(39,167,103,.06)' : '#101B23', border: '1px solid ' + (next ? 'rgba(39,167,103,.3)' : 'rgba(255,255,255,.06)'), opacity: passed ? '.72' : '1' } }, children);
+      return el('div', { style: { padding: '13px 14px', borderRadius: '13px', background: next ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (next ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.06)'), opacity: passed ? '.72' : '1' } }, children);
     }
     function _typePicker(laneIdx) {
       const types = Object.keys(_OR_SVC);
       return el('div', { style: { padding: '4px 16px 16px' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 12px' } }, [
-          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#8B939B', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
-          el('div', { style: { font: '800 13px ' + F, color: '#E7ECF0' } }, ['Choose a stop type'])
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
+          el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Choose a stop type'])
         ]),
         el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '8px' } }, types.map(t => el('div', {
           class: 'hoverable', onclick: () => setState({ orAddType: t }),
-          style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 13px', borderRadius: '12px', background: '#101B23', border: '1px solid rgba(255,255,255,.07)', cursor: 'pointer' }
-        }, [_svcIconBox(t, 32), el('div', { style: { font: '800 12.5px ' + F, color: '#DDE3E9' } }, [_OR_SVC[t].label])])))
+          style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 13px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)', cursor: 'pointer' }
+        }, [_svcIconBox(t, 32), el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_OR_SVC[t].label])])))
       ]);
     }
     function _candidateBrowser(laneIdx, type) {
@@ -7430,41 +7453,41 @@ export function initApp() {
       const isReplace = !!state.orReplace;
       return el('div', { style: { padding: '4px 16px 16px' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 12px' } }, [
-          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#8B939B', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
           _svcIconBox(type, 28),
           el('div', { style: { flex: '1' } }, [
-            el('div', { style: { font: '800 13px ' + F, color: '#E7ECF0' } }, [(isReplace ? 'Replace with ' : 'Add ') + svc.label.toLowerCase() + ' stop']),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#6B7373', marginTop: '1px' } }, [cands.length + ' options along this lane · tap the map or a card'])
+            el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [(isReplace ? 'Replace with ' : 'Add ') + svc.label.toLowerCase() + ' stop']),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '1px' } }, [cands.length + ' options along this lane · tap the map or a card'])
           ])
         ]),
         el('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px' } }, cands.map((c, i) => {
           const added = existing.indexOf(c.id) >= 0;
-          return el('div', { style: { display: 'grid', gridTemplateColumns: '26px 1fr auto', alignItems: 'center', gap: '11px', padding: '11px 12px', borderRadius: '12px', background: '#101B23', border: '1px solid rgba(255,255,255,.07)' } }, [
-            el('div', { style: { width: '26px', height: '26px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#1B2A36', color: '#DDE3E9', font: '800 12px ' + F }, }, [String(i + 1)]),
+          return el('div', { style: { display: 'grid', gridTemplateColumns: '26px 1fr auto', alignItems: 'center', gap: '11px', padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)' } }, [
+            el('div', { style: { width: '26px', height: '26px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#292929', color: '#e6e6e6', font: '800 12px ' + F }, }, [String(i + 1)]),
             el('div', { style: { minWidth: '0' } }, [
               el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
-                el('div', { style: { font: '800 12.5px ' + F, color: '#E7ECF0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
+                el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
                 _badgePill(c.badge)
               ]),
-              el('div', { style: { font: '600 10.5px ' + F, color: '#6B7373', marginTop: '2px' } }, [(c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi detour · ★ ' + c.rating])
+              el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '2px' } }, [(c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi detour · ★ ' + c.rating])
             ]),
             added
-              ? el('div', { style: { font: '800 11px ' + F, color: '#3FC281', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
-              : el('div', { class: 'hoverable', onclick: () => { let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); } _orAddCandidate(routeId, laneIdx, c, opts); setState({ orAddType: null, orReplace: null }); }, style: { font: '800 11.5px ' + F, color: '#0B131B', background: '#7BCBCB', padding: '7px 13px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [isReplace ? 'Choose' : 'Add +'])
+              ? el('div', { style: { font: '800 11px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
+              : el('div', { class: 'hoverable', onclick: () => { let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); } _orAddCandidate(routeId, laneIdx, c, opts); setState({ orAddType: null, orReplace: null }); }, style: { font: '800 11.5px ' + F, color: '#141414', background: '#6688cc', padding: '7px 13px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [isReplace ? 'Choose' : 'Add +'])
           ]);
         }))
       ]);
     }
-    function _laneExpansion(idx) {
-      const l = loadsOf(routeId)[idx];
-      const rowData = cd.rows.find(x => x.loadIdx === idx) || {};
-      const fuelMeta = (_orFuel[routeId] || {})[idx];
-      const stops = _orLaneStopsSorted(routeId, idx);
-      const laneMiles = l.miles;
-      let truckMi;
-      if (rowData.exec === 'Completed') truckMi = laneMiles + 1;
-      else if (idx === sim.activeLaneIdx && sim.started) truckMi = Math.round(sim.progress * laneMiles);
-      else truckMi = -1;
+    function _segExpansion(row) {
+      const key = row.segKey;
+      const seg = _orSegReg[routeId][key];
+      const isLoad = seg.isLoad;
+      const idx = seg.loadIdx;
+      const rowData = row;
+      const fuelMeta = (_orFuel[routeId] || {})[key];
+      const stops = _orLaneStopsSorted(routeId, key);
+      const laneMiles = seg.miles;
+      const truckMi = seg.truckMi;
       const departed = truckMi >= 0;
       const inProgress = truckMi >= 0 && truckMi <= laneMiles;
       const pctW = Math.max(0, Math.min(100, (truckMi < 0 ? 0 : truckMi / laneMiles) * 100));
@@ -7473,36 +7496,36 @@ export function initApp() {
       const _dl = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
       const _ul = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
       const progressBar = el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 16px 8px' } }, [
-        el('div', { style: { width: '34px', height: '34px', borderRadius: '9px', background: 'rgba(39,167,103,.16)', color: '#3FC281', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _dl }),
+        el('div', { style: { width: '34px', height: '34px', borderRadius: '9px', background: 'rgba(46,153,117,.16)', color: '#47b26b', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _dl }),
         el('div', { style: { position: 'relative', flex: '1', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,.1)' } }, [
-          el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: pctW + '%', borderRadius: '2px', background: '#27A767' } }),
+          el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: pctW + '%', borderRadius: '2px', background: '#2e9975' } }),
           el('div', { style: { position: 'absolute', left: pctW + '%', right: '0', top: '0', borderTop: '2px dashed rgba(255,255,255,.22)' } }),
-          el('div', { style: { position: 'absolute', left: 'calc(' + pctW + '% - 13px)', top: '-12px', width: '26px', height: '26px', borderRadius: '50%', background: '#0E1820', border: '1px solid rgba(255,255,255,.15)', display: 'grid', placeItems: 'center', color: '#3FC281' }, html: IC.truck })
+          el('div', { style: { position: 'absolute', left: 'calc(' + pctW + '% - 13px)', top: '-12px', width: '26px', height: '26px', borderRadius: '50%', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.15)', display: 'grid', placeItems: 'center', color: '#47b26b' }, html: IC.truck })
         ]),
-        el('div', { style: { width: '34px', height: '34px', borderRadius: '9px', background: 'rgba(59,130,246,.16)', color: '#6AA8FF', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _ul })
+        el('div', { style: { width: '34px', height: '34px', borderRadius: '9px', background: 'rgba(46,82,153,.16)', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _ul })
       ]);
 
       // metrics strip (Reference ID · Current income · Est. Mileage · RPM · Current Mileage · Edit)
-      function _m(v, label, col) { return el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: col || '#E7ECF0' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, [label])]); }
-      const rpm = l.miles ? l.income / l.miles : 0;
-      const income = rowData.exec === 'Upcoming' ? 0 : l.income;
+      function _m(v, label, col) { return el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: col || '#e6e6e6' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [label])]); }
+      const rpm = (isLoad && seg.miles) ? seg.income / seg.miles : 0;
+      const income = (isLoad && rowData.exec !== 'Upcoming') ? seg.income : 0;
       const curMi = truckMi >= 0 ? Math.round(truckMi) : null;
       const _boxIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>';
       const metrics = el('div', { style: { display: 'flex', alignItems: 'center', gap: '18px', padding: '8px 16px 14px' } }, [
-        el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#162330', color: '#7BCBCB', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
+        el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#242424', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
         _m('—', 'Reference ID'),
-        _m(money(income), 'Current income'),
-        _m(l.miles.toLocaleString('en-US') + 'mi', 'Est. Mileage'),
-        _m('$' + rpm.toFixed(2), 'Rate per mile'),
+        _m(isLoad ? money(income) : '$0', 'Current income'),
+        _m(seg.miles.toLocaleString('en-US') + 'mi', 'Est. Mileage'),
+        _m(isLoad ? '$' + rpm.toFixed(2) : '--', 'Rate per mile'),
         _m(curMi != null ? curMi.toLocaleString('en-US') + 'mi' : '—', 'Current Mileage'),
         el('div', { style: { flex: '1' } }),
-        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '6px', font: '700 11px ' + F, color: '#8B939B', cursor: 'pointer' }, html: IC.pencil + '<span>Edit</span>' })
+        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '6px', font: '700 11px ' + F, color: '#808080', cursor: 'pointer' }, html: IC.pencil + '<span>Edit</span>' })
       ]);
 
       // action buttons
       const actions = el('div', { style: { display: 'flex', gap: '8px', padding: '10px 16px 6px' } }, [
-        el('div', { class: 'hoverable', onclick: () => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { const had = (_orFuel[routeId] || {})[idx]; _orPushUndo(routeId, idx, had ? 'Fuel plan updated' : 'Fuel plan added'); _orRunFuel(routeId, idx); _orLoading = false; setState({}); }, 1500); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '40px', borderRadius: '11px', cursor: 'pointer', font: '800 12.5px ' + F, color: '#0E1820', background: '#FBB303' }, html: _OR_SVC.fuel.icon + '<span>' + (fuelMeta && fuelMeta.applied ? 'Re-run fuel plan' : 'Add fuel plan') + '</span>' }),
-        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '40px', borderRadius: '11px', cursor: 'pointer', font: '800 12.5px ' + F, color: '#7BCBCB', background: 'rgba(123,203,203,.1)', border: '1px solid rgba(123,203,203,.28)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add stop</span>' })
+        el('div', { class: 'hoverable', onclick: () => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { const had = (_orFuel[routeId] || {})[key]; _orPushUndo(routeId, key, had ? 'Fuel plan updated' : 'Fuel plan added'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1500); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '40px', borderRadius: '11px', cursor: 'pointer', font: '800 12.5px ' + F, color: '#1a1a1a', background: '#b28835' }, html: _OR_SVC.fuel.icon + '<span>' + (fuelMeta && fuelMeta.applied ? 'Re-run fuel plan' : 'Add fuel plan') + '</span>' }),
+        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '40px', borderRadius: '11px', cursor: 'pointer', font: '800 12.5px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.28)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add stop</span>' })
       ]);
 
       // fuel savings banner — computed live from the optimizer's fuel stops
@@ -7512,13 +7535,13 @@ export function initApp() {
         const tg = fuelPlanStops.reduce((s, x) => s + x.gallons, 0);
         const tc = fuelPlanStops.reduce((s, x) => s + x.cost, 0);
         const ppg = tg ? tc / tg : 0;
-        fuelBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '10px 16px 0', padding: '11px 13px', borderRadius: '12px', background: 'rgba(251,179,3,.08)', border: '1px solid rgba(251,179,3,.32)' } }, [
-          el('div', { style: { color: '#FBB303', display: 'flex' }, html: _OR_SVC.fuel.icon }),
+        fuelBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '10px 16px 0', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.08)', border: '1px solid rgba(178,136,53,.32)' } }, [
+          el('div', { style: { color: '#b28835', display: 'flex' }, html: _OR_SVC.fuel.icon }),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
-            el('div', { style: { font: '800 12.5px ' + F, color: '#F4F6F8' } }, ['Optimized fuel plan · save ' + money(fuelMeta.savings)]),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#FBB303', marginTop: '1px' } }, [fuelPlanStops.length + ' stop' + (fuelPlanStops.length > 1 ? 's' : '') + ' · ' + tg + ' gal · avg $' + ppg.toFixed(2) + '/gal · ' + money(Math.round(tc)) + ' total'])
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimized fuel plan · save ' + money(fuelMeta.savings)]),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [fuelPlanStops.length + ' stop' + (fuelPlanStops.length > 1 ? 's' : '') + ' · ' + tg + ' gal · avg $' + ppg.toFixed(2) + '/gal · ' + money(Math.round(tc)) + ' total'])
           ]),
-          el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, idx, 'Fuel plan removed'); _orClearFuel(routeId, idx); setState({}); }, style: { font: '800 11px ' + F, color: '#8B939B', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)' } }, ['Remove'])
+          el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, key, 'Fuel plan removed'); _orClearFuel(routeId, key); setState({}); }, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)' } }, ['Remove'])
         ]);
       }
 
@@ -7538,38 +7561,39 @@ export function initApp() {
 
       // stops timeline: pick-up → added stops → drop-off, with "+" inserts
       const _plusRow = () => el('div', { style: { display: 'flex', justifyContent: 'center', padding: '1px 0' } }, [
-        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), title: 'Add a stop here', style: { width: '26px', height: '26px', borderRadius: '50%', border: '1px dashed rgba(255,255,255,.22)', background: '#0E1820', color: '#8B939B', display: 'grid', placeItems: 'center', cursor: 'pointer', font: '400 15px ' + F, lineHeight: '1' }, html: '+' })
+        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), title: 'Add a stop here', style: { width: '26px', height: '26px', borderRadius: '50%', border: '1px dashed rgba(255,255,255,.22)', background: '#1a1a1a', color: '#808080', display: 'grid', placeItems: 'center', cursor: 'pointer', font: '400 15px ' + F, lineHeight: '1' }, html: '+' })
       ]);
-      const _pickAddr = _OR_ADDR[(idx * 2) % _OR_ADDR.length].split(',')[0];
-      const _dropAddr = _OR_ADDR[(idx * 2 + 1) % _OR_ADDR.length].split(',')[0];
+      const _seed = key.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+      const _pickAddr = _OR_ADDR[_seed % _OR_ADDR.length].split(',')[0];
+      const _dropAddr = _OR_ADDR[(_seed + 1) % _OR_ADDR.length].split(',')[0];
       const firstUpcoming = stops.findIndex(s => !(truckMi >= 0 && s.distanceMi <= truckMi));
-      const items = [_fixedStop('Pick up location', _pickAddr, '', false, departed ? 'passed' : null)];
+      const items = [_fixedStop(isLoad ? 'Pick up location' : 'Deadhead start', _pickAddr, '', false, departed ? 'passed' : null)];
       items.push(_plusRow());
       let dividerPlaced = false;
       stops.forEach((s, i) => {
         const st = (truckMi >= 0 && s.distanceMi <= truckMi) ? 'passed' : (i === firstUpcoming && inProgress ? 'next' : 'upcoming');
         if (inProgress && !dividerPlaced && st !== 'passed') { items.push(_truckDivider(truckMi)); dividerPlaced = true; }
-        items.push(_stopCard(s, idx, st));
+        items.push(_stopCard(s, key, st));
         items.push(_plusRow());
       });
       if (inProgress && !dividerPlaced) items.push(_truckDivider(truckMi));
-      items.push(_fixedStop('Drop off location', _dropAddr, '', true, truckMi > laneMiles ? 'passed' : null));
+      items.push(_fixedStop(isLoad ? 'Drop off location' : 'Deadhead end', _dropAddr, '', true, truckMi > laneMiles ? 'passed' : null));
       const stopsBody = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 16px 16px' } }, [
         el('div', {}, [
-          el('div', { style: { font: '800 12px ' + F, color: '#8B939B', letterSpacing: '.02em' } }, ['Stops in this lane (' + stops.length + ' added)']),
-          departed ? el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '6px', font: '500 10.5px ' + F, color: '#6B7373', marginTop: '4px', lineHeight: '1.45' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Past stops are the recorded plan — the baseline used to score execution. Edit them to document what actually happened.</span>' }) : null
+          el('div', { style: { font: '800 12px ' + F, color: '#808080', letterSpacing: '.02em' } }, ['Stops in this lane (' + stops.length + ' added)']),
+          departed ? el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '6px', font: '500 10.5px ' + F, color: '#666666', marginTop: '4px', lineHeight: '1.45' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Past stops are the recorded plan — the baseline used to score execution. Edit them to document what actually happened.</span>' }) : null
         ]),
         ...items
       ]);
 
-      const laneAlerts = _orAlertsGet(routeId).filter(a => a.laneIdx === idx);
+      const laneAlerts = _orAlertsGet(routeId).filter(a => a.segKey === key);
       const laneAlertsSection = laneAlerts.length ? el('div', { style: { padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: '8px' } }, laneAlerts.map(a => _alertCard(a))) : null;
-      const addingHint = state.orAddType ? el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', margin: '10px 16px 0', padding: '10px 12px', borderRadius: '10px', background: 'rgba(123,203,203,.1)', border: '1px solid rgba(123,203,203,.3)' } }, [
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11.5px ' + F, color: '#7BCBCB' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pick options on the map →</span>' }),
-        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { font: '800 11px ' + F, color: '#8B939B', cursor: 'pointer' } }, ['Cancel'])
+      const addingHint = state.orAddType ? el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', margin: '10px 16px 0', padding: '10px 12px', borderRadius: '10px', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.3)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11.5px ' + F, color: '#6688cc' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pick options on the map →</span>' }),
+        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer' } }, ['Cancel'])
       ]) : null;
 
-      return el('div', { class: 'row-hoverable-none', style: { margin: '2px 8px 6px', borderRadius: '14px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(123,203,203,.14)', overflow: 'hidden' } }, [
+      return el('div', { class: 'row-hoverable-none', style: { margin: '2px 8px 6px', borderRadius: '14px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.14)', overflow: 'hidden' } }, [
         progressBar, metrics, laneAlertsSection, impactStrip, addingHint, actions, fuelBanner, stopsBody
       ]);
     }
@@ -7577,19 +7601,20 @@ export function initApp() {
     // ───────────────────── FEASIBILITY ALERTS ─────────────────────────────
     const _alLabels = { removeStop: 'Skipped stop removed', reinsert: 'Re-planning stop…', reoptimize: 'Route re-optimized', emergencyFuel: 'Fuel stop added', rerunFuel: 'Fuel plan updated', addRest: 'Rest stop added', notify: 'Driver notified', return: 'Return requested', dismiss: 'Alert dismissed' };
     function _alertResolve(a, kind) {
-      _orPushUndo(routeId, a.laneIdx, _alLabels[kind] || 'Alert resolved');
+      const segKey = a.segKey || ('L' + a.laneIdx);
+      _orPushUndo(routeId, segKey, _alLabels[kind] || 'Alert resolved');
       if (kind === 'reinsert') {
-        const old = _orStopsGet(routeId, a.laneIdx).find(s => s.id === a.stopId);
+        const old = _orStopsGet(routeId, segKey).find(s => s.id === a.stopId);
         const ty = old ? old.type : 'fuel';
-        if (a.stopId) _orRemoveStop(routeId, a.laneIdx, a.stopId);
+        if (a.stopId) _orRemoveStop(routeId, segKey, a.stopId);
         _orResolveAlert(routeId, a.id);
-        setState({ orAlertsOpen: false, orLane: a.laneIdx, orAddType: ty, orReplace: null });
+        setState({ orAlertsOpen: false, orLane: segKey, orAddType: ty, orReplace: null });
         return;
       }
-      if (kind === 'removeStop' && a.stopId) _orRemoveStop(routeId, a.laneIdx, a.stopId);
-      else if (kind === 'emergencyFuel') _orEmergencyFuel(routeId, a.laneIdx);
-      else if (kind === 'rerunFuel') _orRunFuel(routeId, a.laneIdx);
-      else if (kind === 'addRest') _orAddRestBeforeLimit(routeId, a.laneIdx);
+      if (kind === 'removeStop' && a.stopId) _orRemoveStop(routeId, segKey, a.stopId);
+      else if (kind === 'emergencyFuel') _orEmergencyFuel(routeId, segKey);
+      else if (kind === 'rerunFuel') _orRunFuel(routeId, segKey);
+      else if (kind === 'addRest') _orAddRestBeforeLimit(routeId, segKey);
       _orResolveAlert(routeId, a.id);
       setState({});
     }
@@ -7604,46 +7629,46 @@ export function initApp() {
       const meta = _OR_ALERT_META[a.type];
       const l = loadsOf(routeId)[a.laneIdx] || {};
       const acts = _alertActionsFor(a.type);
-      return el('div', { style: { borderRadius: '13px', overflow: 'hidden', background: '#101B23', border: '1px solid ' + meta.color + '44' } }, [
+      return el('div', { style: { borderRadius: '13px', overflow: 'hidden', background: '#1f1f1f', border: '1px solid ' + meta.color + '44' } }, [
         el('div', { style: { height: '3px', background: meta.color } }),
         el('div', { style: { padding: '13px 14px' } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: meta.color + '22', color: meta.color }, html: meta.icon }),
             el('div', { style: { flex: '1', minWidth: '0' } }, [
-              el('div', { style: { font: '800 13px ' + F, color: '#F4F6F8' } }, [meta.label]),
-              el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#6B7373', marginTop: '1px' } }, [a.time])
+              el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [meta.label]),
+              el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '1px' } }, [a.time])
             ]),
             el('span', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: meta.color } }, [a.sev === 'crit' ? 'Critical' : 'Attention'])
           ]),
-          el('div', { style: { font: '500 11.5px ' + F, color: '#9AA6B2', lineHeight: '1.5', margin: '9px 0 8px' } }, [a.desc]),
+          el('div', { style: { font: '500 11.5px ' + F, color: '#b3b3b3', lineHeight: '1.5', margin: '9px 0 8px' } }, [a.desc]),
           el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: meta.color, background: meta.color + '18', padding: '4px 10px', borderRadius: '999px', marginBottom: '10px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span>' + a.impact + '</span>' }),
-          el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: a.laneIdx, orAddType: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11px ' + F, color: '#7BCBCB', cursor: 'pointer', marginBottom: '11px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Lane ' + (a.laneIdx + 1) + ' · ' + (l.origin || '').split(',')[0] + ' → ' + (l.dest || '').split(',')[0] + ' · view</span>' }),
-          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, acts.map(ac => el('div', { class: 'hoverable', onclick: () => _alertResolve(a, ac.kind), style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: ac.primary ? '#0E1820' : '#DDE3E9', background: ac.primary ? meta.color : 'rgba(255,255,255,.05)', border: '1px solid ' + (ac.primary ? meta.color : 'rgba(255,255,255,.1)') } }, [ac.label])))
+          el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: (a.segKey || 'L' + a.laneIdx), orAddType: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11px ' + F, color: '#6688cc', cursor: 'pointer', marginBottom: '11px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Lane ' + (a.laneIdx + 1) + ' · ' + (l.origin || '').split(',')[0] + ' → ' + (l.dest || '').split(',')[0] + ' · view</span>' }),
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, acts.map(ac => el('div', { class: 'hoverable', onclick: () => _alertResolve(a, ac.kind), style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: ac.primary ? '#1a1a1a' : '#e6e6e6', background: ac.primary ? meta.color : 'rgba(255,255,255,.05)', border: '1px solid ' + (ac.primary ? meta.color : 'rgba(255,255,255,.1)') } }, [ac.label])))
         ])
       ]);
     }
     function _simRow() {
       const types = [['missed', 'Missed stop'], ['deviation', 'Deviation'], ['fuel', 'Low fuel'], ['hos', 'HOS risk']];
       return el('div', { style: { padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,.06)' } }, [
-        el('div', { style: { font: '700 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#6B7373', marginBottom: '8px' } }, ['Simulate event (demo)']),
-        el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } }, types.map(t => el('div', { class: 'hoverable', onclick: () => { _orInjectAlert(routeId, t[0]); setState({}); }, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', color: '#B8C0C8', font: '700 11px ' + F, cursor: 'pointer' }, html: '<span style="width:6px;height:6px;border-radius:50%;background:' + _OR_ALERT_META[t[0]].color + '"></span><span>' + t[1] + '</span>' })))
+        el('div', { style: { font: '700 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', marginBottom: '8px' } }, ['Simulate event (demo)']),
+        el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } }, types.map(t => el('div', { class: 'hoverable', onclick: () => { _orInjectAlert(routeId, t[0]); setState({}); }, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', font: '700 11px ' + F, cursor: 'pointer' }, html: '<span style="width:6px;height:6px;border-radius:50%;background:' + _OR_ALERT_META[t[0]].color + '"></span><span>' + t[1] + '</span>' })))
       ]);
     }
     function _alertsPanel() {
       const alerts = _orAlertsGet(routeId);
       const head = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
-        el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#DDE3E9', background: '#17202A', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' }),
+        el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#e6e6e6', background: '#292929', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' }),
         el('div', { style: { flex: '1' } }, [
-          el('div', { style: { font: '800 15px ' + F, color: '#F4F6F8' } }, ['Feasibility alerts']),
-          el('div', { style: { font: '600 10.5px ' + F, color: '#6B7373', marginTop: '1px' } }, [alerts.length ? alerts.length + ' issue' + (alerts.length > 1 ? 's' : '') + ' affecting the plan' : 'Plan is on track'])
+          el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Feasibility alerts']),
+          el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '1px' } }, [alerts.length ? alerts.length + ' issue' + (alerts.length > 1 ? 's' : '') + ' affecting the plan' : 'Plan is on track'])
         ])
       ]);
       const bodyKids = alerts.length
         ? alerts.map(a => _alertCard(a))
         : [el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '40px 20px', textAlign: 'center' } }, [
-            el('div', { style: { width: '48px', height: '48px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'rgba(39,167,103,.12)', color: '#3FC281' }, html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' }),
-            el('div', { style: { font: '800 13px ' + F, color: '#DDE3E9' } }, ['No feasibility issues']),
-            el('div', { style: { font: '500 11.5px ' + F, color: '#6B7373', maxWidth: '240px', lineHeight: '1.5' } }, ['The driver is on plan. Simulate an event below to see how alerts and 1-click fixes work.'])
+            el('div', { style: { width: '48px', height: '48px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'rgba(46,153,117,.12)', color: '#47b26b' }, html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' }),
+            el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['No feasibility issues']),
+            el('div', { style: { font: '500 11.5px ' + F, color: '#666666', maxWidth: '240px', lineHeight: '1.5' } }, ['The driver is on plan. Simulate an event below to see how alerts and 1-click fixes work.'])
           ])];
       return el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [
         head, _simRow(),
@@ -7654,11 +7679,11 @@ export function initApp() {
       const n = _orAlertCount(routeId);
       if (!n) return null;
       const crit = _orAlertsCrit(routeId);
-      const col = crit ? '#f87171' : '#FBB303';
+      const col = crit ? '#cc666f' : '#b28835';
       return el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: true }), style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '12px 20px 2px', padding: '11px 13px', borderRadius: '12px', background: col + '14', border: '1px solid ' + col + '55', cursor: 'pointer' } }, [
         el('span', { style: { width: '9px', height: '9px', borderRadius: '50%', background: col, flexShrink: '0', animation: crit ? '_efDotPulse 1.2s ease-in-out infinite' : 'none' } }),
         el('div', { style: { flex: '1', minWidth: '0' } }, [
-          el('div', { style: { font: '800 12.5px ' + F, color: '#F4F6F8' } }, [n + ' issue' + (n > 1 ? 's' : '') + ' affecting feasibility']),
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [n + ' issue' + (n > 1 ? 's' : '') + ' affecting feasibility']),
           el('div', { style: { font: '600 10.5px ' + F, color: col, marginTop: '1px' } }, ['Driver is off-plan — review and adjust'])
         ]),
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11.5px ' + F, color: col }, html: '<span>Review</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
@@ -7673,11 +7698,11 @@ export function initApp() {
     // ─────────────────────── RIGHT: map + cards ───────────────────────────
     const addMode = laneMode && !!state.orAddType;   // adding a stop → map grows to pick
     const mapPanel = el('div', { style: addMode
-      ? { position: 'relative', flex: '1', minHeight: '460px', borderRadius: '12px', overflow: 'hidden', background: '#0F171F', border: '1px solid rgba(123,203,203,.3)' }
-      : { position: 'relative', height: '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#0F171F', border: '1px solid rgba(255,255,255,.08)' } });
+      ? { position: 'relative', flex: '1', minHeight: '460px', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(102,136,204,.3)' }
+      : { position: 'relative', height: '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
     const mapEl = el('div', { id: 'ef-onroad-map', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
-    const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(11,19,27,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#C9CED2', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
+    const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
     if (!addMode) {
       // top-left controls
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '12px', left: '12px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '8px' } }, [
@@ -7687,83 +7712,83 @@ export function initApp() {
       ]));
       // top-right controls
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '12px', right: '12px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '8px' } }, [
-        _mapCtl('<span>Not started</span><span style="display:flex;color:#FBB303">' + IC.info + '</span>'),
-        _mapCtl('<span>Sync</span>' + IC.sync, { background: 'rgba(123,203,203,.14)', border: '1px solid rgba(123,203,203,.3)', color: '#7BCBCB' })
+        _mapCtl('<span>Not started</span><span style="display:flex;color:#b28835">' + IC.info + '</span>'),
+        _mapCtl('<span>Sync</span>' + IC.sync, { background: 'rgba(102,136,204,.14)', border: '1px solid rgba(102,136,204,.3)', color: '#6688cc' })
       ]));
       // ELD status overlay (bottom-left)
-      mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '30px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(11,19,27,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '30px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
         el('div', {}, [
-          el('div', { style: { font: '800 12px ' + F, color: '#E7ECF0' } }, ['ELD status']),
-          el('div', { style: { font: '500 10.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Updated just now'])
+          el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ['ELD status']),
+          el('div', { style: { font: '500 10.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Updated just now'])
         ]),
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '6px 11px', borderRadius: '999px', background: 'rgba(39,167,103,.12)', font: '800 11.5px ' + F, color: '#3FC281' } }, [
-          el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#27A767' } }), 'Synced'
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '6px 11px', borderRadius: '999px', background: 'rgba(46,153,117,.12)', font: '800 11.5px ' + F, color: '#47b26b' } }, [
+          el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#2e9975' } }), 'Synced'
         ]),
-        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 13px', borderRadius: '999px', background: '#7BCBCB', color: '#0B131B', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync })
+        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 13px', borderRadius: '999px', background: '#6688cc', color: '#141414', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync })
       ]));
     } else {
       // ── add-stop map overlays: header + type picker OR candidate list ──
       const isPick = state.orAddType === '__pick';
       const svc = _OR_SVC[state.orAddType];
       const isReplace = !!state.orReplace;
-      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '0', left: '0', right: '0', zIndex: '1100', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', background: 'linear-gradient(180deg,rgba(11,19,27,.96),rgba(11,19,27,0))' } }, [
-        isPick ? null : el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#DDE3E9', background: 'rgba(23,32,42,.9)', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '0', left: '0', right: '0', zIndex: '1100', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', background: 'linear-gradient(180deg,rgba(20,20,20,.96),rgba(20,20,20,0))' } }, [
+        isPick ? null : el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#e6e6e6', background: 'rgba(41,41,41,.9)', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
         el('div', { style: { flex: '1', minWidth: '0' } }, [
-          el('div', { style: { font: '800 13px ' + F, color: '#F4F6F8' } }, [isPick ? 'Add a stop' : (isReplace ? 'Replace with ' : 'Add ') + svc.label.toLowerCase() + ' stop']),
-          el('div', { style: { font: '600 10.5px ' + F, color: '#8B939B', marginTop: '1px' } }, [isPick ? 'Choose a stop type' : 'Tap a marker or a card to add it to the plan'])
+          el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [isPick ? 'Add a stop' : (isReplace ? 'Replace with ' : 'Add ') + svc.label.toLowerCase() + ' stop']),
+          el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '1px' } }, [isPick ? 'Choose a stop type' : 'Tap a marker or a card to add it to the plan'])
         ]),
-        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#8B939B', background: 'rgba(23,32,42,.9)', border: '1px solid rgba(255,255,255,.1)', font: '400 18px ' + F, flexShrink: '0' } }, ['×'])
+        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', background: 'rgba(41,41,41,.9)', border: '1px solid rgba(255,255,255,.1)', font: '400 18px ' + F, flexShrink: '0' } }, ['×'])
       ]));
       if (isPick) {
-        mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '62px', left: '14px', right: '14px', zIndex: '1100', display: 'flex', flexWrap: 'wrap', gap: '8px' } }, Object.keys(_OR_SVC).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orAddType: t }), style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 13px', borderRadius: '999px', background: 'rgba(13,20,27,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)', color: '#DDE3E9', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span style="color:' + _OR_SVC[t].color + ';display:flex">' + _OR_SVC[t].icon + '</span><span>' + _OR_SVC[t].label + '</span>' }))));
+        mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '62px', left: '14px', right: '14px', zIndex: '1100', display: 'flex', flexWrap: 'wrap', gap: '8px' } }, Object.keys(_OR_SVC).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orAddType: t }), style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 13px', borderRadius: '999px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)', color: '#e6e6e6', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span style="color:' + _OR_SVC[t].color + ';display:flex">' + _OR_SVC[t].icon + '</span><span>' + _OR_SVC[t].label + '</span>' }))));
       } else {
         const cands = _orCandidates(routeId, state.orLane, state.orAddType);
         const existing = _orStopsGet(routeId, state.orLane).map(s => s.id);
         const _tmc = _orTruckMi(routeId, state.orLane);
-        mapPanel.appendChild(el('div', { class: 'ef-scroll', style: { position: 'absolute', left: '14px', bottom: '14px', width: '300px', maxHeight: '64%', overflowY: 'auto', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '10px', borderRadius: '12px', background: 'rgba(11,19,27,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(8px)' } }, cands.map((c, i) => {
+        mapPanel.appendChild(el('div', { class: 'ef-scroll', style: { position: 'absolute', left: '14px', bottom: '14px', width: '300px', maxHeight: '64%', overflowY: 'auto', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '10px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(8px)' } }, cands.map((c, i) => {
           const added = existing.indexOf(c.id) >= 0;
           return el('div', { style: { display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: '9px', padding: '8px 9px', borderRadius: '10px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)' } }, [
-            el('div', { style: { width: '22px', height: '22px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#1B2A36', color: '#DDE3E9', font: '800 11px ' + F }, }, [String(i + 1)]),
+            el('div', { style: { width: '22px', height: '22px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#292929', color: '#e6e6e6', font: '800 11px ' + F }, }, [String(i + 1)]),
             el('div', { style: { minWidth: '0' } }, [
               el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', minWidth: '0' } }, [
-                el('div', { style: { font: '800 12px ' + F, color: '#E7ECF0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
-                (_tmc >= 0 && c.distanceMi <= _tmc) ? el('span', { style: { font: '800 8px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#FBB303', background: 'rgba(251,179,3,.16)', padding: '1px 5px', borderRadius: '999px', flexShrink: '0' } }, ['Past']) : null
+                el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
+                (_tmc >= 0 && c.distanceMi <= _tmc) ? el('span', { style: { font: '800 8px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#b28835', background: 'rgba(178,136,53,.16)', padding: '1px 5px', borderRadius: '999px', flexShrink: '0' } }, ['Past']) : null
               ]),
-              el('div', { style: { font: '600 10px ' + F, color: '#6B7373', marginTop: '1px' } }, [(c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi'])
+              el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '1px' } }, [(c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi'])
             ]),
             added
-              ? el('div', { style: { font: '800 10px ' + F, color: '#3FC281', whiteSpace: 'nowrap' } }, ['Added'])
-              : el('div', { class: 'hoverable', onclick: () => { let opts; _orPushUndo(routeId, state.orLane, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, state.orLane, state.orReplace); } const _tm = _orTruckMi(routeId, state.orLane); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm }); _orAddCandidate(routeId, state.orLane, c, opts); setState({ orAddType: null, orReplace: null }); }, style: { font: '800 11px ' + F, color: '#0B131B', background: '#7BCBCB', padding: '6px 11px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [isReplace ? 'Choose' : 'Add +'])
+              ? el('div', { style: { font: '800 10px ' + F, color: '#47b26b', whiteSpace: 'nowrap' } }, ['Added'])
+              : el('div', { class: 'hoverable', onclick: () => { let opts; _orPushUndo(routeId, state.orLane, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, state.orLane, state.orReplace); } const _tm = _orTruckMi(routeId, state.orLane); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm }); _orAddCandidate(routeId, state.orLane, c, opts); setState({ orAddType: null, orReplace: null }); }, style: { font: '800 11px ' + F, color: '#141414', background: '#6688cc', padding: '6px 11px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [isReplace ? 'Choose' : 'Add +'])
           ]);
         })));
       }
     }
 
     // HOS card
-    const hosCard = el('div', { style: { padding: '16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#131F27' } }, [
+    const hosCard = el('div', { style: { padding: '16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#242424' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } }, [
-        el('div', { style: { width: '30px', height: '30px', borderRadius: '50%', background: '#0E1820', border: '1px solid rgba(255,255,255,.1)', color: '#8B939B', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: IC.info }),
-        el('div', { style: { flex: '1', font: '800 14px ' + F, color: '#E7ECF0' } }, ['HOS not available']),
-        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 13px', borderRadius: '999px', background: 'rgba(123,203,203,.12)', border: '1px solid rgba(123,203,203,.28)', color: '#7BCBCB', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Assign driver</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' })
+        el('div', { style: { width: '30px', height: '30px', borderRadius: '50%', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: IC.info }),
+        el('div', { style: { flex: '1', font: '800 14px ' + F, color: '#e6e6e6' } }, ['HOS not available']),
+        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 13px', borderRadius: '999px', background: 'rgba(102,136,204,.12)', border: '1px solid rgba(102,136,204,.28)', color: '#6688cc', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Assign driver</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' })
       ]),
       el('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px', marginTop: '10px' } }, [
-        el('div', { style: { color: '#8B939B', font: '500 12px ' + F, lineHeight: '1.5', maxWidth: '300px' } }, ['Assign a driver to pull live HOS data — or use manual clocks.']),
-        el('div', { class: 'hoverable', style: { font: '800 12.5px ' + F, color: '#DDE3E9', cursor: 'pointer', whiteSpace: 'nowrap' } }, ['Use manual clocks'])
+        el('div', { style: { color: '#808080', font: '500 12px ' + F, lineHeight: '1.5', maxWidth: '300px' } }, ['Assign a driver to pull live HOS data — or use manual clocks.']),
+        el('div', { class: 'hoverable', style: { font: '800 12.5px ' + F, color: '#e6e6e6', cursor: 'pointer', whiteSpace: 'nowrap' } }, ['Use manual clocks'])
       ])
     ]);
 
     // Planned Route card
     function _prMetric(val, label) {
       return el('div', {}, [
-        el('div', { style: { font: '900 16px ' + F, color: '#F4F6F8', whiteSpace: 'nowrap' } }, [val]),
-        el('div', { style: { font: '600 10px ' + F, color: '#6B7373', marginTop: '3px' } }, [label])
+        el('div', { style: { font: '900 16px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [val]),
+        el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '3px' } }, [label])
       ]);
     }
-    const plannedCard = el('div', { style: { display: 'flex', alignItems: 'center', gap: '22px', padding: '16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#131F27' } }, [
-      el('div', { style: { width: '38px', height: '38px', borderRadius: '10px', background: '#0E1820', border: '1px solid rgba(255,255,255,.08)', color: '#7BCBCB', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' }),
+    const plannedCard = el('div', { style: { display: 'flex', alignItems: 'center', gap: '22px', padding: '16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#242424' } }, [
+      el('div', { style: { width: '38px', height: '38px', borderRadius: '10px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' }),
       el('div', {}, [
-        el('div', { style: { font: '800 14px ' + F, color: '#E7ECF0' } }, ['Planned Route']),
-        el('div', { style: { font: '600 10px ' + F, color: '#6B7373', marginTop: '3px' } }, ['Cycle (est.)'])
+        el('div', { style: { font: '800 14px ' + F, color: '#e6e6e6' } }, ['Planned Route']),
+        el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '3px' } }, ['Cycle (est.)'])
       ]),
       el('div', { style: { flex: '1' } }),
       _prMetric(d.cycle, 'Driving (est.)'),
@@ -7787,29 +7812,27 @@ export function initApp() {
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, opacity: .9, pane: 'shadowPane' }).addTo(map);
       if (laneMode) {
         // ── lane-focused view: single lane polyline + its stops (+ candidates) ──
-        const l = loadsOf(routeId)[state.orLane];
-        const a = _OR_COORD[l.origin], b = _OR_COORD[l.dest];
+        const seg = _orSegReg[routeId][state.orLane];
+        const a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest];
         if (a && b) {
-          const done = (cd.rows.find(x => x.loadIdx === state.orLane) || {}).exec === 'Completed';
-          const active = (cd.rows.find(x => x.loadIdx === state.orLane) || {}).exec === 'In progress';
-          L.polyline([a, b], { color: done ? '#27A767' : '#7BCBCB', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round' }).addTo(map);
-          const pinFor = (svgHtml, col) => '<div style="position:relative;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + col + ';border:2.5px solid #0A1018;box-shadow:0 2px 8px rgba(0,0,0,.5);color:#0B131B">' + svgHtml + '</div>';
-          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#3FC281;border:3px solid #0A1018"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(l.origin + ' · Pick-up', { direction: 'top' });
-          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6AA8FF;border:3px solid #0A1018"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(l.dest + ' · Delivery', { direction: 'top' });
-          // truck progress on this lane (for traveled overlay + passed stops)
-          const laneMiles = l.miles;
-          const truckFrac = done ? 1 : (state.orLane === sim.activeLaneIdx && sim.started ? sim.progress : -1);
-          const truckMi = truckFrac >= 0 ? truckFrac * laneMiles : -1;
+          const laneMiles = seg.miles;
+          const truckMi = seg.truckMi;
+          const done = truckMi > laneMiles;
+          const truckFrac = truckMi >= 0 ? Math.max(0, Math.min(1, truckMi / laneMiles)) : -1;
+          L.polyline([a, b], { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round' }).addTo(map);
+          const pinFor = (svgHtml, col) => '<div style="position:relative;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + col + ';border:2.5px solid #141414;box-shadow:0 2px 8px rgba(0,0,0,.5);color:#141414">' + svgHtml + '</div>';
+          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(seg.origin, { direction: 'top' });
+          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(seg.dest, { direction: 'top' });
           if (truckFrac > 0 && truckFrac < 1) {
-            L.polyline([a, _orLerp(a, b, truckFrac)], { color: '#27A767', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
+            L.polyline([a, _orLerp(a, b, truckFrac)], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
           }
           // added stops
           _orLaneStopsSorted(routeId, state.orLane).forEach((s, i) => {
-            const t = s.frac != null ? s.frac : (l.miles ? s.distanceMi / l.miles : .5);
+            const t = s.frac != null ? s.frac : (laneMiles ? s.distanceMi / laneMiles : .5);
             const ll = _orOffset(a, b, t, (i % 2 ? 1 : -1) * 0.04);
             const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
             const isPassed = truckMi >= 0 && s.distanceMi <= truckMi;
-            const col = isPassed ? '#27A767' : (s.type === 'fuel' ? '#FBB303' : '#7BCBCB');
+            const col = isPassed ? '#2e9975' : (s.type === 'fuel' ? '#b28835' : '#6688cc');
             const inner = isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon;
             L.marker(ll, { icon: L.divIcon({ className: '', html: pinFor(inner, col) + (isPassed ? '' : ''), iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .75 : 1 }).addTo(map).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
           });
@@ -7820,32 +7843,32 @@ export function initApp() {
               if (existing.indexOf(c.id) >= 0) return;
               const ll = _orOffset(a, b, c.frac, (i % 2 ? 1 : -1) * 0.05);
               const isReplace = !!state.orReplace;
-              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#0E1820;border:2px dashed rgba(123,203,203,.7);color:#7BCBCB;font:800 12px ' + F + ';cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + (i + 1) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).addTo(map);
+              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1a1a1a;border:2px dashed rgba(102,136,204,.7);color:#6688cc;font:800 12px ' + F + ';cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + (i + 1) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).addTo(map);
               m.bindTooltip(c.name + ' · ' + c.detourMi + ' mi detour', { direction: 'top' });
               m.on('click', () => { let opts; _orPushUndo(routeId, state.orLane, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, state.orLane, state.orReplace); } const _tm = _orTruckMi(routeId, state.orLane); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm }); _orAddCandidate(routeId, state.orLane, c, opts); setState({ orAddType: null, orReplace: null }); });
             });
           }
           // truck at its live position on this lane
-          if (state.orLane === sim.activeLaneIdx && sim.started) {
-            const tll = _orLerp(a, b, Math.max(0, Math.min(1, sim.progress)));
-            L.marker(tll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:40px;height:40px"><div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(39,167,103,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(39,167,103,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:14px;height:14px;border-radius:50%;background:#27A767;border:3px solid #0A1018"></div></div>', iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(map);
+          if (truckFrac > 0 && truckFrac < 1) {
+            const tll = _orLerp(a, b, truckFrac);
+            L.marker(tll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:40px;height:40px"><div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:14px;height:14px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(map);
           }
           // feasibility alert cues on this lane
-          _orAlertsGet(routeId).filter(al => al.laneIdx === state.orLane).forEach(al => {
+          _orAlertsGet(routeId).filter(al => (al.segKey || 'L' + al.laneIdx) === state.orLane).forEach(al => {
             const meta = _OR_ALERT_META[al.type];
             const pr = sim.progress >= 0 ? sim.progress : 0.3;
             if (al.type === 'deviation') {
               const p0 = _orLerp(a, b, Math.max(0, Math.min(1, pr)));
               const p1 = _orOffset(a, b, Math.min(1, pr + 0.16), 0.13);
               const p2 = _orLerp(a, b, Math.min(1, pr + 0.32));
-              L.polyline([p0, p1, p2], { color: '#EB4343', weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(map).bindTooltip('Off optimal route', { direction: 'top' });
+              L.polyline([p0, p1, p2], { color: '#cc666f', weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(map).bindTooltip('Off optimal route', { direction: 'top' });
             } else if (al.type === 'missed' && al.stopId) {
               const sp = _orStopsGet(routeId, state.orLane).find(s => s.id === al.stopId);
-              if (sp) { const t = sp.frac != null ? sp.frac : (l.miles ? sp.distanceMi / l.miles : .5); const ll = _orOffset(a, b, t, (0)); L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:36px;height:36px;border-radius:50%;border:2.5px dashed #EB4343;box-sizing:border-box"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1100 }).addTo(map).bindTooltip('Skipped stop', { direction: 'top' }); }
+              if (sp) { const t = sp.frac != null ? sp.frac : (laneMiles ? sp.distanceMi / laneMiles : .5); const ll = _orOffset(a, b, t, (0)); L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:36px;height:36px;border-radius:50%;border:2.5px dashed #cc666f;box-sizing:border-box"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1100 }).addTo(map).bindTooltip('Skipped stop', { direction: 'top' }); }
             } else {
               const ahead = al.type === 'fuel' ? 0.12 : 0.22;
               const p = _orOffset(a, b, Math.min(0.95, pr + ahead), 0.03);
-              L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #0A1018;color:#0B131B;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1200 }).addTo(map).bindTooltip(meta.label, { direction: 'top' });
+              L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1200 }).addTo(map).bindTooltip(meta.label, { direction: 'top' });
             }
           });
           const _lb = L.latLngBounds([a, b]);
@@ -7865,29 +7888,29 @@ export function initApp() {
       const pts = seq.map(c => ({ city: c, ll: _OR_COORD[c] })).filter(p => p.ll);
       if (pts.length) {
         const latlngs = pts.map(p => p.ll);
-        L.polyline(latlngs, { color: '#7BCBCB', weight: 3, opacity: .85, dashArray: '2 9', lineCap: 'round' }).addTo(map);
+        L.polyline(latlngs, { color: '#6688cc', weight: 3, opacity: .85, dashArray: '2 9', lineCap: 'round' }).addTo(map);
         // traveled (green) up to the active lane's origin index
         const activeCity = (cd.ls[sim.activeLaneIdx] || {}).origin;
         let travIdx = activeCity ? seq.indexOf(activeCity) : 0;
-        if (travIdx > 0) L.polyline(latlngs.slice(0, travIdx + 1), { color: '#27A767', weight: 4.5, opacity: .95, lineCap: 'round' }).addTo(map);
+        if (travIdx > 0) L.polyline(latlngs.slice(0, travIdx + 1), { color: '#2e9975', weight: 4.5, opacity: .95, lineCap: 'round' }).addTo(map);
         pts.forEach((p, i) => {
           const endpoint = i === 0 || i === pts.length - 1;
           const html = endpoint
-            ? '<div style="width:16px;height:16px;border-radius:50%;background:#3B82F6;border:3px solid #0A1018;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></div>'
-            : '<div style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#0E1820;border:2px solid rgba(255,255,255,.28);color:#DDE3E9;font:800 12px ' + F + '">' + (i + 1) + '</div>';
+            ? '<div style="width:16px;height:16px;border-radius:50%;background:#2e5299;border:3px solid #141414;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></div>'
+            : '<div style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#1a1a1a;border:2px solid rgba(255,255,255,.28);color:#e6e6e6;font:800 12px ' + F + '">' + (i + 1) + '</div>';
           L.marker(p.ll, { icon: L.divIcon({ className: '', html: html, iconSize: endpoint ? [16, 16] : [26, 26], iconAnchor: endpoint ? [8, 8] : [13, 13] }) }).addTo(map);
         });
         // truck marker at active lane origin
         const truckLL = (cd.ls[sim.activeLaneIdx] && _OR_COORD[cd.ls[sim.activeLaneIdx].origin]) || latlngs[0];
-        L.marker(truckLL, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:44px;height:44px"><div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(39,167,103,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(39,167,103,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:15px;height:15px;border-radius:50%;background:#27A767;border:3px solid #0A1018"></div></div>', iconSize: [44, 44], iconAnchor: [22, 22] }), zIndexOffset: 1000 }).addTo(map);
+        L.marker(truckLL, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:44px;height:44px"><div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:15px;height:15px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [44, 44], iconAnchor: [22, 22] }), zIndexOffset: 1000 }).addTo(map);
         // feasibility alert pins at each affected lane's midpoint (clickable → open panel)
         _orAlertsGet(routeId).forEach((al, ai) => {
-          const ll2 = loadsOf(routeId)[al.laneIdx];
-          const ca = ll2 && _OR_COORD[ll2.origin], cb = ll2 && _OR_COORD[ll2.dest];
+          const seg2 = _orSegReg[routeId][al.segKey || 'L' + al.laneIdx];
+          const ca = seg2 && _OR_COORD[seg2.origin], cb = seg2 && _OR_COORD[seg2.dest];
           if (!ca || !cb) return;
           const p = _orOffset(ca, cb, 0.5, (ai % 2 ? 1 : -1) * 0.05);
           const meta = _OR_ALERT_META[al.type];
-          const m = L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #0A1018;box-shadow:0 2px 10px rgba(0,0,0,.5);color:#0B131B;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1200 }).addTo(map);
+          const m = L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;box-shadow:0 2px 10px rgba(0,0,0,.5);color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1200 }).addTo(map);
           m.bindTooltip(meta.label, { direction: 'top' });
           m.on('click', () => setState({ orAlertsOpen: true }));
         });
@@ -7903,11 +7926,11 @@ export function initApp() {
     }, 0);
 
     // ── fuel-optimizer loading overlay ──
-    const loadingOverlay = _orLoading ? el('div', { style: { position: 'absolute', inset: '0', zIndex: '400', background: 'rgba(6,12,17,.74)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(3px)' } }, [
+    const loadingOverlay = _orLoading ? el('div', { style: { position: 'absolute', inset: '0', zIndex: '400', background: 'rgba(10,10,10,.74)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(3px)' } }, [
       el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' } }, [
-        el('div', { style: { width: '40px', height: '40px', color: '#FBB303', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' }),
-        el('div', { style: { font: '800 15px ' + F, color: '#F4F6F8' } }, ['Running fuel optimizer…']),
-        el('div', { style: { font: '500 12px ' + F, color: '#8B939B' } }, ['Finding the cheapest fuel and optimal fill for this lane.'])
+        el('div', { style: { width: '40px', height: '40px', color: '#b28835', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' }),
+        el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Running fuel optimizer…']),
+        el('div', { style: { font: '500 12px ' + F, color: '#808080' } }, ['Finding the cheapest fuel and optimal fill for this lane.'])
       ])
     ]) : null;
 
@@ -7920,29 +7943,29 @@ export function initApp() {
         const svc = _OR_SVC[sp.type] || _OR_SVC.fuel;
         const feats = isFuel ? ['Long-term rest', 'Overnight parking', 'DEF lanes', 'ATM', 'Groceries'] : ['Overnight parking', 'Restrooms', 'Vending', '24/7'];
         const close = () => setState({ orProfile: null });
-        const bg = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '450', background: 'rgba(6,12,17,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } });
-        const modal = el('div', { onclick: e => e.stopPropagation(), style: { width: '440px', maxWidth: '100%', maxHeight: '86%', overflowY: 'auto', borderRadius: '16px', background: '#131F27', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.6)' } }, [
+        const bg = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '450', background: 'rgba(10,10,10,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } });
+        const modal = el('div', { onclick: e => e.stopPropagation(), style: { width: '440px', maxWidth: '100%', maxHeight: '86%', overflowY: 'auto', borderRadius: '16px', background: '#242424', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.6)' } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 20px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
             _svcIconBox(sp.type, 40),
             el('div', { style: { flex: '1', minWidth: '0' } }, [
-              el('div', { style: { font: '800 16px ' + F, color: '#F4F6F8' } }, [isFuel ? sp.brand : sp.name]),
-              el('div', { style: { font: '600 11px ' + F, color: '#8B939B', marginTop: '2px' } }, [svc.label + ' · ★ ' + sp.rating + ' · at ' + sp.distanceMi.toLocaleString('en-US') + ' mi'])
+              el('div', { style: { font: '800 16px ' + F, color: '#e6e6e6' } }, [isFuel ? sp.brand : sp.name]),
+              el('div', { style: { font: '600 11px ' + F, color: '#808080', marginTop: '2px' } }, [svc.label + ' · ★ ' + sp.rating + ' · at ' + sp.distanceMi.toLocaleString('en-US') + ' mi'])
             ]),
-            el('div', { class: 'hoverable', onclick: close, style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#8B939B', font: '400 18px ' + F } }, ['×'])
+            el('div', { class: 'hoverable', onclick: close, style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', font: '400 18px ' + F } }, ['×'])
           ]),
           isFuel ? el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1px', margin: '16px 20px 0', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } }, [
-            el('div', { style: { padding: '12px 14px', background: '#0E1820' } }, [el('div', { style: { font: '900 15px ' + F, color: '#E7ECF0' } }, ['$' + sp.pricePerGal.toFixed(2)]), el('div', { style: { font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Price / gal'])]),
-            el('div', { style: { padding: '12px 14px', background: '#0E1820' } }, [el('div', { style: { font: '900 15px ' + F, color: '#7BCBCB' } }, [sp.gallons + ' gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Optimal fill'])]),
-            el('div', { style: { padding: '12px 14px', background: '#0E1820' } }, [el('div', { style: { font: '900 15px ' + F, color: '#3FC281' } }, [money(Math.round(sp.cost))]), el('div', { style: { font: '600 9.5px ' + F, color: '#6B7373', marginTop: '2px' } }, ['Stop cost'])])
+            el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#e6e6e6' } }, ['$' + sp.pricePerGal.toFixed(2)]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Price / gal'])]),
+            el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#6688cc' } }, [sp.gallons + ' gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Optimal fill'])]),
+            el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#47b26b' } }, [money(Math.round(sp.cost))]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Stop cost'])])
           ]) : null,
           el('div', { style: { padding: '16px 20px' } }, [
-            el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#B8C0C8', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7BCBCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + sp.address + '</span>' }),
-            el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#6B7373', margin: '16px 0 9px' } }, ['Features']),
-            el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, feats.map(ft => el('span', { style: { font: '700 11px ' + F, color: '#B8C0C8', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', padding: '5px 11px', borderRadius: '999px' } }, [ft])))
+            el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#b3b3b3', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + sp.address + '</span>' }),
+            el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '16px 0 9px' } }, ['Features']),
+            el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, feats.map(ft => el('span', { style: { font: '700 11px ' + F, color: '#b3b3b3', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', padding: '5px 11px', borderRadius: '999px' } }, [ft])))
           ]),
           el('div', { style: { display: 'flex', gap: '8px', padding: '4px 20px 20px' } }, [
-            el('div', { class: 'hoverable', onclick: () => setState({ orProfile: null, orAddType: sp.type, orReplace: sp.id }), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#DDE3E9', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' } }, ['Replace stop']),
-            el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, state.orLane, 'Stop removed'); _orRemoveStop(routeId, state.orLane, sp.id); setState({ orProfile: null }); }, style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#f87171', background: 'rgba(235,67,67,.1)', border: '1px solid rgba(235,67,67,.28)', cursor: 'pointer' } }, ['Remove stop'])
+            el('div', { class: 'hoverable', onclick: () => setState({ orProfile: null, orAddType: sp.type, orReplace: sp.id }), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' } }, ['Replace stop']),
+            el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, state.orLane, 'Stop removed'); _orRemoveStop(routeId, state.orLane, sp.id); setState({ orProfile: null }); }, style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#cc666f', background: 'rgba(204,102,111,.1)', border: '1px solid rgba(204,102,111,.28)', cursor: 'pointer' } }, ['Remove stop'])
           ])
         ]);
         bg.appendChild(modal);
@@ -7951,18 +7974,18 @@ export function initApp() {
     }
 
     // ── undo toast (changes go live to the driver → always revertible) ──
-    const toast = _orToast ? el('div', { id: 'or-toast', style: { position: 'absolute', bottom: '26px', left: '50%', transform: 'translateX(-50%)', zIndex: '500', display: 'flex', alignItems: 'center', gap: '16px', padding: '11px 14px 11px 16px', borderRadius: '12px', background: '#1B2A36', border: '1px solid rgba(255,255,255,.14)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, [
+    const toast = _orToast ? el('div', { id: 'or-toast', style: { position: 'absolute', bottom: '26px', left: '50%', transform: 'translateX(-50%)', zIndex: '500', display: 'flex', alignItems: 'center', gap: '16px', padding: '11px 14px 11px 16px', borderRadius: '12px', background: '#292929', border: '1px solid rgba(255,255,255,.14)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
-        el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#27A767', flexShrink: '0', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
+        el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#2e9975', flexShrink: '0', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
         el('div', {}, [
-          el('span', { style: { font: '800 12.5px ' + F, color: '#F4F6F8' } }, [_orToast]),
-          el('span', { style: { font: '600 11px ' + F, color: '#8B939B', marginLeft: '8px' } }, ['· sent to driver'])
+          el('span', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_orToast]),
+          el('span', { style: { font: '600 11px ' + F, color: '#808080', marginLeft: '8px' } }, ['· sent to driver'])
         ])
       ]),
-      el('div', { class: 'hoverable', onclick: _orApplyUndo, style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12px ' + F, color: '#7BCBCB', cursor: 'pointer', padding: '6px 12px', borderRadius: '9px', border: '1px solid rgba(123,203,203,.3)' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg><span>Undo</span>' })
+      el('div', { class: 'hoverable', onclick: _orApplyUndo, style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12px ' + F, color: '#6688cc', cursor: 'pointer', padding: '6px 12px', borderRadius: '9px', border: '1px solid rgba(102,136,204,.3)' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg><span>Undo</span>' })
     ]) : null;
 
-    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } }, [header, splitBody, loadingOverlay, profileModal, toast]);
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
