@@ -1,6 +1,8 @@
 export function initApp() {
   "use strict";
 
+  window.__EFR_DEV = true;
+
   // ---------------------------------------------------------------------
   // Data
   // ---------------------------------------------------------------------
@@ -522,6 +524,7 @@ export function initApp() {
 
   function render() {
     const _lb = document.getElementById('_ef-lb'); if (_lb) _lb.style.display = 'none';
+    document.querySelectorAll('[data-ef-htip]').forEach(function(t){t.remove();});
     root.innerHTML = '';
     const s = state;
     if (s.openRoute) {
@@ -2416,6 +2419,7 @@ export function initApp() {
     let tipEl = null;
     cell.addEventListener('mouseenter', () => {
       tipEl = document.createElement('div');
+      tipEl.setAttribute('data-ef-htip', '1');
       Object.assign(tipEl.style, {
         position: 'fixed', zIndex: '9999', width: '230px',
         background: '#0E1820', border: '1px solid rgba(255,255,255,.12)',
@@ -2524,6 +2528,7 @@ export function initApp() {
           let _incTip = null;
           cell.addEventListener('mouseenter', function() {
             _incTip = document.createElement('div');
+            _incTip.setAttribute('data-ef-htip', '1');
             Object.assign(_incTip.style, { position: 'fixed', zIndex: '9030', background: '#131F27', border: '1px solid rgba(255,255,255,.15)', borderRadius: '10px', padding: '12px', minWidth: '220px', boxShadow: '0 8px 28px rgba(0,0,0,.6)', fontFamily: 'Nunito, Manrope, system-ui, sans-serif', pointerEvents: 'none' });
             function _tipRow(lbl, val, col) { var rr = document.createElement('div'); Object.assign(rr.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: '12px' }); var ll = document.createElement('span'); Object.assign(ll.style, { color: '#8B939B', fontWeight: '500' }); ll.textContent = lbl; var vv = document.createElement('span'); Object.assign(vv.style, { color: col, fontWeight: '800', fontVariantNumeric: 'tabular-nums' }); vv.textContent = val; rr.appendChild(ll); rr.appendChild(vv); return rr; }
             _incTip.appendChild(_tipRow('Current income', money(st.income), '#3FC281'));
@@ -3001,6 +3006,87 @@ export function initApp() {
   // ── Unbooked lane hover bar + map modal ────────────────────────────────
   let _lbTimer = null;
   const _lbSearch = {}, _lbCount = {}, _lbIgnored = new Set();
+  var _simBeforeLanes = null, _simAfterLanes = null, _simReturnCtx = null;
+
+  function _doStartSearch(key, originCity, anchorEl) {
+    var active = _getActiveSearch();
+    if (active && active.key !== key && active.state === 'searching') {
+      _showOneSearchWarning(anchorEl, active.city, originCity, function() {
+        delete _lbSearch[active.key];
+        delete _lbCount[active.key];
+        _doStartSearch(key, originCity, anchorEl);
+      });
+      return;
+    }
+    _lbSearch[key] = 'searching';
+    setState({});
+    setTimeout(function() {
+      _lbSearch[key] = 'done'; _lbCount[key] = 2 + Math.floor(Math.random() * 4);
+      setState({});
+      _showLbNotif(key, originCity);
+    }, 3000);
+  }
+
+  function _getActiveSearch() {
+    for (var _ask in _lbSearch) {
+      if (_lbSearch[_ask] === 'searching' || _lbSearch[_ask] === 'done') {
+        var _asLast = _ask.lastIndexOf('_');
+        var _asRid  = _ask.substring(0, _asLast);
+        var _asIdx  = parseInt(_ask.substring(_asLast + 1));
+        var _asLs   = loadsOf(_asRid);
+        var _asLane = _asLs[_asIdx];
+        if (!_asLane || _asLane.status !== 'Unbooked') {
+          delete _lbSearch[_ask]; delete _lbCount[_ask];
+          continue;
+        }
+        return { key: _ask, city: _asLane.origin || '—', state: _lbSearch[_ask] };
+      }
+    }
+    return null;
+  }
+
+  function _showOneSearchWarning(anchorEl, activeCity, newCity, onProceed) {
+    var ex = document.getElementById('_ef-onesearch'); if (ex) ex.remove();
+    var F = 'Nunito,system-ui';
+    var card = document.createElement('div'); card.id = '_ef-onesearch';
+    card.style.cssText = 'position:fixed;z-index:9040;background:#131F27;border:1px solid rgba(255,255,255,.15);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.85);width:280px;padding:14px 14px 12px';
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">' +
+        '<div style="width:26px;height:26px;border-radius:7px;background:rgba(251,179,3,.1);border:1px solid rgba(251,179,3,.28);display:grid;place-items:center;flex-shrink:0">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FBB303" stroke-width="2.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>' +
+        '</div>' +
+        '<div style="font:800 13px '+F+';color:#FBFBFB">Active search running</div>' +
+      '</div>' +
+      '<div style="font:400 11px '+F+';color:#8B939B;line-height:1.55;margin-bottom:12px">' +
+        'Search from <strong style="color:#FBFBFB">'+activeCity+'</strong> is active. Stop it and start from <strong style="color:#FBFBFB">'+newCity+'</strong>?' +
+      '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button id="_ef-osw-cancel" style="flex:1;padding:7px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#8B939B;font:700 12px '+F+';cursor:pointer">Cancel</button>' +
+        '<button id="_ef-osw-ok" style="flex:1;padding:7px;background:#E8A020;border:none;border-radius:8px;color:#0B131B;font:800 12px '+F+';cursor:pointer">Stop &amp; switch</button>' +
+      '</div>';
+    document.body.appendChild(card);
+    // Position above anchorEl
+    var rect = anchorEl ? anchorEl.getBoundingClientRect() : null;
+    if (rect) {
+      var cw = 280, ch = card.offsetHeight || 118;
+      var top = rect.top - ch - 8;
+      if (top < 8) top = rect.bottom + 8;
+      var left = Math.max(8, Math.min(window.innerWidth - cw - 8, rect.left + rect.width/2 - cw/2));
+      card.style.top = top + 'px'; card.style.left = left + 'px';
+    } else {
+      card.style.top = '50%'; card.style.left = '50%'; card.style.transform = 'translate(-50%,-50%)';
+    }
+    var _osClose = null;
+    setTimeout(function() {
+      _osClose = function(e) { if (!card.contains(e.target)) { card.remove(); document.removeEventListener('click', _osClose); } };
+      document.addEventListener('click', _osClose);
+    }, 0);
+    card.querySelector('#_ef-osw-cancel').addEventListener('click', function(){ card.remove(); if (_osClose) document.removeEventListener('click', _osClose); });
+    card.querySelector('#_ef-osw-ok').addEventListener('click', function(){
+      card.remove(); if (_osClose) document.removeEventListener('click', _osClose);
+      onProceed();
+    });
+  }
   const _rebuildLoads = {}; // rId → [{origin,dest,miles,income,pickup,customer,equipment}]
   const _pinnedFinalDest = {}; // rId → city string (final destination user set in create-route form)
   const _NEXT_DEST = {
@@ -3060,7 +3146,7 @@ export function initApp() {
   const _syncDone = {}; // routeId → bool (button disabled after sync)
   const _autoAddFromLoads = {}; // routeId → bool (toggle state per route)
   var _lbConfHandler = null, _lbNotifHandler = null;
-  let _lmSt = { tab: 'destinations', selDest: -1, selPath: 0, blockedPaths: new Set(), discSelIdx: -1, discExpanded: false, rcScale: 0, rcTx: 0, rcTy: 0 };
+  let _lmSt = { tab: 'destinations', selDest: -1, selPath: 0, blockedPaths: new Set(), discSelIdx: -1, discExpanded: false, rcScale: 0, rcTx: 0, rcTy: 0, addLaneMode: false, addLaneRid: null, topDest: null };
 
   function _hideLbBar() {
     const b = document.getElementById('_ef-lb'); if (b) b.style.display = 'none';
@@ -3078,7 +3164,7 @@ export function initApp() {
     btn.style.color = color; btn.style.background = bg; btn.style.borderColor = bd;
     btn.innerHTML = _wifiSvg(state === 'searching');
     if (state === 'done') {
-      btn.onclick = function(e) { e.stopPropagation(); if(document.getElementById('_ef-lb-notif')){_hideLbNotif();}else{_showLbNotif(key,originCity);} };
+      btn.onclick = function(e) { e.stopPropagation(); if (document.getElementById('_ef-lb-notif')) { _hideLbNotif(); } else { _showLbNotif(key, originCity); } };
     }
   }
 
@@ -3117,29 +3203,12 @@ export function initApp() {
     }
     bar.appendChild(addBtn);
 
-    // WiFi button — changes color based on search state
-    var wifiBtn = document.createElement('button');
-    var wifiColor = searchSt === 'done' ? '#27A767' : searchSt === 'searching' ? '#FBB303' : '#8B939B';
-    var wifiBg    = searchSt === 'done' ? 'rgba(39,167,103,.12)' : searchSt === 'searching' ? 'rgba(251,179,3,.08)' : '#17242E';
-    var wifiBd    = searchSt === 'done' ? 'rgba(39,167,103,.4)' : searchSt === 'searching' ? 'rgba(251,179,3,.3)' : 'rgba(255,255,255,.15)';
-    wifiBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:'+wifiBg+';border:1px solid '+wifiBd+';border-radius:8px;color:'+wifiColor+';cursor:pointer;flex:none';
-    var wifiAnim = searchSt === 'searching' ? 'style="animation:_ef-wpulse .7s ease-in-out infinite alternate"' : '';
-    wifiBtn.innerHTML = '<svg '+wifiAnim+' width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>';
-    wifiBtn.onclick = function(e) {
-      e.stopPropagation(); _hideLbMenu();
-      if (searchSt === 'done') {
-        if (document.getElementById('_ef-lb-notif')) { _hideLbNotif(); }
-        else { _showLbNotif(key, originCity); }
-      } else if (!searchSt || searchSt === 'idle') {
-        if (document.getElementById('_ef-lb-conf')) { _hideLbConf(); }
-        else { _showLbConfirm(wifiBtn, key, originCity); }
-      }
-    };
-    bar.appendChild(wifiBtn);
-
     bar.style.display = 'flex';
     var rect = rowEl.getBoundingClientRect();
-    bar.style.right = '24px'; bar.style.left = 'auto';
+    var _lastCell = rowEl.lastElementChild;
+    var _lcRect = _lastCell ? _lastCell.getBoundingClientRect() : null;
+    bar.style.right = (_lcRect && _lcRect.width > 0 ? (window.innerWidth - _lcRect.left + 8) : 72) + 'px';
+    bar.style.left = 'auto';
     bar.style.top = (rect.top + (rect.height - 38) / 2) + 'px';
     bar.onmouseenter = function() { clearTimeout(_lbTimer); };
     bar.onmouseleave = function() {
@@ -3212,45 +3281,68 @@ export function initApp() {
     }, 0);
   }
 
-  function _showLbConfirm(wifiBtn, key, originCity) {
+  function _showLbConfirm(anchorEl, key, originCity) {
     _hideLbConf();
+    // find any key that is currently active (searching or done), not this one
+    var _activeKey = null, _activeCity = null;
+    var _activeInfo = _getActiveSearch();
+    if (_activeInfo && _activeInfo.key !== key && _activeInfo.state === 'searching') { _activeKey = _activeInfo.key; _activeCity = _activeInfo.city; }
     var bar = document.getElementById('_ef-lb');
-    var barRect = bar ? bar.getBoundingClientRect() : { right: window.innerWidth - 24, top: window.innerHeight / 2 };
+    var refRect = (anchorEl && anchorEl.getBoundingClientRect) ? anchorEl.getBoundingClientRect() : (bar ? bar.getBoundingClientRect() : { right: window.innerWidth - 24, top: window.innerHeight / 2 });
     var conf = document.createElement('div'); conf.id = '_ef-lb-conf';
-    conf.style.cssText = 'position:fixed;z-index:9003;background:#131F27;border:1px solid rgba(255,255,255,.15);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.7);width:300px;padding:16px;right:' + (window.innerWidth - barRect.right) + 'px;top:' + (barRect.top - 178) + 'px';
-    conf.innerHTML =
-      '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:13px">' +
-        '<div style="flex:1">' +
-          '<div style="font:800 13px Nunito,system-ui;color:#FBFBFB;margin-bottom:6px">Start Active Search?</div>' +
-          '<div style="font:400 11px Nunito,system-ui;color:#8B939B;line-height:1.55">We\'ll monitor the loadboard for loads from <strong style="color:#FBFBFB">' + originCity + '</strong> and notify you of matches. Auto-stops after 15 minutes.</div>' +
+    conf.style.cssText = 'position:fixed;z-index:9003;background:#131F27;border:1px solid rgba(255,255,255,.15);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.7);width:300px;padding:16px;right:' + (window.innerWidth - refRect.right) + 'px;top:' + (refRect.top - 178) + 'px';
+    if (_activeKey) {
+      // Stop & switch variant
+      conf.innerHTML =
+        '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:13px">' +
+          '<div style="flex:none;width:28px;height:28px;display:grid;place-items:center;background:rgba(251,179,3,.1);border-radius:8px;color:#FBB303;margin-top:1px">' +
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>' +
+          '</div>' +
+          '<div style="flex:1">' +
+            '<div style="font:800 13px Nunito,system-ui;color:#FBFBFB;margin-bottom:6px">Active search running</div>' +
+            '<div style="font:400 11px Nunito,system-ui;color:#8B939B;line-height:1.55">Search from <strong style="color:#FBB303">' + (_activeCity || '—') + '</strong> is active. Stop it and start from <strong style="color:#FBFBFB">' + originCity + '</strong>?</div>' +
+          '</div>' +
         '</div>' +
-        '<button id="_ef-lb-conf-map" title="Open destination map" style="flex:none;width:28px;height:28px;display:grid;place-items:center;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;cursor:pointer;color:#8B939B;margin-left:6px;background:none">' +
-          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>' +
-        '</button>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px">' +
-        '<button id="_ef-lb-conf-cancel" style="flex:1;padding:7px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#8B939B;font:700 12px Nunito,system-ui;cursor:pointer">Cancel</button>' +
-        '<button id="_ef-lb-conf-start" style="flex:1;padding:7px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 12px Nunito,system-ui;cursor:pointer">Start search</button>' +
-      '</div>';
-    document.body.appendChild(conf);
-    conf.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); });
-    conf.querySelector('#_ef-lb-conf-map').addEventListener('click', function() {
-      _hideLbConf(); _lmSt.origin = originCity; _doRenderLaneMap();
-    });
-    conf.querySelector('#_ef-lb-conf-cancel').addEventListener('click', _hideLbConf);
-    conf.querySelector('#_ef-lb-conf-start').addEventListener('click', function() {
-      _hideLbConf();
-      _lbSearch[key] = 'searching';
-      // update wifi button visually right away
-      var barEl = document.getElementById('_ef-lb');
-      if (barEl) { var wb = barEl.querySelectorAll('button')[1]; if (wb) _applyWifiStyle(wb, 'searching', key, originCity); }
-      setTimeout(function() {
-        _lbSearch[key] = 'done'; _lbCount[key] = 2 + Math.floor(Math.random() * 4);
-        var barEl2 = document.getElementById('_ef-lb');
-        if (barEl2) { var wb2 = barEl2.querySelectorAll('button')[1]; if (wb2) _applyWifiStyle(wb2, 'done', key, originCity); }
-        _showLbNotif(key, originCity);
-      }, 3000);
-    });
+        '<div style="display:flex;gap:8px">' +
+          '<button id="_ef-lb-conf-cancel" style="flex:1;padding:7px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#8B939B;font:700 12px Nunito,system-ui;cursor:pointer">Cancel</button>' +
+          '<button id="_ef-lb-conf-start" style="flex:1;padding:7px;background:#E8A020;border:none;border-radius:8px;color:#0B131B;font:800 12px Nunito,system-ui;cursor:pointer">Stop &amp; switch</button>' +
+        '</div>';
+      document.body.appendChild(conf);
+      conf.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); });
+      conf.querySelector('#_ef-lb-conf-cancel').addEventListener('click', _hideLbConf);
+      conf.querySelector('#_ef-lb-conf-start').addEventListener('click', function() {
+        _hideLbConf();
+        delete _lbSearch[_activeKey];
+        delete _lbCount[_activeKey];
+        _doStartSearch(key, originCity);
+      });
+    } else {
+      // Normal start variant
+      conf.innerHTML =
+        '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:13px">' +
+          '<div style="flex:1">' +
+            '<div style="font:800 13px Nunito,system-ui;color:#FBFBFB;margin-bottom:6px">Start Active Search?</div>' +
+            '<div style="font:400 11px Nunito,system-ui;color:#8B939B;line-height:1.55">We\'ll monitor the loadboard for loads from <strong style="color:#FBFBFB">' + originCity + '</strong> and notify you of matches. Auto-stops after 15 minutes.</div>' +
+          '</div>' +
+          '<button id="_ef-lb-conf-map" title="Open destination map" style="flex:none;width:28px;height:28px;display:grid;place-items:center;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;cursor:pointer;color:#8B939B;margin-left:6px;background:none">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>' +
+          '</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button id="_ef-lb-conf-cancel" style="flex:1;padding:7px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#8B939B;font:700 12px Nunito,system-ui;cursor:pointer">Cancel</button>' +
+          '<button id="_ef-lb-conf-start" style="flex:1;padding:7px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 12px Nunito,system-ui;cursor:pointer">Start search</button>' +
+        '</div>';
+      document.body.appendChild(conf);
+      conf.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); });
+      conf.querySelector('#_ef-lb-conf-map').addEventListener('click', function() {
+        _hideLbConf(); _lmSt.origin = originCity; _doRenderLaneMap();
+      });
+      conf.querySelector('#_ef-lb-conf-cancel').addEventListener('click', _hideLbConf);
+      conf.querySelector('#_ef-lb-conf-start').addEventListener('click', function() {
+        _hideLbConf();
+        _doStartSearch(key, originCity);
+      });
+    }
     // persistent click-outside handler
     setTimeout(function() {
       _lbConfHandler = function(e) {
@@ -3289,7 +3381,7 @@ export function initApp() {
     document.body.appendChild(notif);
     notif.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); });
     notif.querySelector('#_ef-lb-notif-map').addEventListener('click', function() { _lmSt.origin = originCity; _doRenderLaneMap(); });
-    notif.querySelector('#_ef-lb-notif-stop').addEventListener('click', function() { _lbSearch[key] = 'idle'; delete _lbCount[key]; _hideLbNotif(); var barEl=document.getElementById('_ef-lb'); if(barEl){var wb=barEl.querySelectorAll('button')[1];if(wb)_applyWifiStyle(wb,'idle',key,originCity);} });
+    notif.querySelector('#_ef-lb-notif-stop').addEventListener('click', function() { _lbSearch[key] = 'idle'; delete _lbCount[key]; _hideLbNotif(); _hideLbBar(); setState({}); });
     notif.querySelector('#_ef-lb-notif-view').addEventListener('click', function() { _openSearchLoads(count, originCity, key); });
     // persistent click-outside
     setTimeout(function() {
@@ -3305,13 +3397,21 @@ export function initApp() {
 
   function _openSearchLoads(count, originCity, lbKey) {
     var ex = document.getElementById('_ef-sl'); if (ex) ex.remove();
+    var originShort = (originCity || '').split(',')[0];
     var SAMPLE = [
-      { dest:'Memphis, TN',     miles:445, rev:'$1,050–$1,680', rpm:'$2.36–$3.78', broker:'Echo Global',      pickup:'Today'    },
-      { dest:'Nashville, TN',   miles:680, rev:'$1,360–$2,040', rpm:'$2.00–$3.00', broker:'Coyote Logistics', pickup:'Tomorrow' },
-      { dest:'St. Louis, MO',   miles:540, rev:'$1,080–$1,782', rpm:'$2.00–$3.30', broker:'CH Robinson',      pickup:'Aug 02'   },
-      { dest:'Kansas City, MO', miles:620, rev:'$1,364–$2,108', rpm:'$2.20–$3.40', broker:'Transplace',       pickup:'Aug 03'   },
+      { age:'1 h',  rate:'Call broker', fit:90,  dist:996,  dho:0,   pickup:originShort+', '+((originCity||'').split(', ')[1]||''),  pickDate:'AUG 26', dhd:null, drop:'Elizabeth, NJ',  dropDate:'AUG 26', specs:'48 or 53 ft · 23,000 lbs', broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'' },
+      { age:'1 h',  rate:'Call broker', fit:90,  dist:1115, dho:6,   pickup:originShort+', '+((originCity||'').split(', ')[1]||''),  pickDate:'AUG 26', dhd:null, drop:'Elizabeth, NJ',  dropDate:'AUG 26', specs:'48 ft · 23,000 lbs',    broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'' },
+      { age:'22 m', rate:'Call broker', fit:90,  dist:1080, dho:97,  pickup:'Ocala, FL',      pickDate:'AUG 26', dhd:null, drop:'Stamford, CT',   dropDate:'CALL BROKER',specs:'48 ft · 27,000 lbs',    broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'' },
+      { age:'2 m',  rate:'Call broker', fit:90,  dist:1159, dho:0,   pickup:originShort+', '+((originCity||'').split(', ')[1]||''),  pickDate:'AUG 26', dhd:null, drop:'Elizabeth, NJ',  dropDate:'CALL BROKER',specs:'23,000 lbs',            broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'' },
+      { age:'32 m', rate:'Call broker', fit:90,  dist:1162, dho:0,   pickup:originShort+', '+((originCity||'').split(', ')[1]||''),  pickDate:'AUG 26', dhd:null, drop:'Newark, NJ',     dropDate:'CALL BROKER',specs:'53 ft · 24,500 lbs',    broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'' },
+      { age:'2 m',  rate:'$1,250\n$5.02/mi', fit:90, dist:1125, dho:0, pickup:originShort+', '+((originCity||'').split(', ')[1]||''), pickDate:'AUG 26', dhd:0, drop:'Elizabeth, NJ', dropDate:'AUG 26 03:00', specs:'48 ft · 23,000 lbs', broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true, powered:'TRUCKSTOP' },
+      { age:'22 m', rate:'Call broker', fit:90,  dist:1079, dho:85,  pickup:'Clearwater, FL', pickDate:'AUG 26', dhd:null, drop:'East Orange, NJ', dropDate:'AUG 26 03:00',specs:'48 ft · 28,000 lbs',    broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'TRUCKSTOP' },
+      { age:'1 h',  rate:'Call broker', fit:89,  dist:1110, dho:5,   pickup:originShort+', '+((originCity||'').split(', ')[1]||''),  pickDate:'AUG 26', dhd:null, drop:'Elizabeth, NJ',  dropDate:'AUG 26', specs:'48 ft · 23,000 lbs',    broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true,  powered:'' },
+      { age:'+9 h', rate:'Call broker', fit:67,  dist:1138, dho:56,  pickup:'Polk City, FL',  pickDate:'AUG 26', dhd:null, drop:'Bolingbrook, IL', dropDate:'AUG 28', specs:'11,000 lbs',            broker:'LANDSTAR RANGER INC...', phone:'(424) 367-0626', verified:true,  powered:'' },
+      { age:'3 m',  rate:'Call broker', fit:51,  dist:205,  dho:51,  pickup:'Haines City, FL',pickDate:'AUG 27 22:00-23:59', dhd:null, drop:'Fort Lauderdale, FL', dropDate:'AUG 27 08:00-17:00', specs:'32,840 lbs', broker:'SPOT FREIGHT INC', phone:'(317) 635-6207', verified:false, powered:'' },
+      { age:'15 m', rate:'$800\n$3.16/mi', fit:34, dist:253, dho:34, pickup:'Brooksville, FL', pickDate:'AUG 26', dhd:null, drop:'Deerfield Beach, FL', dropDate:'AUG 27', specs:'53 ft · 10,000 lbs', broker:'TOTAL QUALITY LOGIST...', phone:'(800) 580-3101', verified:true, powered:'' },
     ];
-    // Parse lbKey → rId + lIdx so "Add load" can update the real lane
+    // Parse lbKey → rId + lIdx
     var _slRid = null, _slLIdx = null;
     if (lbKey) {
       var _us = lbKey.lastIndexOf('_');
@@ -3319,62 +3419,239 @@ export function initApp() {
       _slLIdx = parseInt(lbKey.substring(_us + 1));
     }
     var ov = document.createElement('div'); ov.id = '_ef-sl';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:9010;background:rgba(6,12,17,.55);display:flex;align-items:center;justify-content:center';
-    var modal = document.createElement('div');
-    modal.style.cssText = 'background:#101B23;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:520px;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 64px rgba(0,0,0,.8)';
-    var hdr = document.createElement('div');
-    hdr.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.07);flex:none';
-    hdr.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#27A767" stroke-width="2" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg><div style="flex:1"><div style="font:800 14px Nunito,system-ui;color:#FBFBFB">Loadboard</div><div style="font:400 11px Nunito,system-ui;color:#8B939B">From ' + originCity + ' · <span style="color:#27A767">' + count + ' loads found</span> · Active search</div></div><button id="_ef-sl-x" style="width:28px;height:28px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:#8B939B;border:1px solid rgba(255,255,255,.1);background:none">✕</button>';
-    modal.appendChild(hdr);
-    var list = document.createElement('div');
-    list.style.cssText = 'flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px';
-    SAMPLE.forEach(function(load, si) {
-      var card = document.createElement('div');
-      card.style.cssText = 'background:#131F27;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:13px;display:flex;align-items:center;gap:10px';
-      card.innerHTML = '<div style="flex:1"><div style="font:800 12px Nunito,system-ui;color:#FBFBFB;margin-bottom:3px">' + originCity + ' → ' + load.dest + '</div><div style="font:400 11px Nunito,system-ui;color:#6B7373">' + load.broker + ' · ' + load.pickup + ' · ' + load.miles + ' mi</div></div><div style="text-align:right;flex:none"><div style="font:700 12px Nunito,system-ui;color:#3FC281">' + load.rev + '</div><div style="font:400 10px Nunito,system-ui;color:#7BCBCB">' + load.rpm + '</div></div><button data-si="' + si + '" style="padding:5px 12px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 11px Nunito,system-ui;cursor:pointer;white-space:nowrap;flex:none">Add load</button>';
-      list.appendChild(card);
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9010;display:flex;flex-direction:column;background:#0B1520;font-family:Nunito,system-ui,sans-serif';
+
+    // ── Tab bar ──
+    var tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex;align-items:center;gap:0;background:#0B1520;border-bottom:1px solid rgba(255,255,255,.07);flex:none;padding:0 12px;height:40px';
+    tabBar.innerHTML =
+      '<div style="display:flex;align-items:center;gap:7px;padding:0 12px;height:100%;border-bottom:2px solid #27A767;color:#FBFBFB;font:600 12px Nunito,system-ui;cursor:default">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#27A767" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>' +
+        '[Reefer] ' + originShort + ' → All' +
+        '<span id="_ef-sl-x" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;cursor:pointer;color:#6B7373;font-size:11px;font-weight:800">✕</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid rgba(255,255,255,.1);color:#8B939B;font-size:16px;cursor:pointer;margin-left:4px">+</div>';
+
+    // ── Search bar ──
+    var searchBar = document.createElement('div');
+    searchBar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 16px;background:#0B1520;border-bottom:1px solid rgba(255,255,255,.07);flex:none;position:relative';
+    // Left: Go back button
+    var _goBackBtn = document.createElement('button');
+    _goBackBtn.id = '_ef-sl-goback';
+    _goBackBtn.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:0 14px;height:36px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#8B939B;font:700 12px Nunito,system-ui;cursor:pointer;white-space:nowrap;flex:none';
+    _goBackBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>Go back';
+    _goBackBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      ov.remove();
+      setState({ openRoute: _slRid });
     });
-    // Wire "Add load" buttons — update the real lane, cascade if dest changed
-    list.querySelectorAll('button[data-si]').forEach(function(btn) {
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        var ld = SAMPLE[parseInt(btn.dataset.si)];
+    searchBar.appendChild(_goBackBtn);
+    // Center group: equipment + origin + destination + search btn
+    var _sbCenter = document.createElement('div');
+    _sbCenter.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px';
+    _sbCenter.innerHTML =
+      '<div style="display:flex;align-items:center;gap:7px;padding:0 14px;height:36px;background:#131F27;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#FBFBFB;font:600 12px Nunito,system-ui;cursor:pointer;white-space:nowrap">' +
+        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>' +
+        'Reefer' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:7px;padding:0 14px;height:36px;background:#131F27;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#FBFBFB;font:600 12px Nunito,system-ui;cursor:pointer;white-space:nowrap">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/></svg>' +
+        originCity +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:7px;padding:0 14px;height:36px;background:#131F27;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#8B939B;font:600 12px Nunito,system-ui;cursor:pointer;white-space:nowrap">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B939B" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' +
+        'Destination' +
+      '</div>' +
+      '<button style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;background:#27A767;border:none;border-radius:8px;cursor:pointer;flex:none">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0B131B" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>' +
+      '</button>';
+    searchBar.appendChild(_sbCenter);
+    // Right: spacer + results + refresh
+    var _sbRight = document.createElement('div');
+    _sbRight.style.cssText = 'display:flex;align-items:center;gap:8px;margin-left:auto';
+    _sbRight.innerHTML =
+      '<span style="font:600 12px Nunito,system-ui;color:#8B939B;white-space:nowrap">Results: <span style="color:#FBFBFB">' + count + '</span></span>' +
+      '<div style="display:flex;align-items:center;gap:5px;padding:0 10px;height:36px;background:#131F27;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#8B939B;font:600 11px Nunito,system-ui;cursor:pointer">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>' +
+        'Refresh' +
+      '</div>';
+    searchBar.appendChild(_sbRight);
+
+    // ── Filters row ──
+    var filtersRow = document.createElement('div');
+    filtersRow.style.cssText = 'display:flex;align-items:center;gap:0;padding:0 16px;height:44px;border-bottom:1px solid rgba(255,255,255,.06);flex:none;overflow-x:auto';
+    var _filters = [
+      { label:'Integrations', badge:'1', link:true },
+      { label:'26 ago - 27 ago' }, { label:'Ignore brokers' },
+      { label:'DH:150mi / 150mi' }, { label:'All states' },
+      { label:'All number of drivers' }, { label:'More' }
+    ];
+    _filters.forEach(function(f, fi) {
+      if (fi > 0) {
+        var sep = document.createElement('div');
+        sep.style.cssText = 'width:1px;height:20px;background:rgba(255,255,255,.08);margin:0 4px;flex:none';
+        filtersRow.appendChild(sep);
+      }
+      var chip = document.createElement('div');
+      chip.style.cssText = 'display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.1);background:#131F27;color:#DDE3E9;font:600 11px Nunito,system-ui;cursor:pointer;white-space:nowrap;flex:none';
+      var lbl = document.createElement('span');
+      lbl.textContent = f.label;
+      chip.appendChild(lbl);
+      if (f.badge) {
+        var bdg = document.createElement('span');
+        bdg.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:999px;background:#EB4343;color:#fff;font:800 9px Nunito,system-ui';
+        bdg.textContent = f.badge;
+        chip.appendChild(bdg);
+      }
+      if (f.link) {
+        var lnk = document.createElement('span');
+        lnk.style.cssText = 'color:#7BCBCB;font-size:11px';
+        lnk.innerHTML = '↔';
+        chip.appendChild(lnk);
+      }
+      var arr = document.createElement('span');
+      arr.style.cssText = 'color:#6B7373;font-size:10px';
+      arr.textContent = '▾';
+      chip.appendChild(arr);
+      filtersRow.appendChild(chip);
+    });
+    // Sort button
+    var sortBtn = document.createElement('div');
+    sortBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid rgba(255,255,255,.1);color:#8B939B;cursor:pointer;margin-left:8px;flex:none;font-size:13px';
+    sortBtn.innerHTML = '↕';
+    filtersRow.appendChild(sortBtn);
+
+    // ── Table ──
+    var tableWrap = document.createElement('div');
+    tableWrap.style.cssText = 'flex:1;overflow-y:auto;overflow-x:hidden';
+    var COL = '70px 130px 80px 100px 70px 1fr 60px 1fr 150px 200px 120px';
+    var tHead = document.createElement('div');
+    tHead.style.cssText = 'display:grid;grid-template-columns:'+COL+';padding:0 16px;border-bottom:1px solid rgba(255,255,255,.06);position:sticky;top:0;background:#0B1520;z-index:2';
+    var COLS = ['Age','Rate','Fit Score ⓘ','Distance (mi)','DH-O','PickUp','DH-D','DropOff','Specifications','Broker','Powered By'];
+    COLS.forEach(function(h) {
+      var th = document.createElement('div');
+      th.style.cssText = 'padding:9px 6px;font:700 10.5px Nunito,system-ui;color:#6B7373;letter-spacing:.03em;white-space:nowrap;display:flex;align-items:center;gap:4px';
+      th.textContent = h;
+      if (h !== 'Powered By') {
+        var arr = document.createElement('span');
+        arr.style.cssText = 'color:#3B4E5C;font-size:9px';
+        arr.textContent = '↓';
+        th.appendChild(arr);
+      }
+      tHead.appendChild(th);
+    });
+    tableWrap.appendChild(tHead);
+
+    // Table rows
+    SAMPLE.forEach(function(row, si) {
+      var tr = document.createElement('div');
+      tr.style.cssText = 'display:grid;grid-template-columns:'+COL+';padding:0 16px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:background 100ms';
+      tr.addEventListener('mouseenter', function(){tr.style.background='rgba(255,255,255,.025)';});
+      tr.addEventListener('mouseleave', function(){tr.style.background='';});
+      function _cell(css, html) {
+        var d = document.createElement('div');
+        d.style.cssText = 'padding:11px 6px;display:flex;align-items:center;'+css;
+        d.innerHTML = html;
+        return d;
+      }
+      // Age
+      tr.appendChild(_cell('font:400 11px Nunito,system-ui;color:#6B7373;white-space:nowrap', row.age));
+      // Rate
+      var rateLines = row.rate.split('\n');
+      tr.appendChild(_cell('flex-direction:column;align-items:flex-start;gap:1px', rateLines.length>1
+        ? '<span style="font:600 11px Nunito,system-ui;color:#FBFBFB">'+rateLines[0]+'</span><span style="font:400 10px Nunito,system-ui;color:#3FC281">'+rateLines[1]+'</span>'
+        : '<span style="font:600 11px Nunito,system-ui;color:#8B939B">'+row.rate+'</span>'));
+      // Fit Score
+      var fitColor = row.fit >= 80 ? '#3FC281' : row.fit >= 50 ? '#FBB303' : '#EB4343';
+      tr.appendChild(_cell('gap:6px',
+        '<span style="font:700 11px Nunito,system-ui;color:'+fitColor+'">'+row.fit+'</span>' +
+        (row.fit >= 80 ? '' : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B7373" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>')));
+      // Distance
+      tr.appendChild(_cell('font:600 11px Nunito,system-ui;color:#DDE3E9;gap:5px',
+        row.dist.toLocaleString('en-US') +
+        (row.fit >= 80 && row.dho===0 ? '<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:rgba(123,203,203,.15);font-size:8px;color:#7BCBCB">?</span>' : '')));
+      // DH-O
+      tr.appendChild(_cell('font:600 11px Nunito,system-ui;color:#DDE3E9', row.dho!=null ? String(row.dho) : ''));
+      // PickUp
+      tr.appendChild(_cell('flex-direction:column;align-items:flex-start;gap:1px',
+        '<span style="font:700 11px Nunito,system-ui;color:#DDE3E9;letter-spacing:.04em;text-transform:uppercase">'+row.pickup+'</span>' +
+        '<span style="font:400 10px Nunito,system-ui;color:#6B7373">'+row.pickDate+'</span>'));
+      // DH-D
+      tr.appendChild(_cell('font:600 11px Nunito,system-ui;color:#DDE3E9', row.dhd!=null ? String(row.dhd) : ''));
+      // DropOff
+      var _dropDotColor = row.verified ? '#27A767' : null;
+      tr.appendChild(_cell('flex-direction:column;align-items:flex-start;gap:1px',
+        '<span style="display:flex;align-items:center;gap:5px;font:700 11px Nunito,system-ui;color:#DDE3E9;letter-spacing:.04em;text-transform:uppercase">'+row.drop+(_dropDotColor?'<span style="width:6px;height:6px;border-radius:50%;background:'+_dropDotColor+';flex-shrink:0"></span>':'')+'</span>' +
+        '<span style="font:400 10px Nunito,system-ui;color:#6B7373">'+row.dropDate+'</span>'));
+      // Specifications
+      tr.appendChild(_cell('font:400 11px Nunito,system-ui;color:#8B939B', row.specs));
+      // Broker
+      tr.appendChild(_cell('flex-direction:column;align-items:flex-start;gap:2px',
+        '<span style="font:600 11px Nunito,system-ui;color:#DDE3E9">'+row.broker+'</span>' +
+        '<span style="display:flex;align-items:center;gap:4px;font:400 10px Nunito,system-ui;color:#6B7373">' + row.phone +
+          '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7373" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.64 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.55 1.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6 6l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16l.18.92z"/></svg>' +
+        '</span>' +
+        (row.verified ? '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(39,167,103,.15);border:1px solid rgba(39,167,103,.3)"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#27A767" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>' : '')));
+      // Powered By
+      tr.appendChild(_cell('font:700 10px Nunito,system-ui;color:#EB4343;letter-spacing:.04em', row.powered
+        ? '<span style="border:1px solid rgba(235,67,67,.3);border-radius:4px;padding:2px 6px">★ '+row.powered+'</span>'
+        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#27A767" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>'));
+      // "Add load" on click
+      tr.setAttribute('data-si', String(si));
+      tr.addEventListener('click', function() {
+        var ld = SAMPLE[parseInt(tr.dataset.si)];
         var _destChanged = false, _cascadeResult = null;
+        var _before, _after, _oldDest;
         if (_slRid !== null && _slLIdx !== null) {
           var tgt = loadsOf(_slRid)[_slLIdx];
           if (tgt) {
-            var _before = _snapStats(_slRid);
-            var _oldDest = tgt.dest;
-            var _revParts = ld.rev.replace(/[$,]/g,'').split(/[–\-]/);
-            var _avgIncome = Math.round((parseFloat(_revParts[0]) + parseFloat(_revParts[1] || _revParts[0])) / 2);
-            tgt.origin = originCity; tgt.dest = ld.dest; tgt.miles = ld.miles;
+            _before = _snapStats(_slRid);
+            _oldDest = tgt.dest;
+            _simBeforeLanes = loadsOf(_slRid).filter(function(l){ return l.status !== 'Delivered' && l.status !== 'Paid' && l.status !== 'Invoiced'; }).map(function(l){ return { origin: l.origin, dest: l.dest, status: l.status }; });
+            var _revParts = (ld.rate || '').replace(/[$,]/g,'').split(/[–\-]/);
+            var _avgIncome = (_revParts[0] && !isNaN(parseFloat(_revParts[0])))
+              ? Math.round((parseFloat(_revParts[0]) + parseFloat(_revParts[1] || _revParts[0])) / 2)
+              : Math.round(ld.dist * 2.8);
+            tgt.origin = originCity; tgt.dest = ld.drop; tgt.miles = ld.dist;
             tgt.income = _avgIncome; tgt.status = 'Booked';
-            if (ld.dest !== _oldDest) { _cascadeResult = _cascadeLane(_slRid, _slLIdx, ld.dest); _destChanged = true; }
-            var _after = _snapStats(_slRid);
+            if (ld.drop !== _oldDest) { _cascadeResult = _cascadeLane(_slRid, _slLIdx, ld.drop); _destChanged = true; }
+            _after = _snapStats(_slRid);
+            _simAfterLanes = loadsOf(_slRid).filter(function(l){ return l.status !== 'Delivered' && l.status !== 'Paid' && l.status !== 'Invoiced'; }).map(function(l){ return { origin: l.origin, dest: l.dest, status: l.status }; });
           }
         }
-        var slEl = document.getElementById('_ef-sl'); if (slEl) slEl.remove();
+        ov.remove();
         _hideLbBar(); _hideLbNotif();
         setState({});
-        _showAddingLoad(function() {
-          if (_destChanged && typeof _before !== 'undefined') {
-            if (_cascadeResult && _cascadeResult.caseB) {
-              _showAdaptingPlan(function() { _showCaseBModal(_slRid, _before, _after, _cascadeResult); });
-            } else if (_cascadeResult && _cascadeResult.deadEnd) {
-              _showAdaptingPlan(function() { _showCaseCModal(_slRid, _cascadeResult.deadCity); });
-            } else {
-              var _opts = { pinnedDest: _pinnedFinalDest[_slRid] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: ld.dest };
-              _showAdaptingPlan(function() { _showRebalanceModal(_before, _after, _opts); });
+        if (window.__EFR_DEV && typeof _before !== 'undefined') {
+          _showAddingLoad(function() {
+            _showScenarioPicker(_slRid, ld.drop, _before, function(caseNum, simCtx) {
+              _showAdaptingPlan(function() { _runSimCase(caseNum, _slRid, _before, simCtx); });
+            }, _oldDest);
+          });
+        } else {
+          _showAddingLoad(function() {
+            if (_destChanged && typeof _before !== 'undefined') {
+              if (_cascadeResult && _cascadeResult.caseB) {
+                _showAdaptingPlan(function() { _showCaseBModal(_slRid, _before, _after, _cascadeResult); });
+              } else if (_cascadeResult && _cascadeResult.deadEnd) {
+                _showAdaptingPlan(function() { _showCaseCModal(_slRid, _cascadeResult.deadCity); });
+              } else {
+                var _opts = { pinnedDest: _pinnedFinalDest[_slRid] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: ld.drop };
+                _showAdaptingPlan(function() { _showRebalanceModal(_before, _after, _opts); });
+              }
             }
-          }
-        });
+          });
+        }
       });
+      tableWrap.appendChild(tr);
     });
-    modal.appendChild(list);
-    ov.appendChild(modal);
+
+    ov.appendChild(tabBar);
+    ov.appendChild(searchBar);
+    ov.appendChild(filtersRow);
+    ov.appendChild(tableWrap);
     document.body.appendChild(ov);
-    ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
-    modal.querySelector('#_ef-sl-x').addEventListener('click', function() { ov.remove(); });
+    ov.querySelector('#_ef-sl-x').addEventListener('click', function() { ov.remove(); });
   }
 
   // When a load is added to lane lIdx and its dest differs from the old dest,
@@ -3587,8 +3864,16 @@ export function initApp() {
     }
     var after = _snapStats(routeId);
     setState({});
-    var _rOpts = { pinnedDest: _pinnedFinalDest[routeId] || null, deadEnd: false, deadCity: null, fromDest: _fromDest, toDest: _toDest };
-    _showAdaptingPlan(function() { _showRebalanceModal(before, after, _rOpts); });
+    if (window.__EFR_DEV) {
+      _showAddingLoad(function() {
+        _showScenarioPicker(routeId, _toDest, before, function(caseNum, simCtx) {
+          _showAdaptingPlan(function() { _runSimCase(caseNum, routeId, before, simCtx); });
+        }, _fromDest);
+      });
+    } else {
+      var _rOpts = { pinnedDest: _pinnedFinalDest[routeId] || null, deadEnd: false, deadCity: null, fromDest: _fromDest, toDest: _toDest };
+      _showAdaptingPlan(function() { _showRebalanceModal(before, after, _rOpts); });
+    }
   }
 
   // ── Case B: plan doesn't naturally reach pinned destination ─────────────
@@ -3845,6 +4130,517 @@ export function initApp() {
     // No backdrop click — user must choose
   }
 
+  // ── Dev simulation helpers ───────────────────────────────────────────────
+  function _mockSnapGood(base) {
+    var newIncome = Math.round(base.income * 1.18);
+    var newMiles  = Math.round(base.miles  * 0.88);
+    return {
+      income: newIncome, miles: newMiles,
+      days:   Math.max(1, base.days - 1),
+      rpm:    newMiles > 0 ? newIncome / newMiles : 0,
+      cost:   Math.round(newMiles * 2.4),
+      profit: Math.round(newIncome - newMiles * 2.4)
+    };
+  }
+  function _mockSnapBad(base, dhMiles) {
+    dhMiles = dhMiles || 0;
+    var newIncome = Math.round(base.income * 0.71);
+    var newMiles  = Math.round(base.miles  * 1.32) + dhMiles;
+    return {
+      income: newIncome, miles: newMiles,
+      days:   base.days + 2,
+      rpm:    newMiles > 0 ? newIncome / newMiles : 0,
+      cost:   Math.round(newMiles * 2.4),
+      profit: Math.round(newIncome - newMiles * 2.4)
+    };
+  }
+  function _mockSnapBadPinned(base) {
+    // Plan reaches pinned dest but worsens metrics (slightly less bad than best-elsewhere)
+    var newIncome = Math.round(base.income * 0.80);
+    var newMiles  = Math.round(base.miles  * 1.18);
+    return {
+      income: newIncome, miles: newMiles,
+      days:   base.days + 1,
+      rpm:    newMiles > 0 ? newIncome / newMiles : 0,
+      cost:   Math.round(newMiles * 2.4),
+      profit: Math.round(newIncome - newMiles * 2.4)
+    };
+  }
+
+  function _clearDownstreamUnbooked(rId) {
+    for (var i = LOADS.length - 1; i >= 0; i--) {
+      if (LOADS[i].route === rId && LOADS[i].status === 'Unbooked') LOADS.splice(i, 1);
+    }
+    setState({});
+  }
+
+  function _warnToast(msg) {
+    var t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:9999;background:#1A2732;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 18px;font:600 12px Nunito,system-ui;color:#FBFBFB;box-shadow:0 8px 32px rgba(0,0,0,.7);pointer-events:none';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function(){ t.style.transition='opacity .4s'; t.style.opacity='0'; setTimeout(function(){ t.remove(); }, 400); }, 2800);
+  }
+
+  function _runSimCase(caseNum, rId, snapBefore, simCtx) {
+    _simReturnCtx = { rId: rId, snapBefore: snapBefore, toDest: simCtx.toDest || null, fromDest: simCtx.fromDest || null };
+    var _fd = simCtx.fromDest || null;
+    var _td = simCtx.toDest   || null;
+    switch (caseNum) {
+      case 1: {
+        var good = _mockSnapGood(snapBefore);
+        var c1Routes = [
+          { id:'before', label:'Initial plan',      lanes:_simBeforeLanes||[], snap:snapBefore, discarded:true, badge:'Discarded' },
+          { id:'after',  label:'Recommended plan',  lanes:_simAfterLanes||[], snap:good, accent:'#3FC281', badge:'Best plan', tags:['Best profit','Best connectivity'] }
+        ];
+        if (simCtx.hasPinned && simCtx.pinnedCity) {
+          c1Routes[1].tags.push('Reaches '+simCtx.pinnedCity.split(',')[0]);
+        }
+        _showRouteReviewModal(1, rId, snapBefore, c1Routes, { fromDest:_fd, toDest:_td, hasPinned:simCtx.hasPinned });
+        break;
+      }
+      case 2: {
+        var badBest  = _mockSnapBad(snapBefore, 0);
+        var _rOrig2 = (_simBeforeLanes && _simBeforeLanes.length) ? _simBeforeLanes[0].origin : (_simAfterLanes && _simAfterLanes.length ? _simAfterLanes[0].origin : '');
+        var _altSeq2 = (_simAfterLanes && _simAfterLanes.length)
+          ? (function(){ var s=[_rOrig2].concat(_simAfterLanes.map(function(l){return l.dest;})); var i=s.indexOf(_td); return i>-1?s.slice(0,i+1):(_td?s.concat([_td]):s); })()
+          : (_rOrig2&&_td?[_rOrig2,_td]:[]);
+        var c2Routes = [
+          { id:'before', label:'Initial plan',    lanes:_simBeforeLanes||[], snap:snapBefore, discarded:true, badge:'Discarded' },
+          { id:'after',  label:'Alternative plan', lanes:_simAfterLanes||[], snap:badBest, accent:'#FBB303', badge:'', tags:[], displaySeq:_altSeq2 }
+        ];
+        if (simCtx.hasPinned && simCtx.pinnedCity) {
+          var badPinned = _mockSnapBadPinned(snapBefore);
+          var _pinOrig2 = (_simBeforeLanes && _simBeforeLanes.length) ? _simBeforeLanes[0].origin : (_fd||'');
+          c2Routes.push({ id:'pinned', label:'Reaches '+simCtx.pinnedCity.split(',')[0], lanes:[], snap:badPinned, accent:'#7BCBCB', badge:'Target destination', tags:[], displaySeq:[_pinOrig2, simCtx.pinnedCity] });
+        }
+        _showRouteReviewModal(2, rId, snapBefore, c2Routes, { hasPinned:simCtx.hasPinned, pinnedCity:simCtx.pinnedCity, dh:false, fromDest:_fd, toDest:_td });
+        break;
+      }
+      case 3: {
+        var dhMi = simCtx.ralloInfo ? simCtx.ralloInfo.miles : 185;
+        var badBest3   = _mockSnapBad(snapBefore, dhMi);
+        // dhOrigin = last booked lane's dest (where the truck actually is when DH begins)
+        var _dhDep3 = (function(){
+          var ls = _simAfterLanes||[];
+          for (var i = ls.length-1; i >= 0; i--) { if (ls[i].status === 'Booked') return ls[i].dest; }
+          return ls.length ? ls[0].origin : (_fd||'');
+        })();
+        var _rOrig3 = (_simBeforeLanes && _simBeforeLanes.length) ? _simBeforeLanes[0].origin : (_simAfterLanes && _simAfterLanes.length ? _simAfterLanes[0].origin : '');
+        var _altSeq3 = (_simAfterLanes && _simAfterLanes.length)
+          ? (function(){ var s=[_rOrig3].concat(_simAfterLanes.map(function(l){return l.dest;})); var i=s.indexOf(_td); return i>-1?s.slice(0,i+1):(_td?s.concat([_td]):s); })()
+          : (_rOrig3&&_td?[_rOrig3,_td]:[]);
+        var c3Routes = [
+          { id:'before', label:'Initial plan',    lanes:_simBeforeLanes||[], snap:snapBefore, discarded:true, badge:'Discarded' },
+          { id:'after',  label:'Alternative plan', lanes:_simAfterLanes||[], snap:badBest3, accent:'#FBB303', badge:'Requires deadhead', tags:[], dhOrigin:_dhDep3, dhMiles:dhMi, displaySeq:_altSeq3 }
+        ];
+        if (simCtx.hasPinned && simCtx.pinnedCity) {
+          var badPinned3 = _mockSnapBadPinned(snapBefore);
+          var _pinOrig3 = (_simBeforeLanes && _simBeforeLanes.length) ? _simBeforeLanes[0].origin : (_fd||'');
+          c3Routes.push({ id:'pinned', label:'Reaches '+simCtx.pinnedCity.split(',')[0], lanes:[], snap:badPinned3, accent:'#7BCBCB', badge:'Target destination', tags:[], displaySeq:[_pinOrig3, simCtx.pinnedCity] });
+        }
+        _showRouteReviewModal(3, rId, snapBefore, c3Routes, { hasPinned:simCtx.hasPinned, pinnedCity:simCtx.pinnedCity, dh:true, dhHub:simCtx.ralloInfo?simCtx.ralloInfo.hub:'Hub cercano', dhMiles:dhMi, fromDest:_fd, toDest:_td });
+        break;
+      }
+      case 4:
+        _showCaseNoRouteModal(rId, _td);
+        break;
+    }
+  }
+
+  // ── Case 2/3: plan found but worsens ────────────────────────────────────
+  function _showCaseWorsenModal(rId, before, afterBest, afterPinned, opts) {
+    var ex = document.getElementById('_ef-worsen'); if (ex) ex.remove();
+    var F  = 'Nunito,system-ui';
+    var MN = '\'JetBrains Mono\',monospace';
+    opts = opts || {};
+    var hasPinned = opts.hasPinned && afterPinned;
+    var pinnedName = hasPinned ? (opts.pinnedCity||'').split(',')[0] : '';
+    // Mock "best plan" endpoint city for display
+    var bestEndCity = 'Pittsburgh, PA';
+    var bestEndDist = hasPinned ? '185 mi from '+pinnedName : '';
+
+    var fmt$ = function(n){ return '$'+Math.round(n).toLocaleString('en-US'); };
+    var fmtR = function(n){ return '$'+n.toFixed(2)+'/mi'; };
+    var pctOf = function(bv, av){ if (!bv && bv!==0) return '—'; if (bv===0 && av===0) return '—'; if (bv===0) return '—'; var d=(av-bv)/Math.abs(bv)*100; return (d>=0?'+':'')+d.toFixed(1)+'%'; };
+    var pctClr = function(bv, av, higher){ if (av===bv) return 'rgba(255,255,255,.35)'; return (higher ? av>bv : av<bv) ? '#3FC281' : '#EB4343'; };
+
+    var ov = document.createElement('div'); ov.id = '_ef-worsen';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.76);display:flex;align-items:center;justify-content:center';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#111D25;border:1px solid rgba(255,255,255,.1);border-radius:18px;width:490px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 28px 80px rgba(0,0,0,.95)';
+
+    // ── Back nav ──
+    var wNavTop = document.createElement('div');
+    wNavTop.style.cssText = 'padding:12px 18px 0;flex-shrink:0';
+    var bRetW = document.createElement('button');
+    bRetW.style.cssText = 'display:flex;align-items:center;gap:5px;background:none;border:none;padding:3px 0;color:#8B939B;font:700 11px '+F+';cursor:pointer;letter-spacing:.01em';
+    bRetW.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>Return to simulation';
+    bRetW.onclick = function() {
+      ov.remove();
+      if (_simReturnCtx) {
+        _showScenarioPicker(_simReturnCtx.rId, _simReturnCtx.toDest, _simReturnCtx.snapBefore, function(cn, sc) {
+          _showAdaptingPlan(function() { _runSimCase(cn, _simReturnCtx.rId, _simReturnCtx.snapBefore, sc); });
+        }, _simReturnCtx.fromDest);
+      }
+    };
+    wNavTop.appendChild(bRetW);
+    modal.appendChild(wNavTop);
+
+    // ── Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:12px 22px 16px;flex-shrink:0';
+    var _fromStr = opts.fromDest ? opts.fromDest.split(',')[0] : null;
+    var _toStr   = opts.toDest   ? opts.toDest.split(',')[0]   : null;
+    var titleText = 'Review Updated Plan';
+    var subText   = hasPinned
+      ? ((_fromStr && _toStr)
+          ? 'The lane destination changed from <strong style="color:#FBFBFB">'+_fromStr+'</strong> to <strong style="color:#FBFBFB">'+_toStr+'</strong>. The plan no longer reaches <strong style="color:#7BCBCB">'+pinnedName+'</strong>. Select an option below.'
+          : 'Adding this load shifted the route away from your target destination. Select an option below.')
+      : (_fromStr && _toStr
+          ? 'The lane destination changed from <strong style="color:#FBFBFB">'+_fromStr+'</strong> to <strong style="color:#FBFBFB">'+_toStr+'</strong>. This is the best available plan given the new destination. Accept or adjust manually.'
+          : 'This is the best available plan given the new destination. Accept or adjust manually.');
+    hdr.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:rgba(251,179,3,.12);border:1px solid rgba(251,179,3,.3);display:grid;place-items:center;flex-shrink:0">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FBB303" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+        '</div>' +
+        '<div style="font:800 15px '+F+';color:#FBFBFB;letter-spacing:-.015em">'+titleText+'</div>' +
+      '</div>' +
+      '<div style="font:400 12px '+F+';color:#8B939B;line-height:1.5">'+subText+'</div>';
+    modal.appendChild(hdr);
+
+    // ── DH banner
+    if (opts.dh) {
+      var dhBanner = document.createElement('div');
+      dhBanner.style.cssText = 'padding:9px 22px;background:rgba(245,166,35,.05);border-top:1px solid rgba(245,166,35,.12);border-bottom:1px solid rgba(245,166,35,.12);display:flex;align-items:center;gap:9px;flex-shrink:0';
+      dhBanner.innerHTML =
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F5A623" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+        '<span style="font:400 11px '+F+';color:#F5A623">Requires <strong>'+(opts.dhMiles||185)+' mi deadhead</strong> repositioning to '+(opts.dhHub||'simulated hub')+' to restore connectivity.</span>';
+      modal.appendChild(dhBanner);
+    }
+
+    // ── Route comparison diagram ──
+    if (_simBeforeLanes && _simAfterLanes) {
+      var _wSeqWrap = document.createElement('div');
+      _wSeqWrap.style.cssText = 'background:#080F15;border-bottom:1px solid rgba(255,255,255,.07);overflow-x:auto;overflow-y:hidden;flex-shrink:0;padding:14px 0 10px';
+      _wSeqWrap.innerHTML = _buildRouteCompSvg(_simBeforeLanes, _simAfterLanes, '#FBB303');
+      modal.appendChild(_wSeqWrap);
+    }
+
+    var body = document.createElement('div');
+    body.style.cssText = 'overflow-y:auto;flex:1;padding:0 22px';
+
+    // ── Option selector (only when hasPinned)
+    var _selectedAfter = hasPinned ? afterPinned : afterBest;
+    var _selectedCity  = hasPinned ? pinnedName : 'Best plan';
+    var _selectedPinned = hasPinned; // tracks which option is active
+
+    if (hasPinned) {
+      var optRow = document.createElement('div');
+      optRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 0 14px';
+
+      function _optCard(label, city, sub, isPinned, isSelected) {
+        var c = document.createElement('div');
+        var selColor = isPinned ? '#FBB303' : 'rgba(255,255,255,.5)';
+        c.style.cssText = 'border:1.5px solid '+(isSelected?(isPinned?'#FBB303':'rgba(255,255,255,.35)'):'rgba(255,255,255,.08)')+';border-radius:12px;padding:12px 14px;cursor:pointer;background:'+(isSelected?(isPinned?'rgba(251,179,3,.06)':'rgba(255,255,255,.04)'):'transparent')+';transition:all .15s;position:relative';
+        // radio dot
+        var dotOuter = 'width:14px;height:14px;border-radius:50%;border:1.5px solid '+(isSelected?selColor:'rgba(255,255,255,.2)')+';display:grid;place-items:center;flex-shrink:0;position:absolute;top:12px;right:12px;';
+        var dotInner = isSelected ? '<div style="width:7px;height:7px;border-radius:50%;background:'+selColor+'"></div>' : '';
+        c.innerHTML =
+          '<div style="'+dotOuter+'">'+dotInner+'</div>' +
+          '<div style="font:600 9px '+F+';letter-spacing:.07em;text-transform:uppercase;color:'+(isSelected?selColor:'rgba(255,255,255,.3)')+';margin-bottom:6px">'+label+'</div>' +
+          '<div style="font:800 14px '+F+';color:'+(isSelected?'#FBFBFB':'rgba(255,255,255,.4)')+';margin-bottom:'+(sub?'4px':'0')+'">'+city+'</div>' +
+          (sub?'<div style="font:400 11px '+F+';color:'+(isSelected?(isPinned?'#FBB303':'#8B939B'):'rgba(255,255,255,.25)')+'">'+sub+'</div>':'');
+        return c;
+      }
+
+      var cardBest   = _optCard('BEST PLAN ENDS AT',        bestEndCity, bestEndDist, false, !_selectedPinned);
+      var cardPinned = _optCard('YOUR TARGET DESTINATION',  pinnedName,  'Worsens metrics', true, _selectedPinned);
+
+      function _refreshCards() {
+        optRow.innerHTML = '';
+        var cb = _optCard('BEST PLAN ENDS AT',       bestEndCity, bestEndDist, false, !_selectedPinned);
+        var cp = _optCard('YOUR TARGET DESTINATION', pinnedName, 'Worsens metrics', true, _selectedPinned);
+        cb.addEventListener('click', function(){ _selectedPinned = false; _selectedAfter = afterBest; _selectedCity = bestEndCity.split(',')[0]; _refreshCards(); _rebuildTable(); });
+        cp.addEventListener('click', function(){ _selectedPinned = true;  _selectedAfter = afterPinned; _selectedCity = pinnedName; _refreshCards(); _rebuildTable(); });
+        optRow.appendChild(cb); optRow.appendChild(cp);
+      }
+      cardBest.addEventListener('click',   function(){ _selectedPinned = false; _selectedAfter = afterBest;   _selectedCity = bestEndCity.split(',')[0]; _refreshCards(); _rebuildTable(); });
+      cardPinned.addEventListener('click', function(){ _selectedPinned = true;  _selectedAfter = afterPinned; _selectedCity = pinnedName; _refreshCards(); _rebuildTable(); });
+      optRow.appendChild(cardBest); optRow.appendChild(cardPinned);
+      body.appendChild(optRow);
+    } else {
+      body.style.paddingTop = '16px';
+    }
+
+    // ── Metric table (dynamic)
+    var tableWrap = document.createElement('div');
+    tableWrap.style.cssText = 'padding-bottom:16px';
+
+    function _rebuildTable() {
+      tableWrap.innerHTML = '';
+      var colHdr = document.createElement('div');
+      colHdr.style.cssText = 'display:grid;grid-template-columns:1fr 100px 120px 72px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.07)';
+      ['Metric','Before','After','Change'].forEach(function(h){
+        var s = document.createElement('span');
+        s.style.cssText = 'font:700 9px '+F+';letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2)';
+        s.textContent = h; colHdr.appendChild(s);
+      });
+      tableWrap.appendChild(colHdr);
+
+      function trow(lbl, bv, av, bFmt, aFmt, hi) {
+        var d = document.createElement('div');
+        d.style.cssText = 'display:grid;grid-template-columns:1fr 100px 120px 72px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04)';
+        var chg = pctOf(bv, av);
+        d.innerHTML =
+          '<span style="font:500 12px '+F+';color:#8B939B">'+lbl+'</span>' +
+          '<span style="font:500 12px '+MN+';color:rgba(255,255,255,.28);text-decoration:line-through">'+bFmt+'</span>' +
+          '<span style="font:800 12px '+MN+';color:'+(bv!==av?'#FBFBFB':'rgba(255,255,255,.4)')+'">'+aFmt+'</span>' +
+          '<span style="font:700 11px '+F+';color:'+pctClr(bv,av,hi)+'">'+chg+'</span>';
+        tableWrap.appendChild(d);
+      }
+
+      trow('Income',        before.income, _selectedAfter.income, fmt$(before.income), fmt$(_selectedAfter.income), true);
+      trow('Cost',          before.cost,   _selectedAfter.cost,   fmt$(before.cost),   fmt$(_selectedAfter.cost),   false);
+      trow('Profit',        before.profit, _selectedAfter.profit, fmt$(before.profit), fmt$(_selectedAfter.profit), true);
+      trow('Rate per mile', before.rpm,    _selectedAfter.rpm,    fmtR(before.rpm),    fmtR(_selectedAfter.rpm),    true);
+      trow('Distance',      before.miles,  _selectedAfter.miles,  before.miles.toLocaleString('en-US')+' mi', _selectedAfter.miles.toLocaleString('en-US')+' mi', false);
+      trow('Duration',      before.days,   _selectedAfter.days,   before.days+' d',    _selectedAfter.days+' d',   false);
+    }
+    _rebuildTable();
+    body.appendChild(tableWrap);
+    modal.appendChild(body);
+
+    // ── Footer
+    var ftr = document.createElement('div');
+    ftr.style.cssText = 'padding:14px 22px 20px;border-top:1px solid rgba(255,255,255,.07);display:flex;gap:10px;flex-shrink:0';
+
+    var bMan = document.createElement('button');
+    bMan.style.cssText = 'flex:1;padding:11px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#6B7373;font:700 13px '+F+';cursor:pointer';
+    bMan.textContent = 'Adjust manually';
+    bMan.onclick = function() {
+      ov.remove();
+      _clearDownstreamUnbooked(rId);
+    };
+
+    var bAcc = document.createElement('button');
+    bAcc.style.cssText = 'flex:1;padding:11px;background:#27A767;border:none;border-radius:12px;color:#0B131B;font:800 13px '+F+';cursor:pointer';
+    bAcc.textContent = 'Accept plan';
+    bAcc.onclick = function() {
+      if (hasPinned && !_selectedPinned) { delete _pinnedFinalDest[rId]; }
+      ov.remove();
+    };
+
+    ftr.appendChild(bMan); ftr.appendChild(bAcc);
+    modal.appendChild(ftr);
+    ov.appendChild(modal);
+    document.body.appendChild(ov);
+  }
+
+  // ── Case 4: no route anywhere ────────────────────────────────────────────
+  function _showCaseNoRouteModal(rId, originCity) {
+    var ex = document.getElementById('_ef-noroute'); if (ex) ex.remove();
+    var F = 'Nunito,system-ui';
+    var ov = document.createElement('div'); ov.id = '_ef-noroute';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.76);display:flex;align-items:center;justify-content:center';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#0E1820;border:1px solid rgba(224,82,82,.28);border-radius:14px;width:420px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
+    modal.innerHTML =
+      '<div style="padding:24px 24px 0">' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:rgba(224,82,82,.1);border:1px solid rgba(224,82,82,.3);display:grid;place-items:center;margin-bottom:14px">' +
+          '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#E05252" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>' +
+        '</div>' +
+        '<div style="font:800 14.5px '+F+';color:#FBFBFB;margin-bottom:7px">No route available</div>' +
+        '<div style="font:400 12px '+F+';color:#8B939B;line-height:1.65;margin-bottom:18px">The system found no viable plan from the new destination — no direct route or repositioning hub within 300 mi. The plan must be built lane by lane.</div>' +
+        '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:12px 14px;font:400 11px '+F+';color:#6B7373;line-height:1.55;margin-bottom:20px">' +
+          'Use the destination opportunities tool below to search for available loads from this point.' +
+        '</div>' +
+      '</div>' +
+      '<div style="padding:0 24px 20px">' +
+        '<button id="_ef-noroute-ok" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#6B7373;font:700 12px '+F+';cursor:pointer">Got it</button>' +
+      '</div>';
+    var bRetNR = document.createElement('button');
+    bRetNR.style.cssText = 'position:absolute;top:16px;left:16px;display:flex;align-items:center;gap:5px;background:rgba(8,15,21,.82);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:6px 11px;color:#8B939B;font:700 11px '+F+';cursor:pointer;white-space:nowrap;backdrop-filter:blur(6px);z-index:1';
+    bRetNR.innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"></polyline></svg>Simulation';
+    bRetNR.onmouseenter = function(){ bRetNR.style.color='#FBFBFB'; bRetNR.style.borderColor='rgba(255,255,255,.22)'; };
+    bRetNR.onmouseleave = function(){ bRetNR.style.color='#8B939B'; bRetNR.style.borderColor='rgba(255,255,255,.1)'; };
+    bRetNR.onclick = function(){
+      ov.remove();
+      if (_simReturnCtx) {
+        _showScenarioPicker(_simReturnCtx.rId, _simReturnCtx.toDest, _simReturnCtx.snapBefore, function(cn, sc){
+          _showAdaptingPlan(function(){ _runSimCase(cn, _simReturnCtx.rId, _simReturnCtx.snapBefore, sc); });
+        }, _simReturnCtx.fromDest);
+      }
+    };
+    ov.appendChild(modal);
+    ov.appendChild(bRetNR);
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(!modal.contains(e.target) && !bRetNR.contains(e.target)) ov.remove(); });
+    modal.querySelector('#_ef-noroute-ok').addEventListener('click', function(){
+      ov.remove();
+      _clearDownstreamUnbooked(rId);
+    });
+  }
+
+  // ── Dev scenario picker ──────────────────────────────────────────────────
+  function _showScenarioPicker(rId, toDest, snapBefore, onSelect, fromDest) {
+    var ex = document.getElementById('_ef-sim'); if (ex) ex.remove();
+    var F  = 'Nunito,system-ui';
+    var MN = '\'JetBrains Mono\',monospace';
+
+    var _hasPinned  = !!_pinnedFinalDest[rId];
+    var _pinnedCity = _pinnedFinalDest[rId] || null;
+    var _hasRoute   = !!(_NEXT_DEST && _NEXT_DEST[toDest]);
+    var _ralloInfo  = typeof _ralloHub === 'function' ? _ralloHub(toDest) : null;
+    var _hasRallo   = !!_ralloInfo;
+
+    var ov = document.createElement('div'); ov.id = '_ef-sim';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9025;background:rgba(6,12,17,.76);display:flex;align-items:center;justify-content:center';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#0E1820;border:1.5px solid rgba(245,166,35,.45);border-radius:14px;width:500px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:16px 20px 12px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0';
+    hdr.innerHTML =
+      '<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">' +
+        '<div style="background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);border-radius:5px;padding:2px 8px;font:700 9.5px '+F+';color:#F5A623;letter-spacing:.07em;text-transform:uppercase">🧪 Dev</div>' +
+        '<div style="font:800 13px '+F+';color:#FBFBFB">Simulación de escenario — no es producción</div>' +
+      '</div>' +
+      '<div style="font:400 11px '+F+';color:#6B7373">Escoge qué caso quieres testear. No ejecuta lógica real.</div>';
+    modal.appendChild(hdr);
+
+    // Context
+    var ctx = document.createElement('div');
+    ctx.style.cssText = 'padding:10px 20px;background:rgba(255,255,255,.015);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 20px';
+    function cRow(lbl, val, col) {
+      var d = document.createElement('div'); d.style.cssText = 'display:flex;flex-direction:column;gap:1px';
+      d.innerHTML = '<span style="font:600 9px '+F+';letter-spacing:.07em;text-transform:uppercase;color:#2A3A47">'+lbl+'</span><span style="font:600 11.5px '+MN+';color:'+(col||'#8B939B')+'">'+val+'</span>';
+      ctx.appendChild(d);
+    }
+    cRow('Nuevo destino', (toDest||'—').split(',')[0]);
+    cRow('Destino fijado', _hasPinned ? (_pinnedCity||'').split(',')[0] : 'Ninguno', _hasPinned ? '#7BCBCB' : '#2A3A47');
+    cRow('Ruta de salida', _hasRoute ? '→ '+(_NEXT_DEST[toDest]||{dest:'?'}).dest.split(',')[0] : 'No hay', _hasRoute ? '#3FC281' : '#E05252');
+    cRow('Hub cercano', _hasRallo ? (_ralloInfo.hub||'').split(',')[0]+' ('+_ralloInfo.miles+' mi)' : 'No hay', _hasRallo ? '#F5A623' : '#2A3A47');
+    modal.appendChild(ctx);
+
+    // Case cards
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:12px 20px 16px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1';
+
+    // Case 1 and 4 — simple clickable cards
+    function _simpleCard(num, color, bg, border, label, desc, sub, onClick) {
+      var card = document.createElement('div');
+      card.style.cssText = 'border:1px solid '+border+';border-radius:10px;padding:12px 14px;cursor:pointer;background:'+bg+';transition:background .12s';
+      card.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+          '<span style="font:700 9px '+MN+';letter-spacing:.07em;color:'+color+'">CASO '+num+'</span>' +
+          '<span style="font:700 12px '+F+';color:#FBFBFB">'+label+'</span>' +
+        '</div>' +
+        '<div style="font:400 11px '+F+';color:#7A8FA0;line-height:1.55'+(sub?';margin-bottom:4px':'')+'">' + desc + '</div>' +
+        (sub ? '<div style="font:600 10.5px '+F+';color:'+color+'">'+sub+'</div>' : '');
+      card.addEventListener('mouseenter', function(){ card.style.background = bg.replace('.07','.13'); });
+      card.addEventListener('mouseleave', function(){ card.style.background = bg; });
+      card.addEventListener('click', onClick);
+      return card;
+    }
+
+    // Case 2/3 — split card with two sub-options
+    function _splitCard(num, color, bg, border, label, desc, dhSub, onClickNoPin, onClickPin, pinName) {
+      var card = document.createElement('div');
+      card.style.cssText = 'border:1px solid '+border+';border-radius:10px;padding:12px 14px;background:'+bg;
+      card.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+          '<span style="font:700 9px '+MN+';letter-spacing:.07em;color:'+color+'">CASO '+num+'</span>' +
+          '<span style="font:700 12px '+F+';color:#FBFBFB">'+label+'</span>' +
+        '</div>' +
+        '<div style="font:400 11px '+F+';color:#7A8FA0;line-height:1.55;margin-bottom:'+(dhSub?'4px':'10px')+'">'+desc+'</div>' +
+        (dhSub ? '<div style="font:600 10.5px '+F+';color:'+color+';margin-bottom:10px">'+dhSub+'</div>' : '');
+      var btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:6px';
+      var b1 = document.createElement('button');
+      b1.style.cssText = 'flex:1;padding:7px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#FBFBFB;font:700 11px '+F+';cursor:pointer;text-align:left';
+      b1.innerHTML = '<div style="font:600 9px '+F+';color:#6B7373;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px">Lo mejor posible</div>Accept plan + lane a lane';
+      b1.addEventListener('mouseenter', function(){ b1.style.background='rgba(255,255,255,.09)'; });
+      b1.addEventListener('mouseleave', function(){ b1.style.background='rgba(255,255,255,.05)'; });
+      b1.addEventListener('click', function(e){ e.stopPropagation(); ov.remove(); onClickNoPin(); });
+      var b2 = document.createElement('button');
+      b2.style.cssText = 'flex:1;padding:7px 10px;background:rgba(123,203,203,.06);border:1px solid rgba(123,203,203,.25);border-radius:8px;color:#FBFBFB;font:700 11px '+F+';cursor:pointer;text-align:left';
+      b2.innerHTML = '<div style="font:600 9px '+F+';color:#7BCBCB;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px">Mantener '+(pinName||'destino')+'</div>Opción A + Opción B + lane a lane';
+      b2.addEventListener('mouseenter', function(){ b2.style.background='rgba(123,203,203,.12)'; });
+      b2.addEventListener('mouseleave', function(){ b2.style.background='rgba(123,203,203,.06)'; });
+      b2.addEventListener('click', function(e){ e.stopPropagation(); ov.remove(); onClickPin(); });
+      btns.appendChild(b1); btns.appendChild(b2);
+      card.appendChild(btns);
+      return card;
+    }
+
+    var simCtxBase = { pinnedCity:_pinnedCity, hasRallo:_hasRallo, ralloInfo:_ralloInfo, fromDest:fromDest||null, toDest:toDest||null };
+    var pinnedName = _hasPinned ? (_pinnedCity||'').split(',')[0] : '';
+
+    // Caso 1
+    body.appendChild(_simpleCard(1,'#3FC281','rgba(63,194,129,.07)','rgba(63,194,129,.28)',
+      'Plan mantiene métricas',
+      'El sistema encontró una ruta. Income, RPM y profit no empeoran considerablemente.',
+      'Sistema escoge la mejor ruta disponible.',
+      function(){ ov.remove(); onSelect(1, Object.assign({hasPinned:_hasPinned}, simCtxBase)); }
+    ));
+
+    // Caso 2 — simple if no pinned, split if pinned
+    if (!_hasPinned) {
+      body.appendChild(_simpleCard(2,'#F5A623','rgba(245,166,35,.07)','rgba(245,166,35,.28)',
+        'Ruta encontrada — empeora (sin DH)',
+        'El sistema encontró continuidad pero las métricas caen. No hay deadhead inicial.',
+        'Acepta el plan o ajusta lane a lane.',
+        function(){ ov.remove(); onSelect(2, Object.assign({hasPinned:false}, simCtxBase)); }
+      ));
+    } else {
+      body.appendChild(_splitCard(2,'#F5A623','rgba(245,166,35,.07)','rgba(245,166,35,.28)',
+        'Ruta encontrada — empeora (sin DH)',
+        'El sistema encontró continuidad pero las métricas caen. No hay deadhead inicial.',
+        null,
+        function(){ onSelect(2, Object.assign({hasPinned:false}, simCtxBase)); },
+        function(){ onSelect(2, Object.assign({hasPinned:true}, simCtxBase)); },
+        pinnedName
+      ));
+    }
+
+    // Caso 3 — same logic
+    var dhSub3 = _hasRallo ? 'DH a '+(_ralloInfo.hub||'').split(',')[0]+' ('+_ralloInfo.miles+' mi)' : 'DH ficticio — 185 mi a hub simulado';
+    if (!_hasPinned) {
+      body.appendChild(_simpleCard(3,'#F5A623','rgba(245,166,35,.07)','rgba(245,166,35,.28)',
+        'Ruta encontrada — empeora (con DH)',
+        'Igual que Caso 2 pero con reposicionamiento deadhead inicial.',
+        dhSub3,
+        function(){ ov.remove(); onSelect(3, Object.assign({hasPinned:false}, simCtxBase)); }
+      ));
+    } else {
+      body.appendChild(_splitCard(3,'#F5A623','rgba(245,166,35,.07)','rgba(245,166,35,.28)',
+        'Ruta encontrada — empeora (con DH)',
+        'Igual que Caso 2 pero con reposicionamiento deadhead inicial.',
+        dhSub3,
+        function(){ onSelect(3, Object.assign({hasPinned:false}, simCtxBase)); },
+        function(){ onSelect(3, Object.assign({hasPinned:true}, simCtxBase)); },
+        pinnedName
+      ));
+    }
+
+    // Caso 4
+    body.appendChild(_simpleCard(4,'#E05252','rgba(224,82,82,.07)','rgba(224,82,82,.28)',
+      'No route available — manual adjust',
+      'The system found no viable plan. Route must be built lane by lane.',
+      'Clears downstream Unbooked lanes.',
+      function(){ ov.remove(); onSelect(4, Object.assign({hasPinned:_hasPinned}, simCtxBase)); }
+    ));
+
+    modal.appendChild(body);
+    ov.appendChild(modal);
+    document.body.appendChild(ov);
+  }
+
   // ── "Adding the load" mini loading modal ────────────────────────────────
   function _showAddingLoad(then) {
     var ex = document.getElementById('_ef-adding-load'); if (ex) ex.remove();
@@ -3928,6 +4724,689 @@ export function initApp() {
     setTimeout(function() { ov.remove(); if (then) then(); }, 950);
   }
 
+  // ── Route comparison diagram — same visual language as Route Connections ──
+  function _buildRouteCompSvg(beforeLanes, afterLanes, afterAccent) {
+    afterAccent = afterAccent || '#3FC281';
+    var svgNs = 'http://www.w3.org/2000/svg';
+    function seqCities(lanes) {
+      var n = [];
+      if (!lanes || !lanes.length) return n;
+      lanes.forEach(function(l) { var c = l.origin || ''; if (!n.length || n[n.length-1] !== c) n.push(c); });
+      var lc = lanes[lanes.length-1].dest || '';
+      if (!n.length || n[n.length-1] !== lc) n.push(lc);
+      return n;
+    }
+    var bSeq = seqCities(beforeLanes), aSeq = seqCities(afterLanes);
+    var commonLen = 0;
+    while (commonLen < bSeq.length && commonLen < aSeq.length && bSeq[commonLen] === aSeq[commonLen]) commonLen++;
+
+    var maxSteps = Math.max(bSeq.length, aSeq.length) - 1;
+    if (maxSteps < 0) maxSteps = 0;
+
+    // Fit columns to the modal (~470px usable), minimum 90px each so nodes stay legible
+    var RC_LEFT = 40, RC_R = 20, RC_GAP = 70, RC_TOP = 44;
+    var MODAL_W = 470;
+    var RC_COL_W = Math.max(90, Math.floor((MODAL_W - RC_LEFT * 2) / (maxSteps + 1)));
+
+    var colNodes = [];
+    for (var _s = 0; _s <= maxSteps; _s++) colNodes.push([]);
+    bSeq.forEach(function(c, si) { if (si <= maxSteps && colNodes[si].indexOf(c) < 0) colNodes[si].push(c); });
+    aSeq.forEach(function(c, si) { if (si <= maxSteps && colNodes[si].indexOf(c) < 0) colNodes[si].push(c); });
+
+    var maxColH = 0;
+    colNodes.forEach(function(col) { if (col.length > maxColH) maxColH = col.length; });
+    if (maxColH < 1) maxColH = 1;
+
+    var nodeMap = {};
+    colNodes.forEach(function(col, si) {
+      var totalH = (col.length - 1) * RC_GAP;
+      var startY = RC_TOP + RC_R + (maxColH * RC_GAP - totalH) / 2;
+      col.forEach(function(city, ni) {
+        nodeMap[city + '|' + si] = { cx: RC_LEFT + si * RC_COL_W + RC_COL_W / 2, cy: startY + ni * RC_GAP, city: city, step: si };
+      });
+    });
+
+    var svgW = RC_LEFT + (maxSteps + 1) * RC_COL_W + RC_LEFT;
+    var svgH = RC_TOP + maxColH * RC_GAP + RC_R + 36;
+
+    // Natural dimensions — container handles overflow-x scroll so nodes stay full size
+    var svg = document.createElementNS(svgNs, 'svg');
+    svg.setAttribute('width', svgW);
+    svg.setAttribute('height', svgH);
+    svg.style.cssText = 'display:block';
+
+    // Column headers + dividers
+    for (var _ch = 0; _ch <= maxSteps; _ch++) {
+      var chX = RC_LEFT + _ch * RC_COL_W + RC_COL_W / 2;
+      var chLbl = _ch === 0 ? 'ORIGIN' : (_ch === maxSteps ? (maxSteps >= 4 ? 'DEST.' : 'STEP ' + _ch + ' (DESTINATION)') : 'STEP ' + _ch);
+      var chT = document.createElementNS(svgNs, 'text');
+      chT.setAttribute('x', chX); chT.setAttribute('y', '16');
+      chT.setAttribute('text-anchor', 'middle'); chT.setAttribute('font-size', '9');
+      chT.setAttribute('font-weight', '700'); chT.setAttribute('font-family', 'monospace');
+      chT.setAttribute('fill', '#8B939B'); chT.setAttribute('letter-spacing', '0.08em');
+      chT.textContent = chLbl; svg.appendChild(chT);
+      if (_ch > 0) {
+        var dvX = RC_LEFT + _ch * RC_COL_W;
+        var dvL = document.createElementNS(svgNs, 'line');
+        dvL.setAttribute('x1', dvX); dvL.setAttribute('x2', dvX);
+        dvL.setAttribute('y1', '26'); dvL.setAttribute('y2', svgH);
+        dvL.setAttribute('stroke', 'rgba(255,255,255,0.04)'); dvL.setAttribute('stroke-width', '1');
+        svg.appendChild(dvL);
+      }
+    }
+
+    // Before route edges (discarded portion dashed grey)
+    for (var bi = 0; bi < bSeq.length - 1; bi++) {
+      var fn = nodeMap[bSeq[bi] + '|' + bi];
+      var tn = nodeMap[bSeq[bi + 1] + '|' + (bi + 1)];
+      if (!fn || !tn) continue;
+      var ln = document.createElementNS(svgNs, 'line');
+      ln.setAttribute('x1', fn.cx + RC_R); ln.setAttribute('y1', fn.cy);
+      ln.setAttribute('x2', tn.cx - RC_R); ln.setAttribute('y2', tn.cy);
+      if (bi < commonLen - 1) {
+        ln.setAttribute('stroke', afterAccent); ln.setAttribute('stroke-width', '2.5');
+      } else {
+        ln.setAttribute('stroke', 'rgba(255,255,255,0.2)'); ln.setAttribute('stroke-width', '1.5');
+        ln.setAttribute('stroke-dasharray', '6,4');
+      }
+      ln.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(ln);
+    }
+
+    // After route edges (new path — accent, skip shared prefix already drawn)
+    for (var ai = 0; ai < aSeq.length - 1; ai++) {
+      if (ai < commonLen - 1) continue;
+      var fn2 = nodeMap[aSeq[ai] + '|' + ai];
+      var tn2 = nodeMap[aSeq[ai + 1] + '|' + (ai + 1)];
+      if (!fn2 || !tn2) continue;
+      var ln2 = document.createElementNS(svgNs, 'line');
+      ln2.setAttribute('x1', fn2.cx + RC_R); ln2.setAttribute('y1', fn2.cy);
+      ln2.setAttribute('x2', tn2.cx - RC_R); ln2.setAttribute('y2', tn2.cy);
+      ln2.setAttribute('stroke', afterAccent); ln2.setAttribute('stroke-width', '2.5');
+      ln2.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(ln2);
+    }
+
+    // Nodes — track sequential number for after/shared nodes only
+    var afterStepNum = 0;
+    // Build an ordered list: shared nodes first (step 0..commonLen-1), then after nodes
+    var orderedKeys = Object.keys(nodeMap).sort(function(a, b) {
+      var sa = nodeMap[a].step, sb = nodeMap[b].step;
+      return sa !== sb ? sa - sb : (aSeq[sa] === nodeMap[a].city ? 1 : -1);
+    });
+
+    orderedKeys.forEach(function(nk) {
+      var nd = nodeMap[nk];
+      var isShared = nd.step < commonLen;
+      var inAfter  = nd.step < aSeq.length && aSeq[nd.step] === nd.city;
+      var inBefore = nd.step < bSeq.length && bSeq[nd.step] === nd.city;
+      var discarded = !isShared && inBefore && !inAfter;
+
+      var fill, stroke, strokeW, textColor, opacity;
+      opacity = 1;
+      if (isShared)       { fill = afterAccent;             stroke = afterAccent;               strokeW = 2;   textColor = '#0B131B'; }
+      else if (inAfter)   { fill = 'rgba(35,45,55,0.9)';   stroke = afterAccent;               strokeW = 2;   textColor = afterAccent; }
+      else                { fill = 'rgba(35,45,55,0.9)';   stroke = 'rgba(255,255,255,0.18)';  strokeW = 1.5; textColor = '#53636B'; opacity = 0.45; }
+
+      var g = document.createElementNS(svgNs, 'g');
+      if (opacity < 1) g.setAttribute('opacity', opacity);
+
+      var circ = document.createElementNS(svgNs, 'circle');
+      circ.setAttribute('cx', nd.cx); circ.setAttribute('cy', nd.cy); circ.setAttribute('r', RC_R);
+      circ.setAttribute('fill', fill); circ.setAttribute('stroke', stroke); circ.setAttribute('stroke-width', strokeW);
+      if (discarded) circ.setAttribute('stroke-dasharray', '4,3');
+      g.appendChild(circ);
+
+      if (discarded) {
+        // Discarded node: X mark only, no step number
+        var stk1 = document.createElementNS(svgNs, 'line');
+        stk1.setAttribute('x1', nd.cx - RC_R*0.5); stk1.setAttribute('y1', nd.cy - RC_R*0.5);
+        stk1.setAttribute('x2', nd.cx + RC_R*0.5); stk1.setAttribute('y2', nd.cy + RC_R*0.5);
+        stk1.setAttribute('stroke', 'rgba(235,67,67,0.6)'); stk1.setAttribute('stroke-width', '2');
+        g.appendChild(stk1);
+        var stk2 = document.createElementNS(svgNs, 'line');
+        stk2.setAttribute('x1', nd.cx + RC_R*0.5); stk2.setAttribute('y1', nd.cy - RC_R*0.5);
+        stk2.setAttribute('x2', nd.cx - RC_R*0.5); stk2.setAttribute('y2', nd.cy + RC_R*0.5);
+        stk2.setAttribute('stroke', 'rgba(235,67,67,0.6)'); stk2.setAttribute('stroke-width', '2');
+        g.appendChild(stk2);
+      } else {
+        // Shared or new after node: sequential step number
+        afterStepNum++;
+        var stepN = document.createElementNS(svgNs, 'text');
+        stepN.setAttribute('x', nd.cx); stepN.setAttribute('y', nd.cy + 1);
+        stepN.setAttribute('text-anchor', 'middle'); stepN.setAttribute('dominant-baseline', 'middle');
+        stepN.setAttribute('font-size', '13'); stepN.setAttribute('font-weight', '700');
+        stepN.setAttribute('font-family', 'monospace'); stepN.setAttribute('fill', textColor);
+        stepN.setAttribute('pointer-events', 'none');
+        stepN.textContent = String(afterStepNum);
+        g.appendChild(stepN);
+      }
+
+      var cityParts = nd.city.split(', ');
+      var cityLbl = document.createElementNS(svgNs, 'text');
+      cityLbl.setAttribute('x', nd.cx); cityLbl.setAttribute('y', nd.cy + RC_R + 13);
+      cityLbl.setAttribute('text-anchor', 'middle'); cityLbl.setAttribute('font-size', '9');
+      cityLbl.setAttribute('font-family', 'Nunito,system-ui');
+      cityLbl.setAttribute('fill', discarded ? '#3A4550' : '#6B7373');
+      cityLbl.setAttribute('pointer-events', 'none');
+      cityLbl.textContent = cityParts[0] + (cityParts[1] ? ', ' + cityParts[1] : '');
+      g.appendChild(cityLbl);
+
+      svg.appendChild(g);
+    });
+
+    return svg.outerHTML;
+  }
+
+  // ── Unified Route Review modal (Route Connections style) ─────────────────
+  function _showRouteReviewModal(caseNum, rId, snapBefore, routes, opts) {
+    opts = opts || {};
+    var F  = 'Nunito,system-ui';
+    var NS = 'http://www.w3.org/2000/svg';
+    ['_ef-rebal','_ef-worsen','_ef-routerev'].forEach(function(id){ var e=document.getElementById(id); if(e) e.remove(); });
+
+    var _selIdx = 1;
+
+    // ── Overlay + modal shell ──
+    var ov = document.createElement('div'); ov.id = '_ef-routerev';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9030;background:rgba(6,12,17,.65);display:flex;align-items:center;justify-content:center';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'width:980px;max-width:96vw;height:88vh;background:#0B131B;border:1px solid rgba(255,255,255,.12);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.85)';
+
+    // ── Header ──
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 16px;background:#101B23;border-bottom:1px solid rgba(255,255,255,.08);flex:none';
+    var _fromStr = opts.fromDest ? opts.fromDest.split(',')[0] : null;
+    var _toStr   = opts.toDest   ? opts.toDest.split(',')[0]   : null;
+    var _iconColor = caseNum === 1 ? '#3FC281' : '#FBB303';
+    var _iconBg    = caseNum === 1 ? 'rgba(63,194,129,.1)' : 'rgba(251,179,3,.1)';
+    var _iconBd    = caseNum === 1 ? 'rgba(63,194,129,.25)' : 'rgba(251,179,3,.3)';
+    var _iconPath  = caseNum === 1
+      ? '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>'
+      : '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+
+    // Build subtitle based on case
+    var _sub;
+    var _destChange = (_fromStr && _toStr)
+      ? 'The lane destination changed from <strong style="color:#FBFBFB">'+_fromStr+'</strong> to <strong style="color:#FBFBFB">'+_toStr+'</strong>. '
+      : '';
+    if (caseNum === 1) {
+      _sub = _destChange + 'The plan was adjusted to maintain truck profitability and connectivity.';
+    } else if (opts.dh) {
+      _sub = _destChange + 'No direct route was found — the truck must deadhead <strong style="color:#F5A623">'+(opts.dhMiles||185)+' mi</strong> to <strong style="color:#F5A623">'+(opts.dhHub||'a nearby hub')+'</strong> to restore connectivity. ' +
+        (opts.hasPinned && opts.pinnedCity ? 'The plan no longer reaches <strong style="color:#7BCBCB">'+(opts.pinnedCity.split(',')[0])+'</strong>. Select an option below.' : 'This is the best available plan. Accept or adjust manually.');
+    } else {
+      _sub = _destChange +
+        (opts.hasPinned && opts.pinnedCity
+          ? 'The plan no longer reaches <strong style="color:#7BCBCB">'+(opts.pinnedCity.split(',')[0])+'</strong>. Select an option below.'
+          : 'This is the best available plan given the new destination. Accept or adjust manually.');
+    }
+
+    hdr.innerHTML =
+      '<div style="width:28px;height:28px;border-radius:8px;background:'+_iconBg+';border:1px solid '+_iconBd+';display:grid;place-items:center;flex-shrink:0">' +
+        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="'+_iconColor+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+_iconPath+'</svg>' +
+      '</div>' +
+      '<span style="font:800 13px '+F+';color:#FBFBFB;flex:1">Review Updated Plan</span>';
+    modal.appendChild(hdr);
+
+    // ── Body ──
+    var body = document.createElement('div');
+    body.style.cssText = 'flex:1;overflow:hidden;min-height:0;display:flex';
+
+    // ── SVG graph area ──
+    var svgArea = document.createElement('div');
+    svgArea.style.cssText = 'flex:1;overflow:hidden;background:#080F15;position:relative;cursor:grab';
+
+    // Build city sequences + edge-type arrays from each route's lanes.
+    // Lane structure is always DH/Loaded alternating (even index = DH, odd = Loaded).
+    // Local DH (origin === dest) is invisible; repositioning DH (origin ≠ dest) adds a hub node.
+    function _buildSeqData(lanes) {
+      var cities = [], edgeTypes = [];
+      if (!lanes || !lanes.length) return { cities: cities, edgeTypes: edgeTypes };
+      if (lanes[0] && lanes[0].origin) cities.push(lanes[0].origin);
+      for (var _li = 0; _li < lanes.length; _li++) {
+        var _isDH = (_li % 2 === 0);
+        var _ll = lanes[_li];
+        if (_isDH) {
+          // Repositioning DH (origin ≠ dest) → hub is a real numbered node
+          if (_ll.origin !== _ll.dest && _ll.dest && cities[cities.length-1] !== _ll.dest) {
+            edgeTypes.push('dh-repos');
+            cities.push(_ll.dest);
+          }
+        } else {
+          // Loaded lane → add destination
+          if (_ll.dest && cities[cities.length-1] !== _ll.dest) {
+            edgeTypes.push(_ll.status === 'Booked' ? 'booked' : 'new');
+            cities.push(_ll.dest);
+          }
+        }
+      }
+      return { cities: cities, edgeTypes: edgeTypes };
+    }
+    var _seqDatas = routes.map(function(rt){
+      if (rt.lanes && rt.lanes.length) return _buildSeqData(rt.lanes);
+      if (rt.displaySeq && rt.displaySeq.length) {
+        var _dc = rt.displaySeq.slice();
+        return { cities: _dc, edgeTypes: _dc.slice(1).map(function(){ return 'new'; }) };
+      }
+      return { cities: [], edgeTypes: [] };
+    });
+    var seqs = _seqDatas.map(function(d){ return d.cities; });
+    var _seqEdgeTypes = _seqDatas.map(function(d){ return d.edgeTypes; });
+
+    // Layout constants (same as Route Connections tab)
+    var RC_COL_W = 190, RC_R = 20, RC_GAP = 70, RC_TOP = 44, RC_LEFT = 52;
+
+    var maxSteps = 0;
+    seqs.forEach(function(s){ if (s.length-1 > maxSteps) maxSteps = s.length-1; });
+    if (maxSteps < 1) maxSteps = 1;
+
+    // Build column nodes (per-column city list)
+    var colNodes = [];
+    for (var _ci = 0; _ci <= maxSteps; _ci++) colNodes.push([]);
+    seqs.forEach(function(seq){
+      seq.forEach(function(city, si){ if (si <= maxSteps && colNodes[si].indexOf(city) < 0) colNodes[si].push(city); });
+    });
+    var maxColH = 1;
+    colNodes.forEach(function(col){ if (col.length > maxColH) maxColH = col.length; });
+
+    // Assign (cx, cy) to each city+step
+    var nodeMap = {};
+    colNodes.forEach(function(col, si){
+      var totalH = (col.length-1) * RC_GAP;
+      var startY = RC_TOP + RC_R + (maxColH * RC_GAP - totalH) / 2;
+      col.forEach(function(city, ni){
+        nodeMap[city+'|'+si] = { cx: RC_LEFT + si*RC_COL_W + RC_COL_W/2, cy: startY + ni*RC_GAP, city: city, step: si };
+      });
+    });
+
+    var svgW = RC_LEFT + (maxSteps+1)*RC_COL_W + RC_LEFT;
+    var svgH = RC_TOP + maxColH*RC_GAP + RC_R + 36;
+
+    var svgEl = document.createElementNS(NS, 'svg');
+    svgEl.setAttribute('width', svgW); svgEl.setAttribute('height', svgH);
+    svgEl.style.cssText = 'display:block;transform-origin:0 0;position:absolute;top:0;left:0';
+
+    // Column headers + vertical dividers
+    for (var _ch = 0; _ch <= maxSteps; _ch++) {
+      var chX = RC_LEFT + _ch*RC_COL_W + RC_COL_W/2;
+      var chLbl = _ch === 0 ? 'ORIGIN' : (_ch === maxSteps ? 'STEP '+_ch+' (DEST.)' : 'STEP '+_ch);
+      var chT = document.createElementNS(NS,'text');
+      chT.setAttribute('x', chX); chT.setAttribute('y','16');
+      chT.setAttribute('text-anchor','middle'); chT.setAttribute('font-size','9');
+      chT.setAttribute('font-weight','700'); chT.setAttribute('font-family','monospace');
+      chT.setAttribute('fill','#8B939B'); chT.setAttribute('letter-spacing','0.08em');
+      chT.textContent = chLbl; svgEl.appendChild(chT);
+      if (_ch > 0) {
+        var dvL = document.createElementNS(NS,'line');
+        dvL.setAttribute('x1', RC_LEFT+_ch*RC_COL_W); dvL.setAttribute('x2', RC_LEFT+_ch*RC_COL_W);
+        dvL.setAttribute('y1','26'); dvL.setAttribute('y2', svgH);
+        dvL.setAttribute('stroke','rgba(255,255,255,0.04)'); dvL.setAttribute('stroke-width','1');
+        svgEl.appendChild(dvL);
+      }
+    }
+
+    // Draw edges per route — each route in its own <g> for opacity toggling
+    var _svgEdgeGroups = [];
+    routes.forEach(function(rt, ri){
+      var seq = seqs[ri];
+      var isDisc = rt.discarded;
+      var accent = rt.accent || '#8B939B';
+      var _rtEdgeTypes = _seqEdgeTypes[ri] || [];
+      var grp = document.createElementNS(NS,'g');
+      grp.setAttribute('opacity', ri === _selIdx ? '1' : (isDisc ? '0.18' : '0.18'));
+      if (seq.length >= 2) {
+        for (var ei = 0; ei < seq.length-1; ei++) {
+          var fn = nodeMap[seq[ei]+'|'+ei];
+          var tn = nodeMap[seq[ei+1]+'|'+(ei+1)];
+          if (!fn||!tn) continue;
+          var _et = _rtEdgeTypes[ei] || 'new';
+          var isDHEdge = !isDisc && _et === 'dh-repos';
+          var isBookedEdge = !isDisc && _et === 'booked';
+          var ln = document.createElementNS(NS,'line');
+          ln.setAttribute('x1', fn.cx+RC_R); ln.setAttribute('y1', fn.cy);
+          ln.setAttribute('x2', tn.cx-RC_R); ln.setAttribute('y2', tn.cy);
+          if (isDisc) {
+            ln.setAttribute('stroke','rgba(255,255,255,0.55)');
+            ln.setAttribute('stroke-width','2');
+            ln.setAttribute('stroke-dasharray','6,4');
+          } else if (isDHEdge) {
+            ln.setAttribute('stroke','#F5A623');
+            ln.setAttribute('stroke-width','2');
+            ln.setAttribute('stroke-dasharray','7,5');
+          } else if (isBookedEdge) {
+            ln.setAttribute('stroke','rgba(255,255,255,0.22)');
+            ln.setAttribute('stroke-width','2');
+          } else {
+            ln.setAttribute('stroke', accent);
+            ln.setAttribute('stroke-width','2.5');
+          }
+          ln.setAttribute('stroke-linecap','round');
+          grp.appendChild(ln);
+          // DH edge: add a small "X mi DH" label at midpoint
+          if (isDHEdge && rt.dhMiles) {
+            var mx = (fn.cx+RC_R + tn.cx-RC_R) / 2;
+            var my = (fn.cy + tn.cy) / 2 - 8;
+            var dhLbl = document.createElementNS(NS,'text');
+            dhLbl.setAttribute('x', mx); dhLbl.setAttribute('y', my);
+            dhLbl.setAttribute('text-anchor','middle'); dhLbl.setAttribute('font-size','8');
+            dhLbl.setAttribute('font-weight','700'); dhLbl.setAttribute('font-family','monospace');
+            dhLbl.setAttribute('fill','#F5A623'); dhLbl.setAttribute('letter-spacing','0.05em');
+            dhLbl.textContent = rt.dhMiles+' mi DH';
+            grp.appendChild(dhLbl);
+          }
+        }
+      }
+      svgEl.appendChild(grp);
+      _svgEdgeGroups.push(grp);
+    });
+
+    // Draw nodes (each city+step gets exactly one circle)
+    Object.keys(nodeMap).forEach(function(nk){
+      var nd = nodeMap[nk];
+      // Which routes include this node?
+      var rIdxs = [];
+      seqs.forEach(function(sq, ri){ if (nd.step < sq.length && sq[nd.step] === nd.city) rIdxs.push(ri); });
+      // Primary: prefer non-discarded
+      var pri = null;
+      rIdxs.forEach(function(ri){ if (!routes[ri].discarded && pri === null) pri = ri; });
+      if (pri === null) pri = rIdxs[0];
+      var rt = routes[pri];
+      var isDisc = rt.discarded && rIdxs.length === 1; // pure discarded (not shared)
+      var accent = rt.accent || '#8B939B';
+      // Find pivot step for primary route: first edge that is not 'booked'
+      var _priEdgeTypes = _seqEdgeTypes[pri] || [];
+      var _pivotStep = _priEdgeTypes.length; // default: all booked
+      for (var _pei = 0; _pei < _priEdgeTypes.length; _pei++) {
+        if (_priEdgeTypes[_pei] !== 'booked') { _pivotStep = _pei; break; }
+      }
+      var isBooked = !isDisc && nd.step <= _pivotStep;
+      var isDHOriginNode = !isDisc && nd.step === _pivotStep && (_priEdgeTypes[_pivotStep] || '') === 'dh-repos';
+
+      var g = document.createElementNS(NS,'g');
+      if (isDisc) g.setAttribute('opacity','0.42');
+
+      var circ = document.createElementNS(NS,'circle');
+      circ.setAttribute('cx', nd.cx); circ.setAttribute('cy', nd.cy); circ.setAttribute('r', RC_R);
+      circ.setAttribute('fill','rgba(20,32,42,0.95)');
+      if (isDisc)          { circ.setAttribute('stroke','rgba(255,255,255,0.18)'); circ.setAttribute('stroke-width','1.5'); circ.setAttribute('stroke-dasharray','4,3'); }
+      else if (isDHOriginNode) { circ.setAttribute('stroke','#F5A623'); circ.setAttribute('stroke-width','2'); circ.setAttribute('stroke-dasharray','4,3'); }
+      else if (isBooked)   { circ.setAttribute('stroke','rgba(255,255,255,0.28)'); circ.setAttribute('stroke-width','1.5'); }
+      else                 { circ.setAttribute('stroke', accent); circ.setAttribute('stroke-width','2'); }
+      g.appendChild(circ);
+
+      if (isDisc) {
+        // X mark
+        ['M '+(nd.cx-RC_R*0.45)+' '+(nd.cy-RC_R*0.45)+' L '+(nd.cx+RC_R*0.45)+' '+(nd.cy+RC_R*0.45),
+         'M '+(nd.cx+RC_R*0.45)+' '+(nd.cy-RC_R*0.45)+' L '+(nd.cx-RC_R*0.45)+' '+(nd.cy+RC_R*0.45)].forEach(function(d){
+          var x = document.createElementNS(NS,'path');
+          x.setAttribute('d',d); x.setAttribute('stroke','rgba(235,67,67,0.6)'); x.setAttribute('stroke-width','2'); x.setAttribute('stroke-linecap','round');
+          g.appendChild(x);
+        });
+      } else if (isDHOriginNode) {
+        var trk = document.createElementNS(NS,'text');
+        trk.setAttribute('x', nd.cx); trk.setAttribute('y', nd.cy+1);
+        trk.setAttribute('text-anchor','middle'); trk.setAttribute('dominant-baseline','middle');
+        trk.setAttribute('font-size','11'); trk.setAttribute('font-weight','700');
+        trk.setAttribute('font-family','monospace'); trk.setAttribute('fill','#F5A623');
+        trk.textContent = '→';
+        g.appendChild(trk);
+      } else {
+        var stepT = document.createElementNS(NS,'text');
+        stepT.setAttribute('x', nd.cx); stepT.setAttribute('y', nd.cy+1);
+        stepT.setAttribute('text-anchor','middle'); stepT.setAttribute('dominant-baseline','middle');
+        stepT.setAttribute('font-size','13'); stepT.setAttribute('font-weight','700');
+        stepT.setAttribute('font-family','monospace');
+        stepT.setAttribute('fill', isBooked ? '#8B939B' : accent);
+        stepT.setAttribute('pointer-events','none');
+        stepT.textContent = String(nd.step+1);
+        g.appendChild(stepT);
+      }
+
+      var cityT = document.createElementNS(NS,'text');
+      cityT.setAttribute('x', nd.cx); cityT.setAttribute('y', nd.cy+RC_R+14);
+      cityT.setAttribute('text-anchor','middle'); cityT.setAttribute('font-size','9');
+      cityT.setAttribute('font-family',F); cityT.setAttribute('fill', isDisc ? '#3A4549' : '#6B7373');
+      cityT.setAttribute('pointer-events','none');
+      var cp = nd.city.split(', ');
+      cityT.textContent = cp[0]+(cp[1] ? ', '+cp[1] : '');
+      g.appendChild(cityT);
+      svgEl.appendChild(g);
+    });
+
+    svgArea.appendChild(svgEl);
+
+    // Zoom / pan
+    var _rrScale = 1, _rrTx = 0, _rrTy = 0;
+    function _rrApply(){ svgEl.style.transform = 'translate('+_rrTx+'px,'+_rrTy+'px) scale('+_rrScale+')'; }
+    setTimeout(function(){
+      var cw = svgArea.clientWidth||640, ch = svgArea.clientHeight||400;
+      _rrScale = Math.min((cw-40)/svgW, (ch-40)/svgH);
+      if (_rrScale > 1.3) _rrScale = 1.3;
+      _rrTx = (cw - svgW*_rrScale)/2;
+      _rrTy = (ch - svgH*_rrScale)/2;
+      _rrApply();
+    }, 0);
+    svgArea.addEventListener('wheel', function(e){
+      e.preventDefault();
+      var rect = svgArea.getBoundingClientRect();
+      var mx = e.clientX-rect.left, my = e.clientY-rect.top;
+      var factor = e.deltaY>0 ? 0.85 : 1.18;
+      var ns = Math.max(0.15, Math.min(4, _rrScale*factor));
+      _rrTx = mx - (mx-_rrTx)*(ns/_rrScale);
+      _rrTy = my - (my-_rrTy)*(ns/_rrScale);
+      _rrScale = ns; _rrApply();
+    }, { passive:false });
+    (function(area){
+      var drag=false, sx,sy,stx,sty;
+      area.addEventListener('mousedown',function(e){ drag=true; sx=e.clientX; sy=e.clientY; stx=_rrTx; sty=_rrTy; area.style.cursor='grabbing'; });
+      window.addEventListener('mouseup',function(){ drag=false; area.style.cursor='grab'; });
+      area.addEventListener('mousemove',function(e){ if(!drag) return; _rrTx=stx+e.clientX-sx; _rrTy=sty+e.clientY-sy; _rrApply(); });
+    })(svgArea);
+
+    // ── Right panel — route cards ──
+    var rcPanel = document.createElement('div');
+    rcPanel.style.cssText = 'border-left:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;overflow:hidden;background:rgba(0,0,0,.18);width:300px;flex:none';
+
+    var panHdr = document.createElement('div');
+    panHdr.style.cssText = 'padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.07);flex:none';
+    panHdr.innerHTML =
+      '<div style="font:800 11px '+F+';color:#FBFBFB;margin-bottom:8px">Route options</div>' +
+      '<div style="font:400 11px '+F+';color:#8B939B;line-height:1.55">'+_sub+'</div>';
+    rcPanel.appendChild(panHdr);
+
+    var panScroll = document.createElement('div');
+    panScroll.style.cssText = 'overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:#1E2E38 transparent';
+
+    var _cardEls = [];
+
+    function _selectRoute(idx) {
+      _selIdx = idx;
+      // Update card highlights
+      _cardEls.forEach(function(card, ci){
+        var isSel = ci === idx;
+        var rt = routes[ci];
+        card.style.background = isSel ? 'rgba(255,255,255,.04)' : 'transparent';
+        card.style.borderLeftColor = isSel ? (rt.accent || '#27A767') : 'transparent';
+      });
+      // Update SVG edge group opacities
+      _svgEdgeGroups.forEach(function(grp, ri){
+        grp.setAttribute('opacity', ri === idx ? '1' : '0.1');
+      });
+      _updateFooter();
+    }
+
+    routes.forEach(function(rt, ri){
+      var card = document.createElement('div');
+      var isDisc = !!rt.discarded;
+      var isSel  = ri === _selIdx;
+      var accent = rt.accent || (isDisc ? '#8B939B' : '#27A767');
+      card.style.cssText = 'padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background .15s;border-left:3px solid '+(isSel?accent:'transparent')+';background:'+(isSel?'rgba(255,255,255,.04)':'transparent');
+
+      var seq = seqs[ri];
+      var _displaySeq = (rt.displaySeq && rt.displaySeq.length > 0) ? rt.displaySeq : seq;
+      var routeStr = _displaySeq.length <= 3 ? _displaySeq.join(' → ') :
+                     _displaySeq[0]+' → '+(_displaySeq.length-2)+' cities → '+_displaySeq[_displaySeq.length-1];
+
+      // Viability score (mock) and lane count
+      var viab   = rt.viability  || (isDisc ? 45 : (accent==='#3FC281' ? 91 : (accent==='#FBB303' ? 63 : 72)));
+      var lnCnt  = rt.laneCount  || (seq.length > 1 ? seq.length - 1 : 2);
+      var viabClr = viab >= 80 ? '#3FC281' : (viab >= 65 ? '#FBB303' : '#EB4343');
+
+      // Tags (Best profit, Best connectivity, etc.)
+      var tagsHtml = (rt.tags||[]).map(function(tg){
+        return '<span style="display:inline-block;padding:1px 6px;background:rgba(39,167,103,.08);border:1px solid rgba(39,167,103,.2);border-radius:4px;font:700 8px '+F+';color:#3FC281">'+tg+'</span>';
+      }).join(' ');
+
+      card.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px">' +
+          '<div style="font:800 11px '+F+';color:'+(isDisc?'#53636B':'#FBFBFB')+';letter-spacing:.01em">'+rt.label+'</div>' +
+          '<div style="font:800 14px \'JetBrains Mono\',monospace;color:'+(isDisc?'#3A4549':accent)+';flex-shrink:0">'+viab+'</div>' +
+        '</div>' +
+        (_displaySeq.length > 0 ? '<div style="font:400 10px '+F+';color:#3A5060;margin-bottom:4px;line-height:1.4">'+routeStr+'</div>' : '') +
+        '<div style="font:400 10px '+F+';color:'+viabClr+';margin-bottom:'+(tagsHtml?'5px':'0')+'">' +
+          viab+'% Viability | '+lnCnt+' lane'+(lnCnt!==1?'s':'')+
+          (rt.badge ? ' | <span style="color:'+accent+'">'+rt.badge+'</span>' : '') +
+        '</div>' +
+        (tagsHtml ? '<div style="display:flex;flex-wrap:wrap;gap:3px">'+tagsHtml+'</div>' : '');
+
+      card.addEventListener('click', function(){ _selectRoute(ri); });
+      card.addEventListener('mouseenter', function(){ if (ri!==_selIdx) card.style.background='rgba(255,255,255,.02)'; });
+      card.addEventListener('mouseleave', function(){ if (ri!==_selIdx) card.style.background='transparent'; });
+      _cardEls.push(card);
+      panScroll.appendChild(card);
+    });
+    rcPanel.appendChild(panScroll);
+
+    body.appendChild(svgArea);
+    body.appendChild(rcPanel);
+    modal.appendChild(body);
+
+    // ── Footer metrics bar ──
+    var ftrBar = document.createElement('div');
+    ftrBar.style.cssText = 'background:#0B131B;border-top:1px solid rgba(255,255,255,.07);padding:10px 0 10px 8px;display:flex;align-items:center;flex:none';
+
+    var _fmt$ = function(n){ return (n<0?'-$':'$')+Math.abs(Math.round(n)).toLocaleString('en-US'); };
+    var _fmtPct = function(bv, av){
+      if (!bv || bv===0) return null;
+      var d = (av-bv)/Math.abs(bv)*100;
+      return (d>=0?'+':'')+d.toFixed(1)+'%';
+    };
+    var _pctClr = function(pctStr, higherIsBetter){
+      if (!pctStr) return '#8B939B';
+      var isPos = pctStr.charAt(0)==='+';
+      return higherIsBetter ? (isPos?'#3FC281':'#EB4343') : (isPos?'#EB4343':'#3FC281');
+    };
+
+    function _ftrMetric(label, value, delta, higherIsBetter) {
+      var el = document.createElement('div');
+      el.style.cssText = 'flex:1;padding:0 20px;min-width:0';
+      var deltaClr = delta ? _pctClr(delta,higherIsBetter) : 'transparent';
+      var deltaText = delta || '';
+      el.innerHTML =
+        '<div style="font:700 9px '+F+';color:#53636B;letter-spacing:.08em;margin-bottom:3px">'+label+(deltaText ? ' <span style="color:'+deltaClr+';font-weight:700">'+deltaText+'</span>' : '')+'</div>' +
+        '<div style="font:800 14px '+F+';color:#FBFBFB;white-space:nowrap">'+value+'</div>';
+      return el;
+    }
+
+    function _updateFooter() {
+      ftrBar.innerHTML = '';
+
+      var rt = routes[_selIdx];
+      var snap = rt ? rt.snap : null;
+      var ref  = routes[0].snap;
+      var isDisc = rt && rt.discarded;
+
+      // ── Metrics section (flex:1) ──
+      var metricsWrap = document.createElement('div');
+      metricsWrap.style.cssText = 'flex:1;display:flex;min-width:0';
+      if (snap) {
+        var incPct  = isDisc ? null : _fmtPct(ref.income,  snap.income);
+        var pftPct  = isDisc ? null : _fmtPct(ref.profit,  snap.profit);
+        var miPct   = isDisc ? null : _fmtPct(ref.miles,   snap.miles);
+        var daysPct = isDisc ? null : _fmtPct(ref.days,    snap.days);
+        // Show ranges for non-discarded routes, single values for initial plan
+        var incVal, pftVal, miVal, daysVal;
+        if (isDisc) {
+          incVal  = _fmt$(snap.income);
+          pftVal  = _fmt$(snap.profit);
+          miVal   = Math.round(snap.miles).toLocaleString('en-US')+' mi';
+          daysVal = snap.days+' d';
+        } else {
+          var incLo = snap.income * 0.88, incHi = snap.income * 1.12;
+          var pftLo = snap.profit * 0.88, pftHi = snap.profit * 1.12;
+          incVal  = _fmt$(incLo)+'–'+_fmt$(incHi);
+          pftVal  = _fmt$(Math.min(pftLo,pftHi))+'–'+_fmt$(Math.max(pftLo,pftHi));
+          miVal   = Math.round(snap.miles).toLocaleString('en-US')+' mi';
+          daysVal = snap.days+'–'+(snap.days+1)+' days';
+        }
+        metricsWrap.appendChild(_ftrMetric('INCOME',       incVal,  incPct,  true));
+        metricsWrap.appendChild(_ftrMetric('PROFIT',       pftVal,  pftPct,  true));
+        metricsWrap.appendChild(_ftrMetric('MILEAGE',      miVal,   miPct,   false));
+        metricsWrap.appendChild(_ftrMetric('DAYS ON ROUTE',daysVal, daysPct, false));
+      }
+      ftrBar.appendChild(metricsWrap);
+
+      // ── Separator + Action buttons (right, fixed width) ──
+      var btnWrap = document.createElement('div');
+      btnWrap.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 16px;border-left:1px solid rgba(255,255,255,.07);width:300px;flex:none;box-sizing:border-box';
+
+      if (isDisc) {
+        // Initial plan selected — show passive message, no action buttons
+        var discMsg = document.createElement('div');
+        discMsg.style.cssText = 'font:400 11px '+F+';color:#3A5060;text-align:right;line-height:1.5';
+        discMsg.textContent = 'This plan is no longer available. Select an alternative plan to continue.';
+        btnWrap.appendChild(discMsg);
+      } else {
+        if (caseNum===2||caseNum===3) {
+          var bAdj = document.createElement('button');
+          bAdj.style.cssText = 'padding:7px 14px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#6B7373;font:700 11px '+F+';cursor:pointer;white-space:nowrap';
+          bAdj.textContent = 'Adjust manually';
+          bAdj.onclick = function(){
+            ov.remove();
+            _clearDownstreamUnbooked(rId);
+          };
+          btnWrap.appendChild(bAdj);
+        }
+
+        var bConf = document.createElement('button');
+        bConf.style.cssText = 'padding:7px 18px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 12px '+F+';cursor:pointer;white-space:nowrap';
+        bConf.textContent = 'Confirm plan';
+        bConf.onclick = function(){
+          if (opts.hasPinned && routes[_selIdx].id !== 'pinned') delete _pinnedFinalDest[rId];
+          ov.remove();
+        };
+        btnWrap.appendChild(bConf);
+      }
+      ftrBar.appendChild(btnWrap);
+    }
+
+    _updateFooter();
+    modal.appendChild(ftrBar);
+
+    // ── Floating "← Simulation" button — outside modal, top-left of overlay ──
+    var bRet = document.createElement('button');
+    bRet.style.cssText = 'position:absolute;top:16px;left:16px;display:flex;align-items:center;gap:5px;background:rgba(8,15,21,.82);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:6px 11px;color:#8B939B;font:700 11px '+F+';cursor:pointer;white-space:nowrap;backdrop-filter:blur(6px);z-index:1';
+    bRet.innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"></polyline></svg>Simulation';
+    bRet.onmouseenter = function(){ bRet.style.color='#FBFBFB'; bRet.style.borderColor='rgba(255,255,255,.22)'; };
+    bRet.onmouseleave = function(){ bRet.style.color='#8B939B'; bRet.style.borderColor='rgba(255,255,255,.1)'; };
+    bRet.onclick = function(){
+      ov.remove();
+      if (_simReturnCtx) {
+        _showScenarioPicker(_simReturnCtx.rId, _simReturnCtx.toDest, _simReturnCtx.snapBefore, function(cn, sc){
+          _showAdaptingPlan(function(){ _runSimCase(cn, _simReturnCtx.rId, _simReturnCtx.snapBefore, sc); });
+        }, _simReturnCtx.fromDest);
+      }
+    };
+
+    ov.appendChild(modal);
+    ov.appendChild(bRet);
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){
+      if (!modal.contains(e.target) && !bRet.contains(e.target)) ov.remove();
+    });
+  }
+
   // ── Informative rebalance modal ──────────────────────────────────────────
   function _showRebalanceModal(before, after, opts) {
     opts = opts || {};
@@ -3941,21 +5420,48 @@ export function initApp() {
     var modal = document.createElement('div');
     modal.style.cssText = 'background:#0E1820;border:1px solid rgba(63,194,129,.2);border-radius:14px;width:480px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.9)';
 
+    // ── Back nav ──
+    var navTop = document.createElement('div');
+    navTop.style.cssText = 'padding:10px 16px 0';
+    var bRetR = document.createElement('button');
+    bRetR.style.cssText = 'display:flex;align-items:center;gap:5px;background:none;border:none;padding:3px 0;color:#8B939B;font:700 11px '+F+';cursor:pointer;letter-spacing:.01em';
+    bRetR.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>Return to simulation';
+    bRetR.onclick = function() {
+      ov.remove();
+      if (_simReturnCtx) {
+        _showScenarioPicker(_simReturnCtx.rId, _simReturnCtx.toDest, _simReturnCtx.snapBefore, function(cn, sc) {
+          _showAdaptingPlan(function() { _runSimCase(cn, _simReturnCtx.rId, _simReturnCtx.snapBefore, sc); });
+        }, _simReturnCtx.fromDest);
+      }
+    };
+    navTop.appendChild(bRetR);
+    modal.appendChild(navTop);
+
     // ── Header ──
     var hdr = document.createElement('div');
-    hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,.07)';
-    var _rebalSub = (opts.fromDest && opts.toDest)
-      ? 'Changed from <strong style="color:#FBFBFB">' + opts.fromDest.split(',')[0] + '</strong> to <strong style="color:#FBFBFB">' + opts.toDest.split(',')[0] + '</strong> — we adjusted the plan to maintain profitability and connectivity.'
-      : 'The destination of your lane changed — we adjusted the plan to maintain profitability and connectivity.';
+    hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 20px 14px;border-bottom:1px solid rgba(255,255,255,.07)';
+    var _fromStr = opts.fromDest ? opts.fromDest.split(',')[0] : null;
+    var _toStr   = opts.toDest   ? opts.toDest.split(',')[0]   : null;
+    var _rebalSub = (_fromStr && _toStr)
+      ? 'The lane destination changed from <strong style="color:#FBFBFB">'+_fromStr+'</strong> to <strong style="color:#FBFBFB">'+_toStr+'</strong>. The plan was adjusted to maintain truck profitability and connectivity.'
+      : 'The plan was adjusted to maintain truck profitability and connectivity.';
     hdr.innerHTML =
       '<div style="width:34px;height:34px;border-radius:10px;background:rgba(63,194,129,.1);border:1px solid rgba(63,194,129,.25);display:grid;place-items:center;flex-shrink:0">' +
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3FC281" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>' +
       '</div>' +
       '<div style="flex:1">' +
-        '<div style="font:800 13px '+F+';color:#FBFBFB">Updating plan</div>' +
+        '<div style="font:800 13px '+F+';color:#FBFBFB">Review Updated Plan</div>' +
         '<div style="font:400 11px '+F+';color:#8B939B;margin-top:2px">'+_rebalSub+'</div>' +
       '</div>';
     modal.appendChild(hdr);
+
+    // ── Route comparison diagram ──
+    if (_simBeforeLanes && _simAfterLanes) {
+      var seqWrap = document.createElement('div');
+      seqWrap.style.cssText = 'background:#080F15;border-bottom:1px solid rgba(255,255,255,.07);overflow-x:auto;overflow-y:hidden;flex-shrink:0;padding:14px 0 10px';
+      seqWrap.innerHTML = _buildRouteCompSvg(_simBeforeLanes, _simAfterLanes, '#3FC281');
+      modal.appendChild(seqWrap);
+    }
 
     // ── Warnings (pinned dest + dead-end) ──
     var hasWarnings = opts.pinnedDest || opts.deadEnd;
@@ -4777,19 +6283,27 @@ export function initApp() {
               }
               var _alAfter=_snapStats(rId);
               ov.remove(); _hideLbBar(); _hideLbNotif();
-              _showAddingLoad(function() {
-                setState({});
-                if (_alDestChanged) {
-                  if (_alCascadeResult && _alCascadeResult.caseB) {
-                    _showAdaptingPlan(function() { _showCaseBModal(rId, _alBefore, _alAfter, _alCascadeResult); });
-                  } else if (_alCascadeResult && _alCascadeResult.deadEnd) {
-                    _showAdaptingPlan(function() { _showCaseCModal(rId, _alCascadeResult.deadCity); });
-                  } else {
-                    var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: load.dest };
-                    _showAdaptingPlan(function() { _showRebalanceModal(_alBefore, _alAfter, _opts); });
+              setState({});
+              if (_alDestChanged && window.__EFR_DEV) {
+                _showAddingLoad(function() {
+                  _showScenarioPicker(rId, load.dest, _alBefore, function(caseNum, simCtx) {
+                    _showAdaptingPlan(function() { _runSimCase(caseNum, rId, _alBefore, simCtx); });
+                  }, _oldDest);
+                });
+              } else {
+                _showAddingLoad(function() {
+                  if (_alDestChanged) {
+                    if (_alCascadeResult && _alCascadeResult.caseB) {
+                      _showAdaptingPlan(function() { _showCaseBModal(rId, _alBefore, _alAfter, _alCascadeResult); });
+                    } else if (_alCascadeResult && _alCascadeResult.deadEnd) {
+                      _showAdaptingPlan(function() { _showCaseCModal(rId, _alCascadeResult.deadCity); });
+                    } else {
+                      var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: load.dest };
+                      _showAdaptingPlan(function() { _showRebalanceModal(_alBefore, _alAfter, _opts); });
+                    }
                   }
-                }
-              });
+                });
+              }
             });
           })(ld);
           actCell.appendChild(addBtn);
@@ -4876,19 +6390,27 @@ export function initApp() {
         }
         var _mlAfter = _snapStats(rId);
         _closeMyLoads();
-        _showAddingLoad(function() {
-          setState({});
-          if (_mlDestChanged) {
-            if (_mlCascadeResult && _mlCascadeResult.caseB) {
-              _showAdaptingPlan(function() { _showCaseBModal(rId, _mlBefore, _mlAfter, _mlCascadeResult); });
-            } else if (_mlCascadeResult && _mlCascadeResult.deadEnd) {
-              _showAdaptingPlan(function() { _showCaseCModal(rId, _mlCascadeResult.deadCity); });
-            } else {
-              var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: ld.dest };
-              _showAdaptingPlan(function() { _showRebalanceModal(_mlBefore, _mlAfter, _opts); });
+        setState({});
+        if (_mlDestChanged && window.__EFR_DEV) {
+          _showAddingLoad(function() {
+            _showScenarioPicker(rId, ld.dest, _mlBefore, function(caseNum, simCtx) {
+              _showAdaptingPlan(function() { _runSimCase(caseNum, rId, _mlBefore, simCtx); });
+            }, _oldDest);
+          });
+        } else {
+          _showAddingLoad(function() {
+            if (_mlDestChanged) {
+              if (_mlCascadeResult && _mlCascadeResult.caseB) {
+                _showAdaptingPlan(function() { _showCaseBModal(rId, _mlBefore, _mlAfter, _mlCascadeResult); });
+              } else if (_mlCascadeResult && _mlCascadeResult.deadEnd) {
+                _showAdaptingPlan(function() { _showCaseCModal(rId, _mlCascadeResult.deadCity); });
+              } else {
+                var _opts = { pinnedDest: _pinnedFinalDest[rId] || null, deadEnd: false, deadCity: null, fromDest: _oldDest, toDest: ld.dest };
+                _showAdaptingPlan(function() { _showRebalanceModal(_mlBefore, _mlAfter, _opts); });
+              }
             }
-          }
-        });
+          });
+        }
       });
     });
   }
@@ -5227,8 +6749,8 @@ export function initApp() {
     // "Add route" only makes sense when outbound routes exist from this city
     var _hasOutbound = !!_NEXT_DEST[originCity];
     var _items = [
+      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>', label:'Search loads', sub:'Find available loads from destination opportunities', fn:function() { menu.remove(); renderLaneMap(originCity, routeId, true); } },
       { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>', label:'Add load', sub:'Search or register a load', fn:function() { menu.remove(); _openNewLoadModal(routeId, originCity); } },
-      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>', label:'Add lane', sub:'Add a new lane', fn:function() { menu.remove(); _openAddLaneModal(routeId, originCity); } },
     ];
     if (_hasOutbound) {
       _items.push({ svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>', label:'Add route', sub:'Let the system find the next route for you', fn:function() {
@@ -5285,7 +6807,13 @@ export function initApp() {
   }
 
   // ── Destination opportunities map modal (modal, not fullscreen) ───────
-  function renderLaneMap(origin) { _lmSt.origin = origin; _doRenderLaneMap(); }
+  function renderLaneMap(origin, rId, addLaneMode) {
+    _lmSt.origin = origin;
+    _lmSt.addLaneMode = !!addLaneMode;
+    _lmSt.addLaneRid = rId || null;
+    _lmSt.topDest = null;
+    _doRenderLaneMap();
+  }
 
   function _openRoutePreferences(routeId) {
     var ex = document.getElementById('_ef-rp'); if (ex) ex.remove();
@@ -5379,13 +6907,14 @@ export function initApp() {
     var qc = { Best:'#27A767', Good:'#FBB303', Fair:'#EB4343' };
 
     var DESTS = [
-      { city:'Dallas, TX',      cx:51, cy:62, profit:'Best', ease:'Best', conn:'Good', seg:'Fort Worth, TX → Dallas, TX',       loads:148, rev:[563,943],   rpm:[5.63,9.43], pot:{revMin:808, revMax:1117,pftMin:619,pftMax:929, dMin:1,dMax:5,rMin:2.79,rMax:5.57}, ph:1 },
+      { city:'Dallas, TX',      miles:472, cx:51, cy:62, profit:'Best', ease:'Best', conn:'Good', seg:'Fort Worth, TX → Dallas, TX',       loads:148, rev:[563,943],   rpm:[5.63,9.43], pot:{revMin:808, revMax:1117,pftMin:619,pftMax:929, dMin:1,dMax:5,rMin:2.79,rMax:5.57}, ph:1 },
       { city:'Houston, TX',     cx:53, cy:68, profit:'Best', ease:'Best', conn:'Fair', seg:'Fort Worth, TX → Houston, TX',      loads:72,  rev:[849,1481],  rpm:[2.97,5.18], pot:{revMin:1100,revMax:2000,pftMin:450,pftMax:1200,dMin:2,dMax:4,rMin:2.10,rMax:4.30}, ph:2 },
       { city:'Fort Worth, TX',  cx:49, cy:61, profit:'Best', ease:'Good', conn:'Good', seg:'Current → Fort Worth, TX',         loads:91,  rev:[165,332],   rpm:[4.58,9.23], pot:{revMin:200, revMax:400, pftMin:60, pftMax:280, dMin:0,dMax:1,rMin:4.20,rMax:9.00}, ph:0 },
       { city:'Demopolis, AL',   cx:65, cy:59, profit:'Best', ease:'Good', conn:'Good', seg:'Fort Worth, TX → Demopolis, AL',   loads:34,  rev:[1809,2531], rpm:[2.88,4.03], pot:{revMin:2000,revMax:3200,pftMin:900,pftMax:1800,dMin:3,dMax:6,rMin:2.70,rMax:4.20}, ph:3 },
       { city:'Nashville, TN',   cx:63, cy:51, profit:'Good', ease:'Good', conn:'Best', seg:'Fort Worth, TX → Nashville, TN',  loads:58,  rev:[1050,1680], rpm:[2.36,3.78], pot:{revMin:1200,revMax:2000,pftMin:500,pftMax:1200,dMin:2,dMax:5,rMin:2.20,rMax:4.00}, ph:1 },
       { city:'Kansas City, MO', cx:55, cy:47, profit:'Good', ease:'Fair', conn:'Good', seg:'Fort Worth, TX → Kansas City, MO',loads:44,  rev:[780,1245],  rpm:[1.44,2.31], pot:{revMin:900, revMax:1500,pftMin:300,pftMax:900, dMin:2,dMax:4,rMin:1.80,rMax:3.20}, ph:0 }
     ];
+    _lmSt.topDest = DESTS[0];
     var RC_PATHS = [
       { id:'p0', name:'Houston → Dallas → L. Rock → Memphis', income:'$1,520–$2,625', profit:'$320–$1,425', miles:829, days:'~2 días' },
       { id:'p1', name:'Houston → Dallas → Memphis',            income:'$1,550–$2,655', profit:'$550–$1,655', miles:692, days:'1–2 días' },
@@ -5999,6 +7528,17 @@ export function initApp() {
           sbStart.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>Start search';
           (function(key, originCity) {
             sbStart.addEventListener('click', function() {
+              var active = _getActiveSearch();
+              if (active && active.key !== key && active.state === 'searching') {
+                _showOneSearchWarning(sbStart, active.city, originCity, function() {
+                  delete _lbSearch[active.key]; delete _lbCount[active.key];
+                  var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
+                  _lmSt.origin = null;
+                  _lbSearch[key] = 'searching';
+                  setTimeout(function() { _lbSearch[key] = 'done'; _lbCount[key] = 2 + Math.floor(Math.random() * 4); _showLbNotif(key, originCity); }, 3000);
+                });
+                return;
+              }
               var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
               _lmSt.origin = null;
               _lbSearch[key] = 'searching';
@@ -6041,21 +7581,63 @@ export function initApp() {
       saveBtn.style.cssText = 'padding:8px 20px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#ABABAB;font:700 12px ' + F + ';cursor:pointer';
       saveBtn.textContent = 'Save changes';
       footer.appendChild(saveBtn);
-    } else if (_lmSt.tab !== 'routes' && _lmKey) {
+    } else if (_lmSt.tab !== 'routes' && (_lmKey || _lmSt.addLaneMode)) {
       var startBtn = document.createElement('button');
       startBtn.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 20px;background:#27A767;border:none;border-radius:8px;color:#0B131B;font:800 12px ' + F + ';cursor:pointer';
       startBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>Start search';
-      (function(key, originCity) {
-        startBtn.addEventListener('click', function() {
-          var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
-          _lmSt.origin = null;
-          _lbSearch[key] = 'searching';
-          setTimeout(function() {
-            _lbSearch[key] = 'done'; _lbCount[key] = 2 + Math.floor(Math.random() * 4);
-            _showLbNotif(key, originCity);
-          }, 3000);
-        });
-      })(_lmKey, _lmOriginCity);
+      if (_lmSt.addLaneMode) {
+        (function(rId, originCity) {
+          startBtn.addEventListener('click', function() {
+            var topD = _lmSt.topDest || { city: 'Dallas, TX', miles: 472 };
+            var _slMiles = topD.miles || 500;
+            var _prevLoad = loadsOf(rId).slice(-1)[0] || {};
+            function _addDays(dateStr, days) {
+              var p = (dateStr || '').split('/');
+              if (p.length !== 3 || isNaN(+p[2])) return null;
+              var d = new Date(+p[2], +p[0]-1, +p[1]+days);
+              return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();
+            }
+            var _pickupDate  = _addDays(_prevLoad.delivery, 1) || '08/10/2026';
+            var _delivDate   = _addDays(_pickupDate, Math.max(1, Math.ceil(_slMiles / 500)));
+            var newLane = {
+              id: 'ef-sl-' + Math.random().toString(36).slice(2, 8),
+              route: rId, origin: originCity, dest: topD.city,
+              miles: _slMiles, income: 0, status: 'Unbooked',
+              pickup: _pickupDate, pickupTime: '08:00 - 12:00',
+              delivery: _delivDate, deliveryTime: '08:00 - 12:00',
+              customer: '--', eta: '--', onTime: '--', stops: 1,
+              truck: _prevLoad.truck || '--',
+              equipment: _prevLoad.equipment || 'Van 53'
+            };
+            LOADS.push(newLane);
+            var lsAfter = loadsOf(rId);
+            var newIdx = lsAfter.length - 1;
+            var newKey = rId + '_' + newIdx;
+            _doStartSearch(newKey, originCity);
+            _lmSt.origin = null; _lmSt.addLaneMode = false; _lmSt.addLaneRid = null;
+            var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
+            _showAddingLoad(function() { setState({}); });
+          });
+        })(_lmSt.addLaneRid, _lmOriginCity);
+      } else {
+        (function(key, originCity) {
+          startBtn.addEventListener('click', function() {
+            var active = _getActiveSearch();
+            if (active && active.key !== key && active.state === 'searching') {
+              _showOneSearchWarning(startBtn, active.city, originCity, function() {
+                delete _lbSearch[active.key]; delete _lbCount[active.key];
+                var lmEl2 = document.getElementById('_ef-lane-map'); if (lmEl2) lmEl2.remove();
+                _lmSt.origin = null;
+                _doStartSearch(key, originCity, startBtn);
+              });
+              return;
+            }
+            var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
+            _lmSt.origin = null;
+            _doStartSearch(key, originCity);
+          });
+        })(_lmKey, _lmOriginCity);
+      }
       footer.appendChild(startBtn);
     }
 
@@ -6449,8 +8031,8 @@ export function initApp() {
     const _tbStyle = { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#0E1820', borderBottom: '1px solid rgba(255,255,255,.07)' };
     const _tbContents = [..._planTabEls, el('div', { style: { flex: '1' } }), _syncPillEl, _editRouteEl, _mapToggleEl];
 
-    const laneCols = '40px minmax(200px,1fr) 110px 68px 84px 110px 100px 80px 65px 90px 80px 90px 110px';
-    const TABLE_MIN_W = '1220px';
+    const laneCols = '40px minmax(200px,1fr) 110px 68px 84px 110px 100px 80px 65px 90px 80px 90px 110px 44px';
+    const TABLE_MIN_W = '1264px';
     const tableOuter = el('div', { style: { border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } });
     const table = el('div', { class: 'ef-scroll', style: { background: '#101B23', overflowX: 'auto' } });
     tableOuter.appendChild(table);
@@ -6468,7 +8050,8 @@ export function initApp() {
       el('div', { style: thP }, ['Custom cost']),
       el('div', { style: thP, html: 'Op cost <svg style="vertical-align:middle;margin-left:3px;display:inline" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>' }),
       el('div', { style: thP }, ['Total cost']),
-      el('div', { style: thP }, ['Profit'])
+      el('div', { style: thP }, ['Profit']),
+      el('div', { style: thP }, [''])
     ]);
     table.appendChild(thead);
 
@@ -6697,7 +8280,42 @@ export function initApp() {
         el('div', { style: { padding: '10px 6px 10px 0' } }, [el('div', { style: { display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,.12)', fontSize: '11px', fontWeight: '700', cursor: 'pointer', color: '#8B939B' } }, ['Add +'])]),
         el('div', { style: { padding: '10px 6px 10px 0', fontSize: '12px', color: '#8B939B', fontVariantNumeric: 'tabular-nums' } }, [row.opCost || '--']),
         el('div', { style: { padding: '10px 6px 10px 0', fontSize: '12px', color: '#8B939B', fontVariantNumeric: 'tabular-nums' } }, [row.cost]),
-        el('div', { style: { padding: '10px 6px 10px 0', fontSize: row.isRange ? '10px' : '12px', fontWeight: '800', color: row.profitFg || '#FBFBFB', fontVariantNumeric: 'tabular-nums' } }, [row.profitStr || '--'])
+        el('div', { style: { padding: '10px 6px 10px 0', fontSize: row.isRange ? '10px' : '12px', fontWeight: '800', color: row.profitFg || '#FBFBFB', fontVariantNumeric: 'tabular-nums' } }, [row.profitStr || '--']),
+        (function() {
+          var _wCell = document.createElement('div');
+          _wCell.style.cssText = 'padding:10px 0;display:flex;align-items:center;justify-content:center';
+          if (row.isRange && row.loadIdx !== null) {
+            var _sk = routeId + '_' + row.loadIdx;
+            var _ss = _lbSearch[_sk];
+            var _wBtn = document.createElement('button');
+            var _wColor, _wBg, _wBd, _wAnim = '';
+            if (_ss === 'done') {
+              _wColor = '#27A767'; _wBg = 'rgba(39,167,103,.12)'; _wBd = 'rgba(39,167,103,.4)';
+            } else if (_ss === 'searching') {
+              _wColor = '#FBB303'; _wBg = 'rgba(251,179,3,.08)'; _wBd = 'rgba(251,179,3,.3)';
+              _wAnim = 'style="animation:_ef-wpulse .7s ease-in-out infinite alternate"';
+            } else {
+              _wColor = 'rgba(139,147,155,0.55)'; _wBg = 'rgba(255,255,255,.03)'; _wBd = 'rgba(255,255,255,.07)';
+            }
+            var _wCursor = _ss === 'searching' ? 'default' : 'pointer';
+            _wBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:28px;height:28px;background:'+_wBg+';border:1px solid '+_wBd+';border-radius:8px;color:'+_wColor+';cursor:'+_wCursor+';flex:none;padding:0';
+            _wBtn.innerHTML = '<svg '+_wAnim+' width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>';
+            (function(sk, origin) {
+              _wBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var st = _lbSearch[sk];
+                if (st === 'done') {
+                  if (document.getElementById('_ef-lb-notif')) { _hideLbNotif(); } else { _showLbNotif(sk, origin); }
+                } else if (st !== 'searching') {
+                  if (document.getElementById('_ef-lb-conf')) { _hideLbConf(); } else { _showLbConfirm(_wBtn, sk, origin); }
+                }
+                // 'searching': intentionally non-interactive
+              });
+            })(_sk, row.origin);
+            _wCell.appendChild(_wBtn);
+          }
+          return _wCell;
+        })()
       ]);
       if (row.isRange && row.loadIdx !== null) {
         rowDiv.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); _renderLbBar(rowDiv, routeId, row.loadIdx, row.origin, row.dest); });
@@ -6754,9 +8372,9 @@ export function initApp() {
       _addBtn.innerHTML = 'Add <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>';
       _addBtn.addEventListener('click', function(e) { e.stopPropagation(); _showAddRowMenu(_addBtn, routeId, _addOrigin); });
       _c3.appendChild(_addBtn); addRowDiv.appendChild(_c3);
-      // Cols 4-13: dashes
-      for (var _ci = 0; _ci < 10; _ci++) {
-        var _cd = document.createElement('div'); _cd.style.cssText = 'padding:10px 6px;color:#2C3A47;font:400 11px Nunito,system-ui'; _cd.textContent = '----------'; addRowDiv.appendChild(_cd);
+      // Cols 4-14: dashes + empty wifi col
+      for (var _ci = 0; _ci < 11; _ci++) {
+        var _cd = document.createElement('div'); _cd.style.cssText = 'padding:10px 6px;color:#2C3A47;font:400 11px Nunito,system-ui'; _cd.textContent = _ci < 10 ? '----------' : ''; addRowDiv.appendChild(_cd);
       }
       table.appendChild(addRowDiv);
     })();
@@ -6785,7 +8403,8 @@ export function initApp() {
       el('div', {}, []),
       el('div', { style: { padding: '14px 6px 14px 0', fontSize: '12.5px', fontWeight: '900', color: '#8B939B', fontVariantNumeric: 'tabular-nums' } }, [d.totalOpCost]),
       el('div', { style: { padding: '14px 6px 14px 0', fontSize: '12.5px', fontWeight: '900', color: '#8B939B', fontVariantNumeric: 'tabular-nums' } }, [d.totalCost]),
-      el('div', { style: { padding: '14px 6px 14px 0', fontSize: _totPftFontSize, fontWeight: '900', color: '#3FC281', fontVariantNumeric: 'tabular-nums' } }, [_totPftDisplay])
+      el('div', { style: { padding: '14px 6px 14px 0', fontSize: _totPftFontSize, fontWeight: '900', color: '#3FC281', fontVariantNumeric: 'tabular-nums' } }, [_totPftDisplay]),
+      el('div', {}, [])
     ]));
 
     const mapPanel = el('div', { style: { position: 'relative', height: '360px', borderRadius: '12px', overflow: 'hidden', background: '#17242E', border: '1px solid rgba(255,255,255,.08)' } }, [
@@ -7684,6 +9303,16 @@ export function initApp() {
     _changelogBtn.addEventListener('click', () => {
       if (document.querySelector('[data-changelog-overlay]')) return;
       const releases = [
+        {
+          date: '26 de agosto, 5:50pm',
+          items: [
+            'Modal "Review Updated Plan": diagrama SVG rediseñado — nodos booked en gris muted, nodo pivote con flecha → naranja, DH de reposicionamiento como edge dashed naranja al hub, detección automática por estructura DH/Loaded alternada',
+            'Tarjetas de ruta en "Review Updated Plan": ruta correcta por caso (Recommended / Alternative / Reaches [city]); secuencia de ciudades muestra destino real de cada alternativa, no el destino pinned',
+            'Búsqueda de loads: ícono de wifi verde es toggle (abre y cierra el panel); estado searching hace el ícono no clickeable; warning de búsqueda activa aparece como popover sobre el ícono, no como modal centrado',
+            '"Adjust manually" y "Got it" (caso 4) ya no abren hunter mode; "Got it" limpia las lanes downstream no booked',
+            'Footer del plan inicial muestra texto pasivo en lugar de botones de acción; métricas en footer muestran rangos ±12% para rutas alternativas',
+          ]
+        },
         {
           date: '24 de agosto, 2:36pm',
           items: [
