@@ -8962,23 +8962,176 @@ export function initApp() {
       const m = M[exec] || M.Booked;
       return el('div', { class: 'hoverable', style: { display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 12px', borderRadius: '10px', background: m.bg, border: m.bd, color: m.fg, font: '800 12.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
     }
+    // ─────────── On Road execution tracking (real data from the mobile app) ───────────
+    // A lane's live snapshot: real miles driven, departure, delay, ELD sync, HOS/speed.
+    function _orExecSnapshot(row, seg) {
+      const miles = seg.miles;
+      const done = row.exec === 'Completed';
+      const active = row.exec === 'In progress';
+      const milesDriven = done ? miles : (active ? Math.max(0, Math.round(seg.truckMi >= 0 ? seg.truckMi : miles * 0.5)) : 0);
+      const pct = miles ? Math.max(0, Math.min(100, Math.round(milesDriven / miles * 100))) : 0;
+      const departedAt = (row.departedAt && row.departedAt !== '--') ? row.departedAt : '—';
+      const eta = (row.load && row.load.eta && row.load.eta !== '--') ? row.load.eta : '—';
+      const late = !!row.isLate;
+      const delayTxt = (row.delay && row.delay !== '--') ? row.delay : (done || active ? 'On time' : '—');
+      const h = (seg.origin + seg.dest).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const speed = active ? (56 + (h % 10)) : 0;
+      const driveLeftH = active ? (2 + (h % 5)) : 0;
+      const driveLeftM = active ? (h % 6) * 10 : 0;
+      const lastSync = active ? 'Just now' : (done ? 'Trip ended' : '—');
+      return { miles, done, active, started: done || active, milesDriven, pct, departedAt, eta, late, delayTxt, speed, driveLeftH, driveLeftM, lastSync };
+    }
+    function _orAdherence(routeId, key) {
+      const dact = _orActualFor(routeId, key);
+      if (!dact) return { state: 'on', detourMi: 0, dact: null };
+      if (_orReconciled(routeId, key, dact)) return { state: 'on', detourMi: dact.detourMi, dact: dact };
+      if (dact.dismissed) return { state: 'accepted', detourMi: dact.detourMi, dact: dact };
+      return { state: 'off', detourMi: dact.detourMi, dact: dact };
+    }
+    // 1-click adherence actions
+    function _orCorrectToDriver(routeId, key) {
+      const dact = _orActualFor(routeId, key); if (!dact) return;
+      const miles = _orSegMiles(routeId, key);
+      const f = (dact.f0 + dact.f1) / 2;
+      _orPushUndo(routeId, key, 'Plan corrected to driver route');
+      _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * f), frac: f, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS' }, { adjusted: true });
+    }
+    function _orKeepPlan(routeId, key) { const d = _orActualFor(routeId, key); if (d) { _orPushUndo(routeId, key, 'Deviation accepted · plan kept'); d.dismissed = true; } }
+    const _EX_WARN = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+    const _EX_GAUGE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l3-3"/><path d="M4 20a8 8 0 1 1 16 0"/></svg>';
+    function _orAdherenceChip(adh) {
+      const M = {
+        on:       { t: 'On-plan',                                  c: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: IC.check },
+        off:      { t: 'Off-plan · +' + Math.round(adh.detourMi) + ' mi', c: '#cc666f', bg: 'rgba(204,102,111,.14)', ic: _EX_WARN },
+        accepted: { t: 'Deviation accepted',                       c: '#b28835', bg: 'rgba(178,136,53,.14)', ic: IC.check }
+      };
+      const m = M[adh.state] || M.on;
+      return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10px ' + F, letterSpacing: '.02em', color: m.c, background: m.bg, padding: '4px 9px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: '0' }, html: m.ic + '<span>' + m.t + '</span>' });
+    }
+    function _execAct(label, onclick, primary) {
+      return el('div', { class: 'hoverable', onclick: onclick, style: { font: '800 10.5px ' + F, cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', whiteSpace: 'nowrap', color: primary ? '#0d1a13' : '#b3b3b3', background: primary ? '#2e9975' : '#242424', border: '1px solid ' + (primary ? '#2e9975' : 'rgba(255,255,255,.1)') } }, [label]);
+    }
+    // fixed execution strip (top of the manage-stops modal panel)
+    function _orExecStrip(row) {
+      const seg = _orSegReg[routeId][row.segKey];
+      const x = _orExecSnapshot(row, seg);
+      const adh = _orAdherence(routeId, row.segKey);
+      const cell = (icon, val, label, col) => el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: '0' } }, [
+        el('div', { style: { width: '28px', height: '28px', borderRadius: '8px', background: '#242424', color: col || '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: icon }),
+        el('div', { style: { minWidth: '0' } }, [
+          el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [val]),
+          el('div', { style: { font: '600 9px ' + F, color: '#808080', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [label])
+        ])
+      ]);
+      const grid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '11px 12px' } }, [
+        cell(IC.truck, x.departedAt, 'Departed', '#47b26b'),
+        cell(IC.clock, x.eta, x.delayTxt, x.late ? '#cc666f' : '#6688cc'),
+        cell(IC.sync, x.lastSync, 'ELD sync', '#47b26b'),
+        cell(_EX_GAUGE, x.active ? (x.speed + ' mph') : '—', x.active ? (x.driveLeftH + 'h ' + x.driveLeftM + 'm drive left') : 'HOS', '#b28835')
+      ]);
+      const prog = el('div', { style: { marginTop: '12px' } }, [
+        el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%'])]),
+        el('div', { style: { position: 'relative', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,.08)' } }, [el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: x.pct + '%', borderRadius: '3px', background: x.late ? '#b28835' : '#2e9975' } })])
+      ]);
+      const acts = [];
+      if (adh.state === 'off') {
+        acts.push(_execAct('Correct plan', () => { _orCorrectToDriver(routeId, row.segKey); setState({}); }, true));
+        acts.push(_execAct("Add driver's stop", () => setState({ orAddType: '__pick', orReplace: null })));
+        acts.push(_execAct('Ask to return', () => { _orPushUndo(routeId, row.segKey, 'Return-to-route request sent'); setState({}); }));
+        acts.push(_execAct('Keep plan', () => { _orKeepPlan(routeId, row.segKey); setState({}); }));
+      }
+      const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginTop: '12px' } }, [_orAdherenceChip(adh), ...acts]);
+      return el('div', { style: { flexShrink: '0', padding: '12px 16px 14px', borderBottom: '1px solid rgba(255,255,255,.08)', background: '#141414' } }, [grid, prog, adhRow]);
+    }
+    // compact 1-line live strip for the inline stops dropdown
+    function _orExecInline(row) {
+      const seg = _orSegReg[routeId][row.segKey];
+      const x = _orExecSnapshot(row, seg);
+      const adh = _orAdherence(routeId, row.segKey);
+      const parts = [];
+      parts.push(x.started ? ('Departed ' + x.departedAt.split(' · ')[0]) : 'Not started');
+      parts.push(x.milesDriven.toLocaleString('en-US') + '/' + x.miles.toLocaleString('en-US') + ' mi');
+      if (x.active) parts.push('ETA ' + x.eta + (x.late ? ' · ' + x.delayTxt : ''));
+      parts.push('synced ' + x.lastSync.toLowerCase());
+      return el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '2px 4px 8px' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
+          el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: x.active ? '#2e9975' : '#666666', flexShrink: '0', animation: x.active ? '_efDotPulse 1.4s ease-in-out infinite' : 'none' } }),
+          el('span', { style: { font: '700 10.5px ' + F, color: '#b3b3b3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [parts.join(' · ')])
+        ]),
+        _orAdherenceChip(adh)
+      ]);
+    }
     // inline dropdown: quick read-only view of a lane's current stops (chevron toggles it)
+    // execution status for each timeline node [pick up, ...stops, drop off]
+    function _orNodeStatuses(row, seg) {
+      const truckMi = seg.truckMi;
+      const miles = seg.miles;
+      const departed = truckMi >= 0;
+      const laneDone = departed && truckMi > miles;
+      const stops = _orLaneStopsSorted(routeId, row.segKey);
+      const dists = [0].concat(stops.map(s => s.distanceMi)).concat([miles]);
+      const done = dists.map(dd => departed && (laneDone || dd <= truckMi));
+      const firstActive = done.indexOf(false);
+      return dists.map((dd, i) => !departed ? 'Upcoming' : (done[i] ? 'Completed' : (i === firstActive ? 'In progress' : 'Upcoming')));
+    }
     function _segStopsPreview(row) {
       const key = row.segKey;
       const seg = _orSegReg[routeId][key];
+      const isLoad = seg.isLoad;
       const stops = _orLaneStopsSorted(routeId, key);
+      const x = _orExecSnapshot(row, seg);
+      const statuses = _orNodeStatuses(row, seg);
+      const _seed = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const _pickAddr = _OR_ADDR[_seed % _OR_ADDR.length];
+      const _dropAddr = _OR_ADDR[(_seed + 1) % _OR_ADDR.length];
       const _pin = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
-      const mini = (icon, col, title, sub) => el('div', { style: { display: 'grid', gridTemplateColumns: '26px 1fr', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', background: '#101820' } }, [
-        el('div', { style: { width: '26px', height: '26px', borderRadius: '8px', display: 'grid', placeItems: 'center', background: col + '22', color: col }, html: icon }),
+
+      // ── lane progress bar (pick-up → truck → drop-off) ──
+      const _dl = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+      const _ul = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+      const pctW = x.pct;
+      const progressBar = el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 4px 2px' } }, [
+        el('div', { style: { width: '32px', height: '32px', borderRadius: '9px', background: 'rgba(46,153,117,.16)', color: '#47b26b', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _dl }),
+        el('div', { style: { position: 'relative', flex: '1', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,.1)' } }, [
+          el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: pctW + '%', borderRadius: '2px', background: x.late ? '#b28835' : '#2e9975' } }),
+          el('div', { style: { position: 'absolute', left: pctW + '%', right: '0', top: '0', borderTop: '2px dashed rgba(255,255,255,.22)' } }),
+          el('div', { style: { position: 'absolute', left: 'calc(' + pctW + '% - 13px)', top: '-12px', width: '26px', height: '26px', borderRadius: '50%', background: '#141414', border: '1px solid rgba(255,255,255,.15)', display: 'grid', placeItems: 'center', color: x.active ? '#47b26b' : '#666666' }, html: IC.truck })
+        ]),
+        el('div', { style: { width: '32px', height: '32px', borderRadius: '9px', background: 'rgba(46,82,153,.16)', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _ul })
+      ]);
+
+      // ── basic lane info (Reference ID · Current income · Est./Current mileage · RPM) ──
+      const rpm = (isLoad && seg.miles) ? seg.income / seg.miles : 0;
+      const income = (isLoad && row.exec !== 'Upcoming') ? seg.income : 0;
+      const _m = (v, label, col) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: col || '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '2px', whiteSpace: 'nowrap' } }, [label])]);
+      const _boxIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>';
+      const metrics = el('div', { style: { display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap', padding: '6px 6px 2px' } }, [
+        el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#242424', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
+        _m('—', 'Reference ID'),
+        _m(isLoad ? money(income) : '$0', 'Current income'),
+        _m(seg.miles.toLocaleString('en-US') + ' mi', 'Est. Mileage'),
+        _m(isLoad ? '$' + rpm.toFixed(2) : '--', 'Rate per mile'),
+        _m(x.milesDriven.toLocaleString('en-US') + ' mi', 'Current Mileage', x.late ? '#b28835' : '#e6e6e6')
+      ]);
+
+      // ── stops list (each with address subtitle + execution status) ──
+      const mini = (icon, col, title, sub, status) => el('div', { style: { display: 'grid', gridTemplateColumns: '26px 1fr auto', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', background: '#101820' } }, [
+        el('div', { style: { width: '26px', height: '26px', borderRadius: '8px', display: 'grid', placeItems: 'center', background: col + '22', color: col, flexShrink: '0' }, html: icon }),
         el('div', { style: { minWidth: '0' } }, [
           el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [title]),
-          sub ? el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px' } }, [sub]) : null
-        ])
+          sub ? el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '600 10px ' + F, color: '#808080', marginTop: '2px', minWidth: '0' } }, [el('span', { style: { display: 'flex', color: '#666666', flexShrink: '0' }, html: _pin }), el('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [sub])]) : null
+        ]),
+        status ? _stopStatusChip(status) : null
       ]);
-      const items = [mini(_pin, '#47b26b', 'Pick up · ' + seg.origin, null)];
-      stops.forEach(s => { const svc = _OR_SVC[s.type] || _OR_SVC.fuel; items.push(mini(svc.icon, s.type === 'fuel' ? '#b28835' : '#6688cc', s.type === 'fuel' ? s.brand : s.name, svc.label + ' · at ' + s.distanceMi.toLocaleString('en-US') + ' mi')); });
-      items.push(mini(_pin, '#6688cc', 'Drop off · ' + seg.dest, null));
+      const items = [mini(_pin, '#47b26b', isLoad ? 'Pick up · ' + seg.origin : 'Deadhead start', _pickAddr, statuses[0])];
+      stops.forEach((s, i) => { const svc = _OR_SVC[s.type] || _OR_SVC.fuel; items.push(mini(svc.icon, s.type === 'fuel' ? '#b28835' : '#6688cc', s.type === 'fuel' ? s.brand : s.name, (s.address || _OR_ADDR[i % _OR_ADDR.length]) + ' · ' + svc.label + ' at ' + s.distanceMi.toLocaleString('en-US') + ' mi', statuses[i + 1])); });
+      items.push(mini(_pin, '#6688cc', isLoad ? 'Drop off · ' + seg.dest : 'Deadhead end', _dropAddr, statuses[stops.length + 1]));
+
       return el('div', { style: { flexShrink: '0', margin: '2px 8px 6px', padding: '10px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.14)', display: 'flex', flexDirection: 'column', gap: '6px' } }, [
+        _orExecInline(row),
+        progressBar,
+        metrics,
+        el('div', { style: { height: '1px', background: 'rgba(255,255,255,.06)', margin: '4px 2px 2px' } }),
         el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' } }, [
           el('div', { style: { font: '800 11px ' + F, color: '#808080', letterSpacing: '.04em' } }, ['Stops (' + stops.length + ' added)']),
           el('div', { class: 'hoverable', onclick: () => setState({ orLane: key, orExpanded: null, orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 11px ' + F, color: '#6688cc', cursor: 'pointer', padding: '5px 10px', borderRadius: '8px', border: '1px solid rgba(102,136,204,.3)' }, html: '<span>Manage stops</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
@@ -9457,15 +9610,9 @@ export function initApp() {
         const _seed = key.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
         const _pickAddr = _OR_ADDR[_seed % _OR_ADDR.length].split(',')[0];
         const _dropAddr = _OR_ADDR[(_seed + 1) % _OR_ADDR.length].split(',')[0];
-        const departed = truckMi >= 0;
-        const laneDone = departed && truckMi > laneMiles;
-        // ordered nodes: pick up (mi 0) → stops (distanceMi) → drop off (laneMiles).
-        // A node is Completed once the truck has reached it; the first not-yet-
-        // reached node is "In progress" (the leg the truck is driving now).
-        const nodeDists = [0].concat(stops.map(s => s.distanceMi)).concat([laneMiles]);
-        const nodeDone = nodeDists.map(dd => departed && (laneDone || dd <= truckMi));
-        const firstActive = nodeDone.indexOf(false);
-        const nodeStatus = (idx) => !departed ? 'Upcoming' : (nodeDone[idx] ? 'Completed' : (idx === firstActive ? 'In progress' : 'Upcoming'));
+        // execution status per node [pick up, ...stops, drop off] — shared helper
+        const _statuses = _orNodeStatuses(row, seg);
+        const nodeStatus = (idx) => _statuses[idx];
         const rows = [_lpEndpoint(isLoad ? 'Pick up location' : 'Deadhead start', _pickAddr, false, nodeStatus(0))];
         stops.forEach((s, i) => rows.push(_lanePanelStopCard(s, key, nodeStatus(i + 1), i + 1)));
         rows.push(_lpEndpoint(isLoad ? 'Drop off location' : 'Deadhead end', _dropAddr, true, nodeStatus(stops.length + 1)));
@@ -9519,7 +9666,8 @@ export function initApp() {
 
       return el('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: '0' } }, [
         header,
-        el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto' } }, [loadCard, deviationBanner, secHead, listArea, impactStrip, fuelBanner]),
+        _orExecStrip(row),
+        el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto' } }, [loadCard, secHead, listArea, impactStrip, fuelBanner]),
         footer
       ]);
     }
