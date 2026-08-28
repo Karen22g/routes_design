@@ -9383,6 +9383,13 @@ export function initApp() {
       const income = (isLoad && row.exec !== 'Upcoming') ? seg.income : 0;
       const isAdding = !!state.orAddType;
       const _boxIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>';
+      // fuel-plan optimality: the "Generate Optimal Fuel Plan" action is offered only
+      // when the current stops are NOT already optimal — i.e. no optimizer-generated
+      // fuel stops (manual fuel stops or no fuel at all still count as "not optimal").
+      const optFuelStops = stops.filter(s => s.type === 'fuel' && s.fuelPlan);
+      const manualFuelStops = stops.filter(s => s.type === 'fuel' && !s.fuelPlan);
+      const hasOptimalFuel = !!(fuelMeta && fuelMeta.applied && optFuelStops.length);
+      const canGenerateFuel = !hasOptimalFuel;
 
       // header: identity + close
       const header = el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 14px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
@@ -9426,13 +9433,20 @@ export function initApp() {
         el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ["Plan matches the driver's actual route"])
       ]);
 
-      // section header: Added stops + Smart trip + share
-      const secHead = el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '14px 16px 6px' } }, [
-        el('div', { style: { font: '800 13.5px ' + F, color: '#e6e6e6' } }, ['Added stops (' + stops.length + ')']),
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
-          el('div', { class: 'hoverable', onclick: () => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { const had = (_orFuel[routeId] || {})[key]; _orPushUndo(routeId, key, had ? 'Smart trip re-run' : 'Smart trip applied'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1500); }, style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 11.5px ' + F, color: '#6688cc', cursor: 'pointer', padding: '6px 11px', borderRadius: '9px', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.28)' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h13l-3-3M21 17H8l3 3"/></svg><span>Smart trip</span>' }),
-          el('div', { class: 'hoverable', title: 'Share', style: { width: '32px', height: '32px', borderRadius: '9px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/></svg>' })
-        ])
+      // "Generate Optimal Fuel Plan" — blue when available; dark/disabled once the
+      // current stops already ARE the optimal plan (or while adding a stop).
+      const canGenNow = canGenerateFuel && !isAdding;
+      const genFuelBtn = el('div', {
+        class: canGenNow ? 'hoverable' : '',
+        onclick: canGenNow ? (() => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orPushUndo(routeId, key, 'Optimal fuel plan generated'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1500); }) : undefined,
+        title: canGenNow ? (manualFuelStops.length ? 'Replace manual fuel stops with the cost-optimal plan' : 'Generate the cost-optimal fuel plan for this lane') : 'The current stops are already the optimal fuel plan',
+        style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '10px', font: '800 11.5px ' + F, whiteSpace: 'nowrap', flexShrink: '0', cursor: canGenNow ? 'pointer' : 'default', background: canGenNow ? '#6688cc' : '#242424', color: canGenNow ? '#0d1424' : '#5a5a5a', border: '1px solid ' + (canGenNow ? '#6688cc' : 'rgba(255,255,255,.06)') },
+        html: _OR_SVC.fuel.icon + '<span>Generate Optimal Fuel Plan</span>'
+      });
+      // section header: Added stops (N) + Generate button (right of the title)
+      const secHead = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 6px' } }, [
+        el('div', { style: { font: '800 13.5px ' + F, color: '#e6e6e6', flex: '1', minWidth: '0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Added stops (' + stops.length + ')']),
+        genFuelBtn
       ]);
 
       // body: add flow (picker/browser) OR the stops timeline
@@ -9469,17 +9483,16 @@ export function initApp() {
         ]);
       }
 
-      // fuel savings banner (live from optimizer)
-      const fuelPlanStops = stops.filter(s => s.type === 'fuel' && s.fuelPlan);
+      // fuel savings banner (live from optimizer) — shown once an optimal plan exists
       let fuelBanner = null;
-      if (fuelMeta && fuelMeta.applied && fuelPlanStops.length) {
-        const tg = fuelPlanStops.reduce((s, x) => s + x.gallons, 0);
-        const tc = fuelPlanStops.reduce((s, x) => s + x.cost, 0);
+      if (hasOptimalFuel) {
+        const tg = optFuelStops.reduce((s, x) => s + x.gallons, 0);
+        const tc = optFuelStops.reduce((s, x) => s + x.cost, 0);
         fuelBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.08)', border: '1px solid rgba(178,136,53,.32)' } }, [
           el('div', { style: { color: '#b28835', display: 'flex' }, html: _OR_SVC.fuel.icon }),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
-            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimized fuel plan · save ' + money(fuelMeta.savings)]),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [fuelPlanStops.length + ' stop' + (fuelPlanStops.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total'])
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimal fuel plan · save ' + money(fuelMeta.savings)]),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [optFuelStops.length + ' stop' + (optFuelStops.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total'])
           ]),
           el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, key, 'Fuel plan removed'); _orClearFuel(routeId, key); setState({}); }, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)' } }, ['Remove'])
         ]);
@@ -9490,7 +9503,7 @@ export function initApp() {
       const dwellMin = stops.reduce((s, x) => s + (_OR_DWELL[x.type] || 20), 0);
       const etaMin = Math.round(addedDetour / 50 * 60) + dwellMin;
       const etaTxt = etaMin >= 60 ? Math.floor(etaMin / 60) + 'h ' + (etaMin % 60) + 'm' : etaMin + 'm';
-      const hasOptFuel = fuelMeta && fuelMeta.applied && fuelPlanStops.length;
+      const hasOptFuel = hasOptimalFuel;
       const impactStrip = (!isAdding && stops.length) ? el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap', padding: '0 16px 10px' } }, [
         _impChip('<span>' + stops.length + ' stop' + (stops.length > 1 ? 's' : '') + '</span>'),
         _impChip('<span>+' + addedDetour.toFixed(1) + ' mi detour</span>', 'amber'),
