@@ -29,7 +29,7 @@ export function initApp() {
     { id: 'ef-58d4e22', route: 'R-2603', origin: 'Little Rock, AR', dest: 'Memphis, TN', miles: 840, income: 900, status: 'Booked', pickup: '07/30/2026', pickupTime: '09:00 - 13:00', delivery: '07/31/2026', deliveryTime: '10:00 - 14:00', customer: 'Nestlé', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_884', equipment: 'TRK-884', equipmentType: 'Reefer' },
     { id: 'ef-c1290fb', route: 'R-2604', origin: 'Phoenix, AZ', dest: 'Albuquerque, NM', miles: 420, income: 1050, status: 'Delivered', pickup: '07/01/2026', pickupTime: '06:00 - 10:00', delivery: '07/02/2026', deliveryTime: '08:00 - 12:00', customer: 'PepsiCo', eta: '11:20', onTime: 'On time', stops: 1, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
     { id: 'ef-b7743d5', route: 'R-2604', origin: 'Albuquerque, NM', dest: 'Kansas City, MO', miles: 790, income: 2100, status: 'In Transit', pickup: '07/22/2026', pickupTime: '07:00 - 11:00', delivery: '07/23/2026', deliveryTime: '09:00 - 13:00', customer: 'Tyson', eta: '12:48', onTime: 'On time', stops: 3, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
-    { id: 'ef-a0f6612', route: 'R-2604', origin: 'Kansas City, MO', dest: 'Columbus, OH', miles: 640, income: 1690, status: 'Dispatched', pickup: '08/02/2026', pickupTime: '05:00 - 09:00', delivery: '08/03/2026', deliveryTime: '10:00 - 14:00', customer: 'Cardinal', eta: '--', onTime: '--', stops: 2, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
+    { id: 'ef-a0f6612', route: 'R-2604', origin: 'Kansas City, MO', dest: 'Columbus, OH', miles: 640, income: 1690, status: 'Booked', pickup: '08/02/2026', pickupTime: '05:00 - 09:00', delivery: '08/03/2026', deliveryTime: '10:00 - 14:00', customer: 'Cardinal', eta: '--', onTime: '--', stops: 2, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
     { id: 'ef-e3d1908', route: 'R-2604', origin: 'Columbus, OH', dest: 'Newark, NJ', miles: 552, income: 1580, status: 'Unbooked', pickup: '08/08/2026', pickupTime: '08:00 - 12:00', delivery: '08/09/2026', deliveryTime: '06:00 - 10:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: 'ext_tr_077', equipment: 'TRK-077', equipmentType: 'Reefer' },
     { id: 'ef-cc80f47', route: 'R-2605', origin: 'Fresno, CA', dest: 'Las Vegas, NV', miles: 410, income: 1240, status: 'Unbooked', pickup: '07/01/2026', pickupTime: '04:00 - 08:00', delivery: '07/02/2026', deliveryTime: '07:00 - 11:00', customer: '--', eta: '--', onTime: '--', stops: 1, truck: '--', equipment: 'TRK-310', equipmentType: 'Reefer' },
     { id: 'ef-38a5c6e', route: 'R-2605', origin: 'Las Vegas, NV', dest: 'Salt Lake City, UT', miles: 1180, income: 2980, status: 'Unbooked', pickup: '07/04/2026', pickupTime: '06:00 - 10:00', delivery: '07/05/2026', deliveryTime: '12:00 - 16:00', customer: '--', eta: '--', onTime: '--', stops: 2, truck: '--', equipment: 'TRK-310', equipmentType: 'Reefer' },
@@ -8839,8 +8839,8 @@ export function initApp() {
         const miles = isLoad ? row.load.miles : Math.max(8, Math.round(_orGeoMiles(row.origin, row.dest) || 42));
         let truckMi;
         if (isLoad) {
-          if (row.exec === 'Completed' || row.loadIdx < sim.activeLaneIdx) truckMi = miles + 1;
-          else if (row.loadIdx === sim.activeLaneIdx && sim.started) truckMi = sim.progress * miles;
+          if (row.exec === 'Completed' || (sim.started && row.loadIdx < sim.activeLaneIdx)) truckMi = miles + 1;
+          else if (row.exec === 'In progress') truckMi = (sim.started && row.loadIdx === sim.activeLaneIdx) ? sim.progress * miles : miles * 0.5;
           else truckMi = -1;
         } else {
           truckMi = row.exec === 'Completed' ? miles + 1 : (row.exec === 'In progress' ? miles * 0.5 : -1);
@@ -8988,6 +8988,9 @@ export function initApp() {
     }
     const segItems = [];
     cd.rows.forEach(row => {
+      // On Road only manages operational stops for lanes already finished or in
+      // progress — upcoming/not-started lanes are hidden here (managed in Plan).
+      if (row.exec !== 'Completed' && row.exec !== 'In progress') return;
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
       const isOpen = row.segKey === state.orExpanded;      // inline dropdown open
@@ -9005,6 +9008,12 @@ export function initApp() {
       ]));
       if (isOpen) segItems.push(_segStopsPreview(row));
     });
+    if (!segItems.length) segItems.push(el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '10px', padding: '48px 24px', margin: '20px 12px', borderRadius: '16px', border: '1px dashed rgba(255,255,255,.1)' } }, [
+      el('div', { style: { width: '46px', height: '46px', borderRadius: '13px', background: '#242424', color: '#6688cc', display: 'grid', placeItems: 'center' }, html: IC.truck }),
+      el('div', { style: { font: '800 14px ' + F, color: '#e6e6e6' } }, ['No lanes on the road yet']),
+      el('div', { style: { font: '500 12px ' + F, color: '#808080', maxWidth: '320px', lineHeight: '1.5' } }, ['This route has not started. Operational stops are managed here once a lane is in transit or completed — plan the route in the Plan tab first.']),
+      el('div', { class: 'hoverable', onclick: () => setState({ detailTab: 'plan' }), style: { display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', height: '36px', padding: '0 15px', borderRadius: '10px', background: 'rgba(102,136,204,.12)', border: '1px solid rgba(102,136,204,.3)', color: '#6688cc', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<span>Go to Plan</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
+    ]));
     const segList = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
     // ───────────────────── LANE DETAIL (stop management) ──────────────────
     const laneMode = !!(state.orLane != null && _orSegReg[routeId] && _orSegReg[routeId][state.orLane]);
@@ -9294,23 +9303,35 @@ export function initApp() {
     function _lpNode(inner, col, bg) {
       return el('div', { style: { width: '28px', height: '28px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: bg || '#242424', color: col || '#e6e6e6', font: '800 12px ' + F, flexShrink: '0', border: '1px solid rgba(255,255,255,.1)', position: 'relative', zIndex: '1' }, html: (typeof inner === 'string' && inner.indexOf('<') === 0) ? inner : undefined }, (typeof inner === 'string' && inner.indexOf('<') === 0) ? [] : [inner]);
     }
-    function _lpEndpoint(label, addr, isDrop, passed) {
+    // per-stop execution status chip (Completed / In progress / Upcoming) — dropdown-styled
+    function _stopStatusChip(status) {
+      const M = {
+        'Completed':   { label: 'Completed',   ic: IC.check, fg: '#47b26b', bg: 'rgba(46,153,117,.12)', bd: 'transparent' },
+        'In progress': { label: 'In progress', ic: IC.spin,  fg: '#6688cc', bg: 'rgba(102,136,204,.12)', bd: 'transparent' },
+        'Upcoming':    { label: 'Upcoming',    ic: IC.clock, fg: '#808080', bg: 'transparent',           bd: 'rgba(255,255,255,.1)' }
+      };
+      const m = M[status] || M.Upcoming;
+      return el('div', { class: 'hoverable', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 9px', borderRadius: '9px', background: m.bg, border: '1px solid ' + m.bd, color: m.fg, font: '800 11px ' + F, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: m.ic + '<span>' + m.label + '</span><span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
+    }
+    function _lpEndpoint(label, addr, isDrop, status) {
       const box = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>';
       const pin = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+      const passed = status === 'Completed';
       const col = isDrop ? '#6688cc' : '#47b26b';
-      const card = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', opacity: passed ? '.6' : '1' } }, [
+      const card = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', opacity: status === 'Upcoming' ? '.6' : '1' } }, [
         el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', flexShrink: '0', background: (isDrop ? 'rgba(102,136,204,.14)' : 'rgba(46,153,117,.14)'), color: col }, html: box }),
-        el('div', { style: { minWidth: '0' } }, [
+        el('div', { style: { minWidth: '0', flex: '1' } }, [
           el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [label]),
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '600 10px ' + F, color: '#808080', marginTop: '2px' } }, [el('span', { style: { display: 'flex', color: '#666666', flexShrink: '0' }, html: pin }), el('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [addr])])
-        ])
+        ]),
+        _stopStatusChip(status)
       ]);
       return _lpRow(_lpNode(box.replace(/width="15" height="15"/, 'width="13" height="13"'), col, isDrop ? 'rgba(46,82,153,.18)' : 'rgba(46,153,117,.18)'), card);
     }
     function _lanePanelStopCard(s, key, status, num) {
       const isFuel = s.type === 'fuel';
       const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
-      const passed = status === 'passed', next = status === 'next';
+      const passed = status === 'Completed', next = status === 'In progress';
       const open = state.orStopOpen === s.id;
       const name = isFuel ? s.brand : s.name;
       const addr = s.address || _OR_ADDR[num % _OR_ADDR.length];
@@ -9318,16 +9339,17 @@ export function initApp() {
         _lpTag(svc.label, svc.color),
         isFuel ? _lpTag('$' + s.pricePerGal.toFixed(2) + '/gal', '#b28835') : _lpTag('★ ' + s.rating, '#808080'),
         s.detourMi ? _lpTag('+' + s.detourMi + ' mi', '#808080') : null,
-        passed ? _lpTag('Passed', '#808080') : (next ? _lpTag('Next stop', '#47b26b') : (s.added && !s.adjusted ? _lpTag('Added', '#2e9975') : null)),
+        (s.added && !s.adjusted && !passed) ? _lpTag('Added', '#2e9975') : null,
         s.adjusted ? _lpTag('Adjusted', '#b28835') : null
       ]);
-      const head = el('div', { class: 'hoverable', onclick: () => setState({ orStopOpen: open ? null : s.id }), style: { display: 'grid', gridTemplateColumns: '1fr 18px', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' } }, [
-        el('div', { style: { minWidth: '0' } }, [
+      const head = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto 16px', gap: '8px', alignItems: 'flex-start' } }, [
+        el('div', { class: 'hoverable', onclick: () => setState({ orStopOpen: open ? null : s.id }), style: { minWidth: '0', cursor: 'pointer' } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', font: '600 10px ' + F, color: '#808080' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + addr + '</span>' }),
           el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6', marginTop: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [name]),
           tags
         ]),
-        el('div', { style: { display: 'flex', justifyContent: 'flex-end', color: '#808080', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s', paddingTop: '2px' }, html: IC.chevDown })
+        _stopStatusChip(status),
+        el('div', { class: 'hoverable', onclick: () => setState({ orStopOpen: open ? null : s.id }), style: { display: 'flex', justifyContent: 'flex-end', color: '#808080', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s', paddingTop: '4px', cursor: 'pointer' }, html: IC.chevDown })
       ]);
       const kids = [head];
       if (open) {
@@ -9422,13 +9444,17 @@ export function initApp() {
         const _pickAddr = _OR_ADDR[_seed % _OR_ADDR.length].split(',')[0];
         const _dropAddr = _OR_ADDR[(_seed + 1) % _OR_ADDR.length].split(',')[0];
         const departed = truckMi >= 0;
-        const firstUpcoming = stops.findIndex(s => !(truckMi >= 0 && s.distanceMi <= truckMi));
-        const rows = [_lpEndpoint(isLoad ? 'Pick up location' : 'Deadhead start', _pickAddr, false, departed)];
-        stops.forEach((s, i) => {
-          const st = (truckMi >= 0 && s.distanceMi <= truckMi) ? 'passed' : (i === firstUpcoming && inProgress ? 'next' : 'upcoming');
-          rows.push(_lanePanelStopCard(s, key, st, i + 1));
-        });
-        rows.push(_lpEndpoint(isLoad ? 'Drop off location' : 'Deadhead end', _dropAddr, true, truckMi > laneMiles));
+        const laneDone = departed && truckMi > laneMiles;
+        // ordered nodes: pick up (mi 0) → stops (distanceMi) → drop off (laneMiles).
+        // A node is Completed once the truck has reached it; the first not-yet-
+        // reached node is "In progress" (the leg the truck is driving now).
+        const nodeDists = [0].concat(stops.map(s => s.distanceMi)).concat([laneMiles]);
+        const nodeDone = nodeDists.map(dd => departed && (laneDone || dd <= truckMi));
+        const firstActive = nodeDone.indexOf(false);
+        const nodeStatus = (idx) => !departed ? 'Upcoming' : (nodeDone[idx] ? 'Completed' : (idx === firstActive ? 'In progress' : 'Upcoming'));
+        const rows = [_lpEndpoint(isLoad ? 'Pick up location' : 'Deadhead start', _pickAddr, false, nodeStatus(0))];
+        stops.forEach((s, i) => rows.push(_lanePanelStopCard(s, key, nodeStatus(i + 1), i + 1)));
+        rows.push(_lpEndpoint(isLoad ? 'Drop off location' : 'Deadhead end', _dropAddr, true, nodeStatus(stops.length + 1)));
         // choose destination / add row
         const addRow = _lpRow(
           _lpNode('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>', '#6688cc', 'rgba(102,136,204,.14)'),
@@ -9931,15 +9957,15 @@ export function initApp() {
     const rows = [];
     function execOf(status) {
       if (status === 'In Transit' || status === 'Dispatched') return 'In progress';
-      if (status === 'Delivered' || status === 'Invoiced' || status === 'Paid' || status === 'Completed') return 'Completed';
+      if (status === 'Delivered' || status === 'Invoiced' || status === 'Paid' || status === 'Completed' || status === 'Canceled') return 'Completed';
       if (status === 'Unbooked') return 'Upcoming';
       return 'Booked'; // Booked / Assigned / Offer
     }
     let loadNum = 0;
     ls.forEach((l, i) => {
       const prevDest = i === 0 ? l.origin : ls[i - 1].dest;
-      const dhExec = (l.status === 'In Transit' || l.status === 'Dispatched') ? 'In progress'
-        : (l.status === 'Delivered' || l.status === 'Invoiced' || l.status === 'Paid' || l.status === 'Completed') ? 'Completed'
+      const dhExec = execOf(l.status) === 'In progress' ? 'In progress'
+        : execOf(l.status) === 'Completed' ? 'Completed'
         : 'Upcoming';
       rows.push({
         kind: 'dh', num: 'DH', origin: prevDest, dest: l.origin,
@@ -9959,6 +9985,33 @@ export function initApp() {
         delay: _isLate ? l.onTime : (exec !== 'Upcoming' ? 'On time' : '--'), isLate: !!_isLate
       });
     });
+    // ── Coherent execution frontier (default, pre-sim): exactly ONE loaded lane
+    //    is "In progress". Loads before it are Completed, loads after it are
+    //    Upcoming (assigned / not started), and a deadhead is Completed once the
+    //    load that follows it has started (the truck already drove the DH). ──
+    (function () {
+      const loadRows = rows.filter(r => r.kind === 'load');
+      let activeLi = loadRows.findIndex(r => r.exec === 'In progress');
+      if (activeLi < 0) {
+        // No leg explicitly in transit. If the route has already progressed
+        // (some leg completed), the next un-completed leg becomes the active one;
+        // a not-yet-started (Planned) route has no active lane at all.
+        const anyStarted = loadRows.some(r => r.exec === 'Completed');
+        if (anyStarted) activeLi = loadRows.findIndex(r => r.exec !== 'Completed'); // <0 ⇒ fully done
+      }
+      loadRows.forEach((r, li) => {
+        if (activeLi < 0) return;
+        if (li < activeLi) { r.exec = 'Completed'; r.pct = 100; r.milesDriven = r.load.miles; }
+        else if (li === activeLi) { r.exec = 'In progress'; }
+        else { r.exec = 'Upcoming'; r.pct = 0; r.milesDriven = 0; r.departedAt = '--'; r.delay = '--'; r.isLate = false; }
+      });
+      rows.forEach((row, i) => {
+        if (row.kind !== 'dh') return;
+        const nxt = rows[i + 1];
+        row.exec = (nxt && (nxt.exec === 'Completed' || nxt.exec === 'In progress')) ? 'Completed' : 'Upcoming';
+      });
+    })();
+
     // ── Layer live-simulation state on top of the base rows ──
     const sim = _ctrlSim[routeId];
     if (sim && sim.started) {
@@ -9977,7 +10030,7 @@ export function initApp() {
       rows.forEach((row, i) => {
         if (row.kind !== 'dh') return;
         const nxt = rows[i + 1];
-        if (nxt) row.exec = nxt.exec === 'Completed' ? 'Completed' : (nxt.exec === 'In progress' ? 'In progress' : 'Upcoming');
+        if (nxt) row.exec = (nxt.exec === 'Completed' || nxt.exec === 'In progress') ? 'Completed' : 'Upcoming';
       });
     }
     const currentIncome = ls
