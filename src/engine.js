@@ -8943,13 +8943,17 @@ export function initApp() {
     }
     function _etaChip(row) {
       if (row.kind !== 'load') return el('div', {});
+      const done = row.exec === 'Completed';
+      const active = row.exec === 'In progress';
+      // Completed = real elapsed drive time (actual); in-progress = live tracking; else estimate.
+      const tag = done ? { t: 'actual', c: '#47b26b', dot: false } : active ? { t: 'live', c: '#47b26b', dot: true } : { t: 'est.', c: '#808080', dot: false };
       return el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '9px', padding: '9px 13px', borderRadius: '10px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)', whiteSpace: 'nowrap' } }, [
         el('span', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [drive(row.load.miles)]),
-        el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 11px ' + F, color: '#47b26b' } }, [
-          el('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
-          'live'
+        el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 11px ' + F, color: tag.c } }, [
+          tag.dot ? el('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }) : null,
+          tag.t
         ]),
-        el('span', { style: { display: 'flex', color: '#666666' }, html: IC.sync })
+        active ? el('span', { style: { display: 'flex', color: '#666666' }, html: IC.sync }) : null
       ]);
     }
     function _statusDrop(exec) {
@@ -8970,7 +8974,9 @@ export function initApp() {
       const active = row.exec === 'In progress';
       const milesDriven = done ? miles : (active ? Math.max(0, Math.round(seg.truckMi >= 0 ? seg.truckMi : miles * 0.5)) : 0);
       const pct = miles ? Math.max(0, Math.min(100, Math.round(milesDriven / miles * 100))) : 0;
-      const departedAt = (row.departedAt && row.departedAt !== '--') ? row.departedAt : '—';
+      const _depDate = (row.load && row.load.pickup) ? prettyDate(row.load.pickup) : null;
+      const _depTime = (row.load && row.load.pickupTime) ? ((row.load.pickupTime.split(' - ')[0]) || '') : '';
+      const departedAt = ((done || active) && _depDate) ? (_depDate + (_depTime ? ' · ' + _depTime : '')) : '—';
       const eta = (row.load && row.load.eta && row.load.eta !== '--') ? row.load.eta : '—';
       const late = !!row.isLate;
       const delayTxt = (row.delay && row.delay !== '--') ? row.delay : (done || active ? 'On time' : '—');
@@ -9153,7 +9159,7 @@ export function initApp() {
         el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 22px 1fr', alignItems: 'center', gap: '10px', minWidth: '0' } }, [
           _endpoint(row.origin, row.originDate, null, false),
           el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
-          _endpoint(row.dest, row.destDate, active ? 'ETA' : null, false)
+          _endpoint(row.dest, row.destDate, active ? 'ETA' : (done ? 'Arrived' : null), false)
         ]),
         _etaChip(row),
         _statusDrop(row.exec),
@@ -10131,7 +10137,8 @@ export function initApp() {
       rows.push({
         kind: 'dh', num: 'DH', origin: prevDest, dest: l.origin,
         originDate: 'Est. ' + prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery),
-        destDate: 'Est. ' + prettyDate(l.pickup), exec: dhExec, loadIdx: null
+        destDate: 'Est. ' + prettyDate(l.pickup), exec: dhExec, loadIdx: null,
+        _oRaw: prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery), _dRaw: prettyDate(l.pickup)
       });
       loadNum++;
       const exec = execOf(l.status);
@@ -10194,6 +10201,25 @@ export function initApp() {
         if (nxt) row.exec = (nxt.exec === 'Completed' || nxt.exec === 'In progress') ? 'Completed' : 'Upcoming';
       });
     }
+    // ── Coherent date/time labels: what already happened is REAL (no "Est."),
+    //    what hasn't is estimated. A departed lane's origin date is real; a
+    //    completed lane's dest is the real arrival; an in-progress lane's dest is
+    //    the estimated ETA (date + eta time). ──
+    rows.forEach(row => {
+      const dep = row.exec === 'Completed' || row.exec === 'In progress'; // origin reached
+      const arr = row.exec === 'Completed';                               // dest reached
+      if (row.kind === 'load') {
+        const l = row.load;
+        const depT = (l.pickupTime || '').split(' - ')[0] || '';
+        const etaT = (l.eta && l.eta !== '--') ? l.eta : '';
+        row.originDate = (dep ? '' : 'Est. ') + prettyDate(l.pickup) + (dep && depT ? ' · ' + depT : '');
+        const showEta = (row.exec === 'In progress' || row.exec === 'Completed') && etaT;
+        row.destDate = (arr ? '' : 'Est. ') + prettyDate(l.delivery) + (showEta ? ' · ' + etaT : '');
+      } else {
+        row.originDate = (dep ? '' : 'Est. ') + row._oRaw;
+        row.destDate = (arr ? '' : 'Est. ') + row._dRaw;
+      }
+    });
     const currentIncome = ls
       .filter(l => ['In Transit', 'Dispatched', 'Delivered', 'Invoiced', 'Paid'].indexOf(l.status) >= 0)
       .reduce((s, l) => s + l.income, 0);
