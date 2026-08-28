@@ -528,6 +528,10 @@ export function initApp() {
   function render() {
     const _lb = document.getElementById('_ef-lb'); if (_lb) _lb.style.display = 'none';
     document.querySelectorAll('[data-ef-htip]').forEach(function(t){t.remove();});
+    // Preserve the manage-stops panel scroll across re-renders (setState wipes #app).
+    // Reset to top only when the panel was absent pre-render (i.e. modal just opening).
+    const _msPre = document.getElementById('or-manage-scroll');
+    _orManageScroll = _msPre ? _msPre.scrollTop : 0;
     root.innerHTML = '';
     const s = state;
     if (s.openRoute) {
@@ -540,8 +544,15 @@ export function initApp() {
       root.appendChild(renderCreateRouteModal());
       window.crInitModal();
     }
+    // Restore manage-stops scroll; keep an expanded stop card in view (with its actions).
+    const _msPost = document.getElementById('or-manage-scroll');
+    if (_msPost) {
+      _msPost.scrollTop = _orManageScroll;
+      if (state.orStopOpen != null) { const _c = document.getElementById('or-stop-' + state.orStopOpen); if (_c) _c.scrollIntoView({ block: 'nearest' }); }
+    }
     // Lane map modal is managed imperatively via _doRenderLaneMap() — survives re-renders
   }
+  let _orManageScroll = 0;
 
   window.crCloseModal = function () { var t = document.getElementById('cr-global-tip'); if (t) t.remove(); setState({ showCreateRoute: false }); };
 
@@ -8831,7 +8842,10 @@ export function initApp() {
       el('span', { style: { flex: '1' } }, [s]),
       s === current ? el('span', { style: { color: '#6688cc' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' }) : null
     ]);
-    const menu = el('div', { id: 'or-status-menu', style: { position: 'fixed', zIndex: '9999', top: (rect.bottom + 6) + 'px', left: Math.max(8, rect.right - 168) + 'px', width: '168px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
+    const _menuH = 150;
+    const _flipUp = (rect.bottom + 6 + _menuH) > window.innerHeight;
+    const _top = _flipUp ? Math.max(8, rect.top - _menuH - 6) : (rect.bottom + 6);
+    const menu = el('div', { id: 'or-status-menu', style: { position: 'fixed', zIndex: '9999', top: _top + 'px', left: Math.max(8, rect.right - 168) + 'px', width: '168px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
       el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Set stop status']),
       opt('Completed'), opt('In progress'), opt('Upcoming')
     ]);
@@ -9386,12 +9400,12 @@ export function initApp() {
       return el('div', { style: { padding: '4px 16px 16px' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 12px' } }, [
           el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
-          el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Choose a stop type'])
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Choose a stop type'])
         ]),
-        el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '8px' } }, types.map(t => el('div', {
+        el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '7px' } }, types.map(t => el('div', {
           class: 'hoverable', onclick: () => setState({ orAddType: t }),
-          style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 13px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)', cursor: 'pointer' }
-        }, [_svcIconBox(t, 32), el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_OR_SVC[t].label])])))
+          style: { display: 'flex', alignItems: 'center', gap: '9px', padding: '10px 11px', borderRadius: '11px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)', cursor: 'pointer' }
+        }, [_svcIconBox(t, 28), el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, [_OR_SVC[t].label])])))
       ]);
     }
     function _candidateBrowser(laneIdx, type) {
@@ -9404,24 +9418,24 @@ export function initApp() {
           el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
           _svcIconBox(type, 28),
           el('div', { style: { flex: '1' } }, [
-            el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [(isReplace ? 'Replace with ' : 'Add ') + svc.label.toLowerCase() + ' stop']),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '1px' } }, [cands.length + ' options along this lane · tap the map or a card'])
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [(isReplace ? 'Replace with ' : 'Add ') + svc.label.toLowerCase() + ' stop']),
+            el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '1px' } }, [cands.length + ' options along this lane · tap the map or a card'])
           ])
         ]),
-        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px' } }, cands.map((c, i) => {
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, cands.map((c, i) => {
           const added = existing.indexOf(c.id) >= 0;
-          return el('div', { style: { display: 'grid', gridTemplateColumns: '26px 1fr auto', alignItems: 'center', gap: '11px', padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)' } }, [
-            el('div', { style: { width: '26px', height: '26px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#292929', color: '#e6e6e6', font: '800 12px ' + F }, }, [String(i + 1)]),
+          return el('div', { style: { display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)' } }, [
+            el('div', { style: { width: '22px', height: '22px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#292929', color: '#e6e6e6', font: '800 11px ' + F }, }, [String(i + 1)]),
             el('div', { style: { minWidth: '0' } }, [
               el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
-                el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
+                el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
                 _badgePill(c.badge)
               ]),
-              el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '2px' } }, [(c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi detour · ★ ' + c.rating])
+              el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [(c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi detour · ★ ' + c.rating])
             ]),
             added
-              ? el('div', { style: { font: '800 11px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
-              : el('div', { class: 'hoverable', onclick: () => { let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); } _orAddCandidate(routeId, laneIdx, c, opts); setState({ orAddType: null, orReplace: null }); }, style: { font: '800 11.5px ' + F, color: '#141414', background: '#6688cc', padding: '7px 13px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [isReplace ? 'Choose' : 'Add +'])
+              ? el('div', { style: { font: '800 10.5px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
+              : el('div', { class: 'hoverable', onclick: () => { let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); } _orAddCandidate(routeId, laneIdx, c, opts); setState({ orAddType: null, orReplace: null }); }, style: { font: '800 11px ' + F, color: '#141414', background: '#6688cc', padding: '6px 11px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [isReplace ? 'Choose' : 'Add +'])
           ]);
         }))
       ]);
@@ -9596,7 +9610,7 @@ export function initApp() {
       const pin = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
       const passed = status === 'Completed';
       const col = isDrop ? '#6688cc' : '#47b26b';
-      const card = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', opacity: status === 'Upcoming' ? '.6' : '1' } }, [
+      const card = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', opacity: status === 'Upcoming' ? '.6' : '1' } }, [
         el('div', { style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', flexShrink: '0', background: (isDrop ? 'rgba(102,136,204,.14)' : 'rgba(46,153,117,.14)'), color: col }, html: box }),
         el('div', { style: { minWidth: '0', flex: '1' } }, [
           el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, [label]),
@@ -9646,7 +9660,7 @@ export function initApp() {
           ])
         ]));
       }
-      const card = el('div', { style: { padding: '12px 13px', borderRadius: '13px', background: next ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (next ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.06)'), opacity: passed ? '.72' : '1' } }, kids);
+      const card = el('div', { id: 'or-stop-' + s.id, style: { padding: '11px 12px', borderRadius: '12px', background: next ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (next ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.06)'), opacity: passed ? '.72' : '1' } }, kids);
       return _lpRow(_lpNode(String(num), passed ? '#808080' : '#e6e6e6', passed ? '#242424' : (next ? 'rgba(46,153,117,.2)' : '#2e5299')), card);
     }
     // ── Changes tab: per-lane plan change log (actor + time; plan edits revertible) ──
@@ -9668,7 +9682,7 @@ export function initApp() {
         el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['No changes yet']),
         el('div', { style: { font: '500 11.5px ' + F, color: '#808080', maxWidth: '300px', lineHeight: '1.5' } }, ['Plan edits and driver events for this lane will show up here, with who made them and when.'])
       ]);
-      return el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: '8px' } }, list.map(e => {
+      return el('div', { id: 'or-manage-scroll', class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: '8px' } }, list.map(e => {
         const a = ACT[e.actor] || ACT.System;
         return el('div', { style: { display: 'grid', gridTemplateColumns: '30px 1fr auto', alignItems: 'flex-start', gap: '11px', padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', opacity: e.reverted ? '.6' : '1' } }, [
           el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', background: a.bg, color: a.c, display: 'grid', placeItems: 'center', flexShrink: '0' }, html: KIND[e.kind] || KIND.edit }),
@@ -9719,7 +9733,7 @@ export function initApp() {
       // load card
       const _ldM = (v, label) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [label])]);
       const equip = ((typeof d !== 'undefined' && d && d.equipment) ? d.equipment : 'Van');
-      const loadCard = el('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', margin: '14px 16px 4px', padding: '13px 14px', borderRadius: '13px', background: '#242424', border: '1px solid rgba(255,255,255,.07)' } }, [
+      const loadCard = el('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)' } }, [
         el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
         _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
         _ldM(isLoad ? money(income) : '$0.00', 'Current income'),
@@ -9753,7 +9767,7 @@ export function initApp() {
         class: canGenNow ? 'hoverable' : '',
         onclick: canGenNow ? (() => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orPushUndo(routeId, key, 'Optimal fuel plan generated'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1500); }) : undefined,
         title: canGenNow ? (manualFuelStops.length ? 'Replace manual fuel stops with the cost-optimal plan' : 'Generate the cost-optimal fuel plan for this lane') : 'The current stops are already the optimal fuel plan',
-        style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '10px', font: '800 11.5px ' + F, whiteSpace: 'nowrap', flexShrink: '0', cursor: canGenNow ? 'pointer' : 'default', background: canGenNow ? '#6688cc' : '#242424', color: canGenNow ? '#0d1424' : '#5a5a5a', border: '1px solid ' + (canGenNow ? '#6688cc' : 'rgba(255,255,255,.06)') },
+        style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, whiteSpace: 'nowrap', flexShrink: '0', cursor: canGenNow ? 'pointer' : 'default', background: canGenNow ? '#6688cc' : '#242424', color: canGenNow ? '#0d1424' : '#5a5a5a', border: '1px solid ' + (canGenNow ? '#6688cc' : 'rgba(255,255,255,.06)') },
         html: _OR_SVC.fuel.icon + '<span>Generate Optimal Fuel Plan</span>'
       });
       // section header: Added stops (N) + Generate button (right of the title)
@@ -9780,9 +9794,9 @@ export function initApp() {
         // choose destination / add row
         const addRow = _lpRow(
           _lpNode('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>', '#6688cc', 'rgba(102,136,204,.14)'),
-          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '9px', padding: '12px 13px', borderRadius: '12px', background: '#1a1a1a', border: '1px dashed rgba(255,255,255,.18)', cursor: 'pointer', color: '#808080' } }, [
-            el('span', { style: { display: 'flex', color: '#666666' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' }),
-            el('span', { style: { font: '600 12px ' + F } }, ['Choose destination or click on the map'])
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '11px', background: '#1a1a1a', border: '1px dashed rgba(255,255,255,.18)', cursor: 'pointer', color: '#808080' } }, [
+            el('span', { style: { display: 'flex', color: '#666666' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' }),
+            el('span', { style: { font: '600 11.5px ' + F } }, ['Choose destination or click on the map'])
           ])
         );
         listArea = el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: '9px', padding: '4px 16px 6px' } }, [
@@ -9820,9 +9834,9 @@ export function initApp() {
       ]) : null;
 
       // footer: Save
-      const footer = el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,.08)', background: '#161616' } }, [
-        isAdding ? el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '42px', padding: '0 16px', borderRadius: '11px', cursor: 'pointer', font: '800 13px ' + F, color: '#b3b3b3', background: '#242424', border: '1px solid rgba(255,255,255,.1)' } }, ['Cancel']) : null,
-        el('div', { class: 'hoverable', onclick: () => { if (_orSaving) return; _orSaving = true; setState({}); setTimeout(() => { _orSaving = false; setState({ orLane: null, orAddType: null, orReplace: null, orStopOpen: null }); }, 1200); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', borderRadius: '10px', cursor: 'pointer', font: '800 12.5px ' + F, color: '#0d1a13', background: '#2e9975' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Save changes</span>' })
+      const footer = el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.08)', background: '#161616' } }, [
+        isAdding ? el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '34px', padding: '0 14px', borderRadius: '9px', cursor: 'pointer', font: '800 12px ' + F, color: '#b3b3b3', background: '#242424', border: '1px solid rgba(255,255,255,.1)' } }, ['Cancel']) : null,
+        el('div', { class: 'hoverable', onclick: () => { if (_orSaving) return; _orSaving = true; setState({}); setTimeout(() => { _orSaving = false; setState({ orLane: null, orAddType: null, orReplace: null, orStopOpen: null }); }, 1200); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', height: '34px', borderRadius: '9px', cursor: 'pointer', font: '800 12px ' + F, color: '#0d1a13', background: '#2e9975' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Save changes</span>' })
       ]);
 
       // ── tab bar: Stops | Changes ──
@@ -9835,7 +9849,7 @@ export function initApp() {
       ]);
       const body = tab === 'changes'
         ? _changesTab(row)
-        : el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto' } }, [loadCard, secHead, listArea, impactStrip, fuelBanner]);
+        : el('div', { id: 'or-manage-scroll', class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', paddingBottom: '8px' } }, [loadCard, secHead, listArea, impactStrip, fuelBanner]);
 
       return el('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: '0' } }, [
         header,
@@ -10052,6 +10066,8 @@ export function initApp() {
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors' }).addTo(map);
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, opacity: .9, pane: 'shadowPane' }).addTo(map);
       if (laneMode) {
+        // clicking empty map area starts the add-stop flow (honors "click on the map")
+        map.on('click', () => { if (!state.orAddType) setState({ orAddType: '__pick', orReplace: null }); });
         // ── lane-focused view: single lane polyline + its stops (+ candidates) ──
         const seg = _orSegReg[routeId][state.orLane];
         const a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest];
@@ -10230,7 +10246,7 @@ export function initApp() {
             el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#47b26b' } }, [money(Math.round(sp.cost))]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Stop cost'])])
           ]) : null,
           el('div', { style: { padding: '16px 20px' } }, [
-            el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#b3b3b3', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + sp.address + '</span>' }),
+            el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#b3b3b3', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + (sp.address || (svc.label + ' stop · along this lane')) + '</span>' }),
             el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '16px 0 9px' } }, ['Features']),
             el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, feats.map(ft => el('span', { style: { font: '700 11px ' + F, color: '#b3b3b3', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', padding: '5px 11px', borderRadius: '999px' } }, [ft])))
           ]),
