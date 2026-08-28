@@ -532,6 +532,9 @@ export function initApp() {
     // Reset to top only when the panel was absent pre-render (i.e. modal just opening).
     const _msPre = document.getElementById('or-manage-scroll');
     _orManageScroll = _msPre ? _msPre.scrollTop : 0;
+    // Detach the persistent On Road map before wiping #app so its Leaflet instance
+    // (and loaded tiles) survive the re-render — prevents the map from flashing.
+    if (_orMapEl && _orMapEl.parentNode) _orMapEl.parentNode.removeChild(_orMapEl);
     root.innerHTML = '';
     const s = state;
     if (s.openRoute) {
@@ -8603,7 +8606,10 @@ export function initApp() {
     'San Antonio, TX': [29.42, -98.49], 'Savannah, GA': [32.08, -81.09], 'Shreveport, LA': [32.53, -93.75],
     'St. Louis, MO': [38.63, -90.20], 'Tampa, FL': [27.95, -82.46]
   };
-  let _orMap = null;
+  let _orMap = null;          // persistent Leaflet instance (survives re-renders → no flash)
+  let _orMapEl = null;        // persistent map container div (re-parented into the current slot)
+  let _orMapLayers = null;    // dynamic layer group (markers/polylines) cleared+redrawn each render
+  let _orMapFitKey = null;    // last fitted target; re-fit only when this changes
 
   // ── Lane-level stop management: state stores (survive re-renders) ──
   const _orStops = {};      // routeId -> laneIdx -> [stop]
@@ -8810,7 +8816,16 @@ export function initApp() {
     const next = Math.min(miles, cur + step);
     if (!_orProgress[routeId]) _orProgress[routeId] = {};
     _orProgress[routeId][key] = next;
-    if (Math.random() < 0.55) _orDriverEvent(routeId, key, next, miles);
+    // Missed-stop detection: if the truck just drove past a planned stop that wasn't
+    // serviced, the driver may have skipped it → flag it "Skipped" + log a driver event.
+    const _passed = _orLaneStopsSorted(routeId, key).filter(s => s.distanceMi > cur && s.distanceMi <= next && !(_orStopStatus[routeId] && _orStopStatus[routeId][key] && _orStopStatus[routeId][key][s.id]));
+    if (_passed.length && Math.random() < 0.5) {
+      const sk = _passed[Math.floor(Math.random() * _passed.length)];
+      if (!_orStopStatus[routeId]) _orStopStatus[routeId] = {};
+      if (!_orStopStatus[routeId][key]) _orStopStatus[routeId][key] = {};
+      _orStopStatus[routeId][key][sk.id] = 'Skipped';
+      _orLogChange(routeId, key, { actor: 'Driver', kind: 'remove', text: 'Drove past ' + (sk.type === 'fuel' ? sk.brand : sk.name) + ' without stopping', revertible: false });
+    } else if (Math.random() < 0.55) { _orDriverEvent(routeId, key, next, miles); }
     _orToast = 'Synced with driver app'; _orUndo = null;
     if (_orToastTimer) clearTimeout(_orToastTimer);
     _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000);
@@ -8837,17 +8852,18 @@ export function initApp() {
     const F = '"General Sans", Nunito, system-ui';
     const ex = document.getElementById('or-status-menu'); if (ex) ex.remove();
     const rect = anchorEl.getBoundingClientRect();
+    const _dotFor = (s) => s === 'Completed' ? '#47b26b' : s === 'In progress' ? '#6688cc' : s === 'Skipped' ? '#cc666f' : '#666666';
     const opt = (s) => el('div', { class: 'hoverable', onclick: () => { const m = document.getElementById('or-status-menu'); if (m) m.remove(); _orSetStopStatus(routeId, key, nodeKey, s); }, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', font: '700 12px ' + F, color: s === current ? '#e6e6e6' : '#b3b3b3' } }, [
-      el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: s === 'Completed' ? '#47b26b' : s === 'In progress' ? '#6688cc' : '#666666', flexShrink: '0' } }),
+      el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: _dotFor(s), flexShrink: '0' } }),
       el('span', { style: { flex: '1' } }, [s]),
       s === current ? el('span', { style: { color: '#6688cc' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' }) : null
     ]);
-    const _menuH = 150;
+    const _menuH = 186;
     const _flipUp = (rect.bottom + 6 + _menuH) > window.innerHeight;
     const _top = _flipUp ? Math.max(8, rect.top - _menuH - 6) : (rect.bottom + 6);
     const menu = el('div', { id: 'or-status-menu', style: { position: 'fixed', zIndex: '9999', top: _top + 'px', left: Math.max(8, rect.right - 168) + 'px', width: '168px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
       el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Set stop status']),
-      opt('Completed'), opt('In progress'), opt('Upcoming')
+      opt('Completed'), opt('In progress'), opt('Skipped'), opt('Upcoming')
     ]);
     document.body.appendChild(menu);
     setTimeout(() => { const off = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
@@ -8855,15 +8871,22 @@ export function initApp() {
   // Fuel optimizer (mock): insert optimal fuel stops with gallons + cost + savings.
   function _orRunFuel(routeId, laneIdx) {
     const miles = _orSegMiles(routeId, laneIdx);
-    const n = miles > 700 ? 3 : miles > 320 ? 2 : 1;
-    const totalGal = Math.max(45, Math.round(miles / 6.4));
-    const arr = _orStopsGet(routeId, laneIdx).filter(s => !s.fuelPlan); // drop previous fuel plan
+    // Recalculate from the truck's current position: only optimize the range still
+    // ahead of the driver (already-driven sections are fixed).
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][laneIdx];
+    const truckMi = (seg && seg.truckMi >= 0) ? Math.min(seg.truckMi, miles) : 0;
+    const startFrac = miles ? Math.min(0.9, truckMi / miles) : 0;
+    const remMiles = Math.max(60, miles * (1 - startFrac));
+    const n = remMiles > 700 ? 3 : remMiles > 320 ? 2 : 1;
+    const totalGal = Math.max(30, Math.round(remMiles / 6.4));
+    // drop ALL existing fuel stops (manual + previous plan); keep non-fuel stops
+    const arr = _orStopsGet(routeId, laneIdx).filter(s => s.type !== 'fuel');
     let rem = totalGal, totalCost = 0;
     for (let i = 0; i < n; i++) {
       const gal = i === n - 1 ? rem : Math.round(totalGal / n); rem -= gal;
       const price = +(3.55 + Math.random() * 0.6).toFixed(3);
       const rank = i === 0 ? 'best' : (Math.random() < 0.5 ? 'ok' : 'high');
-      const frac = (i + 1) / (n + 1);
+      const frac = startFrac + (1 - startFrac) * (i + 1) / (n + 1);
       totalCost += gal * price;
       arr.push({
         id: 'fs' + laneIdx + '_' + i + '_' + Math.floor(Math.random() * 9999),
@@ -9598,6 +9621,7 @@ export function initApp() {
       const M = {
         'Completed':   { label: 'Completed',   ic: IC.check, fg: '#47b26b', bg: 'rgba(46,153,117,.12)', bd: 'transparent' },
         'In progress': { label: 'In progress', ic: IC.spin,  fg: '#6688cc', bg: 'rgba(102,136,204,.12)', bd: 'transparent' },
+        'Skipped':     { label: 'Skipped',     ic: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>', fg: '#cc666f', bg: 'rgba(204,102,111,.14)', bd: 'transparent' },
         'Upcoming':    { label: 'Upcoming',    ic: IC.clock, fg: '#808080', bg: 'transparent',           bd: 'rgba(255,255,255,.1)' }
       };
       const m = M[status] || M.Upcoming;
@@ -9816,6 +9840,7 @@ export function initApp() {
             el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimal fuel plan · save ' + money(fuelMeta.savings)]),
             el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [optFuelStops.length + ' stop' + (optFuelStops.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total'])
           ]),
+          el('div', { class: 'hoverable', title: 'Recalculate from the truck’s current position', onclick: () => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orPushUndo(routeId, key, 'Fuel plan recalculated'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1200); }, style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', padding: '4px 9px', borderRadius: '7px', border: '1px solid rgba(178,136,53,.35)' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg><span>Recalculate</span>' }),
           el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, key, 'Fuel plan removed'); _orClearFuel(routeId, key); setState({}); }, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)' } }, ['Remove'])
         ]);
       }
@@ -9962,7 +9987,8 @@ export function initApp() {
     const mapPanel = el('div', { style: laneMode
       ? { position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', background: '#1a1a1a' }
       : { position: 'relative', height: '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
-    const mapEl = el('div', { id: 'ef-onroad-map', style: { position: 'absolute', inset: '0' } });
+    // empty slot; the persistent map div (_orMapEl) is re-parented into it after render
+    const mapEl = el('div', { id: 'ef-onroad-mapslot', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
     if (laneMode) {
@@ -10059,15 +10085,26 @@ export function initApp() {
 
     // ─────────────────────────── Leaflet init ─────────────────────────────
     setTimeout(() => {
-      const container = document.getElementById('ef-onroad-map');
-      if (!container) return;
-      if (_orMap) { try { _orMap.remove(); } catch (e) {} _orMap = null; }
-      const map = L.map(container, { zoomControl: false, attributionControl: true, scrollWheelZoom: true });
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors' }).addTo(map);
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, opacity: .9, pane: 'shadowPane' }).addTo(map);
+      const slot = document.getElementById('ef-onroad-mapslot');
+      if (!slot) return;
+      // Reuse a persistent map instance + tiles; only the dynamic layer group is
+      // cleared and redrawn each render, so the map (and tiles) never flash.
+      if (!_orMapEl) { _orMapEl = document.createElement('div'); _orMapEl.style.cssText = 'position:absolute;inset:0'; }
+      if (_orMapEl.parentNode !== slot) slot.appendChild(_orMapEl);
+      let _fresh = false;
+      if (!_orMap) {
+        _fresh = true;
+        _orMap = L.map(_orMapEl, { zoomControl: false, attributionControl: true, scrollWheelZoom: true });
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors' }).addTo(_orMap);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, opacity: .9, pane: 'shadowPane' }).addTo(_orMap);
+        _orMapLayers = L.layerGroup().addTo(_orMap);
+        _orMap.on('click', () => { if (state.orLane != null && !state.orAddType) setState({ orAddType: '__pick', orReplace: null }); });
+      }
+      const map = _orMap;
+      const layers = _orMapLayers;
+      layers.clearLayers();
+      map.invalidateSize();
       if (laneMode) {
-        // clicking empty map area starts the add-stop flow (honors "click on the map")
-        map.on('click', () => { if (!state.orAddType) setState({ orAddType: '__pick', orReplace: null }); });
         // ── lane-focused view: single lane polyline + its stops (+ candidates) ──
         const seg = _orSegReg[routeId][state.orLane];
         const a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest];
@@ -10099,18 +10136,18 @@ export function initApp() {
           if (_act && !_recon) {
             // driver deviated from the planned polyline → blue planned / red actual / green matched ends
             const pf0 = _orLerp(a, b, _act.f0), pf1 = _orLerp(a, b, _act.f1), apex = _orOffset(a, b, (_act.f0 + _act.f1) / 2, _act.side * _act.mag);
-            L.polyline([a, pf0], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
-            L.polyline([pf1, b], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(map);
-            L.polyline([pf0, pf1], { color: '#6688cc', weight: 3.5, opacity: .9, dashArray: '2 9', lineCap: 'round' }).addTo(map).bindTooltip('Planned route', { sticky: true });
-            L.polyline([pf0, apex, pf1], { color: '#cc666f', weight: 4, opacity: .95, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(map).bindTooltip('Driver — actual route', { sticky: true });
-            L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(map).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
+            L.polyline([a, pf0], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(layers);
+            L.polyline([pf1, b], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(layers);
+            L.polyline([pf0, pf1], { color: '#6688cc', weight: 3.5, opacity: .9, dashArray: '2 9', lineCap: 'round' }).addTo(layers).bindTooltip('Planned route', { sticky: true });
+            L.polyline([pf0, apex, pf1], { color: '#cc666f', weight: 4, opacity: .95, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual route', { sticky: true });
+            L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
           } else {
-            L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(map);
+            L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           }
-          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(seg.origin, { direction: 'top' });
-          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(seg.dest, { direction: 'top' });
+          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
+          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
           if (truckFrac > 0 && truckFrac < 1 && _recon) {
-            L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+            L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           }
           // stop markers sit ON the routed waypoint positions
           _sorted.forEach((s, i) => {
@@ -10119,7 +10156,7 @@ export function initApp() {
             const isPassed = truckMi >= 0 && s.distanceMi <= truckMi;
             const col = isPassed ? '#2e9975' : (s.type === 'fuel' ? '#b28835' : '#6688cc');
             const inner = isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon;
-            L.marker(ll, { icon: L.divIcon({ className: '', html: pinFor(inner, col), iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .8 : 1 }).addTo(map).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
+            L.marker(ll, { icon: L.divIcon({ className: '', html: pinFor(inner, col), iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .8 : 1 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
           });
           // candidate markers while browsing a service type
           if (addType && addType !== '__pick') {
@@ -10128,7 +10165,7 @@ export function initApp() {
               if (existing.indexOf(c.id) >= 0) return;
               const ll = _orOffset(a, b, c.frac, (i % 2 ? 1 : -1) * 0.05);
               const isReplace = !!state.orReplace;
-              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1a1a1a;border:2px dashed rgba(102,136,204,.7);color:#6688cc;font:800 12px ' + F + ';cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + (i + 1) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).addTo(map);
+              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1a1a1a;border:2px dashed rgba(102,136,204,.7);color:#6688cc;font:800 12px ' + F + ';cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + (i + 1) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).addTo(layers);
               m.bindTooltip(c.name + ' · ' + c.detourMi + ' mi detour', { direction: 'top' });
               m.on('click', () => { let opts; _orPushUndo(routeId, state.orLane, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, state.orLane, state.orReplace); } const _tm = _orTruckMi(routeId, state.orLane); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm }); _orAddCandidate(routeId, state.orLane, c, opts); setState({ orAddType: null, orReplace: null }); });
             });
@@ -10136,7 +10173,7 @@ export function initApp() {
           // truck at its live position on this lane
           if (truckFrac > 0 && truckFrac < 1) {
             const tll = _pathAt(pathPts, truckFrac).pt;
-            L.marker(tll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:40px;height:40px"><div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:14px;height:14px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(map);
+            L.marker(tll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:40px;height:40px"><div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:14px;height:14px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(layers);
           }
           // feasibility alert cues on this lane
           _orAlertsGet(routeId).filter(al => (al.segKey || 'L' + al.laneIdx) === state.orLane).forEach(al => {
@@ -10146,23 +10183,25 @@ export function initApp() {
               const p0 = _orLerp(a, b, Math.max(0, Math.min(1, pr)));
               const p1 = _orOffset(a, b, Math.min(1, pr + 0.16), 0.13);
               const p2 = _orLerp(a, b, Math.min(1, pr + 0.32));
-              L.polyline([p0, p1, p2], { color: '#cc666f', weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(map).bindTooltip('Off optimal route', { direction: 'top' });
+              L.polyline([p0, p1, p2], { color: '#cc666f', weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(layers).bindTooltip('Off optimal route', { direction: 'top' });
             } else if (al.type === 'missed' && al.stopId) {
               const sp = _orStopsGet(routeId, state.orLane).find(s => s.id === al.stopId);
-              if (sp) { const t = sp.frac != null ? sp.frac : (laneMiles ? sp.distanceMi / laneMiles : .5); const ll = _orOffset(a, b, t, (0)); L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:36px;height:36px;border-radius:50%;border:2.5px dashed #cc666f;box-sizing:border-box"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1100 }).addTo(map).bindTooltip('Skipped stop', { direction: 'top' }); }
+              if (sp) { const t = sp.frac != null ? sp.frac : (laneMiles ? sp.distanceMi / laneMiles : .5); const ll = _orOffset(a, b, t, (0)); L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:36px;height:36px;border-radius:50%;border:2.5px dashed #cc666f;box-sizing:border-box"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1100 }).addTo(layers).bindTooltip('Skipped stop', { direction: 'top' }); }
             } else {
               const ahead = al.type === 'fuel' ? 0.12 : 0.22;
               const p = _orOffset(a, b, Math.min(0.95, pr + ahead), 0.03);
-              L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1200 }).addTo(map).bindTooltip(meta.label, { direction: 'top' });
+              L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1200 }).addTo(layers).bindTooltip(meta.label, { direction: 'top' });
             }
           });
           const _lb = L.latLngBounds(pathPts);
-          _orMap = map;
+          const _fitKey = 'lane:' + state.orLane;
           const _fit = () => { try { map.invalidateSize(); if (_lb.isValid()) map.fitBounds(_lb, { padding: [45, 45] }); } catch (e) {} };
-          _fit();
-          requestAnimationFrame(() => { _fit(); requestAnimationFrame(_fit); });
-          [120, 350, 700].forEach(ms => setTimeout(_fit, ms));
-        } else { map.setView([37.8, -96], 4); _orMap = map; }
+          if (_fresh || _orMapFitKey !== _fitKey) {   // re-fit only when the lane changes → stable view on button presses
+            _orMapFitKey = _fitKey; _fit();
+            requestAnimationFrame(() => { _fit(); requestAnimationFrame(_fit); });
+            [120, 350, 700].forEach(ms => setTimeout(_fit, ms));
+          }
+        } else if (_fresh || _orMapFitKey !== 'lane-nogeo') { _orMapFitKey = 'lane-nogeo'; map.setView([37.8, -96], 4); }
         return;
       }
       // ordered waypoint sequence from loads
@@ -10175,21 +10214,21 @@ export function initApp() {
       const pts = seq.map(c => ({ city: c, ll: _OR_COORD[c] })).filter(p => p.ll);
       if (pts.length) {
         const latlngs = pts.map(p => p.ll);
-        L.polyline(latlngs, { color: '#6688cc', weight: 3, opacity: .85, dashArray: '2 9', lineCap: 'round' }).addTo(map);
+        L.polyline(latlngs, { color: '#6688cc', weight: 3, opacity: .85, dashArray: '2 9', lineCap: 'round' }).addTo(layers);
         // traveled (green) up to the active lane's origin index
         const activeCity = (cd.ls[sim.activeLaneIdx] || {}).origin;
         let travIdx = activeCity ? seq.indexOf(activeCity) : 0;
-        if (travIdx > 0) L.polyline(latlngs.slice(0, travIdx + 1), { color: '#2e9975', weight: 4.5, opacity: .95, lineCap: 'round' }).addTo(map);
+        if (travIdx > 0) L.polyline(latlngs.slice(0, travIdx + 1), { color: '#2e9975', weight: 4.5, opacity: .95, lineCap: 'round' }).addTo(layers);
         pts.forEach((p, i) => {
           const endpoint = i === 0 || i === pts.length - 1;
           const html = endpoint
             ? '<div style="width:16px;height:16px;border-radius:50%;background:#2e5299;border:3px solid #141414;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></div>'
             : '<div style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#1a1a1a;border:2px solid rgba(255,255,255,.28);color:#e6e6e6;font:800 12px ' + F + '">' + (i + 1) + '</div>';
-          L.marker(p.ll, { icon: L.divIcon({ className: '', html: html, iconSize: endpoint ? [16, 16] : [26, 26], iconAnchor: endpoint ? [8, 8] : [13, 13] }) }).addTo(map);
+          L.marker(p.ll, { icon: L.divIcon({ className: '', html: html, iconSize: endpoint ? [16, 16] : [26, 26], iconAnchor: endpoint ? [8, 8] : [13, 13] }) }).addTo(layers);
         });
         // truck marker at active lane origin
         const truckLL = (cd.ls[sim.activeLaneIdx] && _OR_COORD[cd.ls[sim.activeLaneIdx].origin]) || latlngs[0];
-        L.marker(truckLL, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:44px;height:44px"><div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:15px;height:15px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [44, 44], iconAnchor: [22, 22] }), zIndexOffset: 1000 }).addTo(map);
+        L.marker(truckLL, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:44px;height:44px"><div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:15px;height:15px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [44, 44], iconAnchor: [22, 22] }), zIndexOffset: 1000 }).addTo(layers);
         // feasibility alert pins at each affected lane's midpoint (clickable → open panel)
         _orAlertsGet(routeId).forEach((al, ai) => {
           const seg2 = _orSegReg[routeId][al.segKey || 'L' + al.laneIdx];
@@ -10197,17 +10236,19 @@ export function initApp() {
           if (!ca || !cb) return;
           const p = _orOffset(ca, cb, 0.5, (ai % 2 ? 1 : -1) * 0.05);
           const meta = _OR_ALERT_META[al.type];
-          const m = L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;box-shadow:0 2px 10px rgba(0,0,0,.5);color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1200 }).addTo(map);
+          const m = L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;box-shadow:0 2px 10px rgba(0,0,0,.5);color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1200 }).addTo(layers);
           m.bindTooltip(meta.label, { direction: 'top' });
           m.on('click', () => setState({ orAlertsOpen: true }));
         });
         const _rb = L.latLngBounds(latlngs);
-        map.fitBounds(_rb, { padding: [50, 50] });
-        _orMap = map;
-        setTimeout(() => { try { map.invalidateSize(); map.fitBounds(_rb, { padding: [50, 50] }); } catch (e) {} }, 90);
-      } else {
+        if (_fresh || _orMapFitKey !== 'overview') {
+          _orMapFitKey = 'overview';
+          map.fitBounds(_rb, { padding: [50, 50] });
+          setTimeout(() => { try { map.invalidateSize(); map.fitBounds(_rb, { padding: [50, 50] }); } catch (e) {} }, 90);
+        }
+      } else if (_fresh || _orMapFitKey !== 'overview-empty') {
+        _orMapFitKey = 'overview-empty';
         map.setView([37.8, -96], 4);
-        _orMap = map;
         setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, 90);
       }
     }, 0);
