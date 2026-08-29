@@ -9078,7 +9078,7 @@ export function initApp() {
       return el('div', { style: { minWidth: '0', textAlign: alignEnd ? 'right' : 'left' } }, [
         el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [name]),
         etaLabel ? el('div', { style: { font: '800 8.5px ' + F, letterSpacing: '.08em', textTransform: 'uppercase', color: '#6688cc', marginTop: '2px' } }, [etaLabel]) : null,
-        el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '2px', whiteSpace: 'nowrap' } }, [date])
+        date ? el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [date]) : null
       ]);
     }
     function _etaChip(row) {
@@ -9195,7 +9195,7 @@ export function initApp() {
         ]),
         x.active ? el('div', { class: 'hoverable', onclick: () => _orAdvance(routeId, row.segKey), style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', background: 'rgba(102,136,204,.14)', border: '1px solid rgba(102,136,204,.3)', color: '#6688cc', font: '800 11.5px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync }) : null
       ]);
-      return el('div', { style: { flexShrink: '0', padding: '12px 16px 14px', borderBottom: '1px solid rgba(255,255,255,.08)', background: '#141414' } }, [topRow, grid, prog, adhRow]);
+      return el('div', { style: { flexShrink: '0', padding: '12px 16px 14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,.08)', background: '#242424' } }, [topRow, grid, prog, adhRow]);
     }
     // compact 1-line live strip for the inline stops dropdown
     function _orExecInline(row) {
@@ -9306,9 +9306,9 @@ export function initApp() {
       if (row.exec !== 'Completed' && row.exec !== 'In progress') return;
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
-      const isOpen = row.segKey === state.orExpanded;      // inline dropdown open
-      const isManaging = row.segKey === state.orLane;       // modal open for this lane
-      segItems.push(el('div', { class: 'row-hoverable', onclick: () => setState({ orLane: row.segKey, orExpanded: null, orAddType: null, orReplace: null, orTab: 'stops' }), style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '13px', padding: '12px 14px', borderRadius: '12px', background: (isOpen || isManaging) ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isOpen || isManaging || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isOpen ? '.5' : '1', cursor: 'pointer' } }, [
+      const isSel = row.segKey === state.orLane;   // lane selected → inline panel + lane-focused right panel
+      const _toggle = () => setState({ orLane: isSel ? null : row.segKey, orAddType: null, orReplace: null, orStopOpen: null });
+      segItems.push(el('div', { class: 'row-hoverable', onclick: _toggle, style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '13px', padding: '12px 14px', borderRadius: '12px', background: isSel ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isSel || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isSel ? '.5' : '1', cursor: 'pointer' } }, [
         _badge(row),
         el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 20px 1fr', alignItems: 'center', gap: '10px', minWidth: '0' } }, [
           _endpoint(row.origin, row.originDate, null, false),
@@ -9317,9 +9317,9 @@ export function initApp() {
         ]),
         _etaChip(row),
         _statusDrop(row.exec),
-        el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); setState({ orExpanded: isOpen ? null : row.segKey }); }, title: isOpen ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isOpen ? '#6688cc' : '#666666', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
+        el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _toggle(); }, title: isSel ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSel ? '#6688cc' : '#666666', transform: isSel ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
-      if (isOpen) segItems.push(_segStopsPreview(row));
+      if (isSel) segItems.push(_laneInlinePanel(row));
     });
     if (!segItems.length) segItems.push(el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '10px', padding: '48px 24px', margin: '20px 12px', borderRadius: '16px', border: '1px dashed rgba(255,255,255,.1)' } }, [
       el('div', { style: { width: '46px', height: '46px', borderRadius: '13px', background: '#242424', color: '#6688cc', display: 'grid', placeItems: 'center' }, html: IC.truck }),
@@ -9327,7 +9327,7 @@ export function initApp() {
       el('div', { style: { font: '500 12px ' + F, color: '#808080', maxWidth: '320px', lineHeight: '1.5' } }, ['This route has not started. Operational stops are managed here once a lane is in transit or completed — plan the route in the Plan tab first.']),
       el('div', { class: 'hoverable', onclick: () => setState({ detailTab: 'plan' }), style: { display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', height: '36px', padding: '0 15px', borderRadius: '10px', background: 'rgba(102,136,204,.12)', border: '1px solid rgba(102,136,204,.3)', color: '#6688cc', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<span>Go to Plan</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
     ]));
-    const segList = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
+    const segList = el('div', { id: 'or-manage-scroll', class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
     // ───────────────────── LANE DETAIL (stop management) ──────────────────
     const laneMode = !!(state.orLane != null && _orSegReg[routeId] && _orSegReg[routeId][state.orLane]);
     const addType = state.orAddType || null;
@@ -9722,7 +9722,7 @@ export function initApp() {
         ]);
       }));
     }
-    function _manageLanePanel(row) {
+    function _laneInlinePanel(row) {
       const key = row.segKey;
       const seg = _orSegReg[routeId][key];
       const isLoad = seg.isLoad;
@@ -9741,18 +9741,6 @@ export function initApp() {
       const manualFuelStops = stops.filter(s => s.type === 'fuel' && !s.fuelPlan);
       const hasOptimalFuel = !!(fuelMeta && fuelMeta.applied && optFuelStops.length);
       const canGenerateFuel = !hasOptimalFuel;
-
-      // header: identity + close
-      const header = el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 14px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
-        _badge(row),
-        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 16px 1fr', alignItems: 'center', gap: '7px', flex: '1', minWidth: '0' } }, [
-          _endpoint(seg.origin, row.originDate || '', null, false),
-          el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
-          _endpoint(seg.dest, row.destDate || '', null, false)
-        ]),
-        _statusDrop(row.exec || 'Booked'),
-        el('div', { class: 'hoverable', onclick: () => setState({ orLane: null, orAddType: null, orReplace: null, orStopOpen: null }), title: 'Close', style: { width: '32px', height: '32px', borderRadius: '9px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', background: '#242424', border: '1px solid rgba(255,255,255,.1)', font: '400 19px ' + F, flexShrink: '0' } }, ['×'])
-      ]);
 
       // load card
       const _ldM = (v, label) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [label])]);
@@ -9820,7 +9808,7 @@ export function initApp() {
           _lpNode('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>', '#6688cc', 'rgba(102,136,204,.14)'),
           el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '11px', background: '#1a1a1a', border: '1px dashed rgba(255,255,255,.18)', cursor: 'pointer', color: '#808080' } }, [
             el('span', { style: { display: 'flex', color: '#666666' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' }),
-            el('span', { style: { font: '600 11.5px ' + F } }, ['Choose destination or click on the map'])
+            el('span', { style: { font: '600 11.5px ' + F } }, ['Add a stop to this lane'])
           ])
         );
         listArea = el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: '9px', padding: '4px 16px 6px' } }, [
@@ -9832,17 +9820,36 @@ export function initApp() {
       // fuel savings banner (live from optimizer) — shown once an optimal plan exists
       let fuelBanner = null;
       if (hasOptimalFuel) {
-        const tg = optFuelStops.reduce((s, x) => s + x.gallons, 0);
-        const tc = optFuelStops.reduce((s, x) => s + x.cost, 0);
-        fuelBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.08)', border: '1px solid rgba(178,136,53,.32)' } }, [
-          el('div', { style: { color: '#b28835', display: 'flex' }, html: _OR_SVC.fuel.icon }),
-          el('div', { style: { flex: '1', minWidth: '0' } }, [
-            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimal fuel plan · save ' + money(fuelMeta.savings)]),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [optFuelStops.length + ' stop' + (optFuelStops.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total'])
-          ]),
-          el('div', { class: 'hoverable', title: 'Recalculate from the truck’s current position', onclick: () => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orPushUndo(routeId, key, 'Fuel plan recalculated'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1200); }, style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', padding: '4px 9px', borderRadius: '7px', border: '1px solid rgba(178,136,53,.35)' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg><span>Recalculate</span>' }),
-          el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, key, 'Fuel plan removed'); _orClearFuel(routeId, key); setState({}); }, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)' } }, ['Remove'])
-        ]);
+        const _skStatus = _orStopStatus[routeId] && _orStopStatus[routeId][key];
+        const skippedFuel = optFuelStops.filter(s => _skStatus && _skStatus[s.id] === 'Skipped');
+        const activeFuel = optFuelStops.filter(s => !(_skStatus && _skStatus[s.id] === 'Skipped'));
+        const broken = skippedFuel.length > 0;   // driver blew past a planned fuel stop → plan no longer valid
+        const tg = activeFuel.reduce((s, x) => s + x.gallons, 0);
+        const tc = activeFuel.reduce((s, x) => s + x.cost, 0);
+        const _recalc = () => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orPushUndo(routeId, key, 'Fuel plan recalculated'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1200); };
+        const _removeBtn = el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, key, 'Fuel plan removed'); _orClearFuel(routeId, key); setState({}); }, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)' } }, ['Remove']);
+        if (broken) {
+          const _sk = skippedFuel[0];
+          fuelBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.4)' } }, [
+            el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Fuel stop skipped — plan needs recalculating']),
+              el('div', { style: { font: '600 10.5px ' + F, color: '#cc666f', marginTop: '1px' } }, [(_sk.brand || 'A fuel stop') + ' not fueled · ' + (activeFuel.length ? (tg + ' gal remaining planned') : 'no fuel left in plan')])
+            ]),
+            el('div', { class: 'hoverable', title: 'Re-optimize fuel for the remaining trip', onclick: _recalc, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#2e9975', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg><span>Recalculate fuel</span>' }),
+            _removeBtn
+          ]);
+        } else {
+          fuelBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.08)', border: '1px solid rgba(178,136,53,.32)' } }, [
+            el('div', { style: { color: '#b28835', display: 'flex' }, html: _OR_SVC.fuel.icon }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimal fuel plan · save ' + money(fuelMeta.savings)]),
+              el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [activeFuel.length + ' stop' + (activeFuel.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total'])
+            ]),
+            el('div', { class: 'hoverable', title: 'Recalculate from the truck’s current position', onclick: _recalc, style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', padding: '4px 9px', borderRadius: '7px', border: '1px solid rgba(178,136,53,.35)' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg><span>Recalculate</span>' }),
+            _removeBtn
+          ]);
+        }
       }
 
       // impact strip
@@ -9858,30 +9865,13 @@ export function initApp() {
         hasOptFuel ? _impChip('<span>save ' + money(fuelMeta.savings) + ' fuel</span>', 'green') : null
       ]) : null;
 
-      // footer: Save
-      const footer = el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.08)', background: '#161616' } }, [
-        isAdding ? el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '34px', padding: '0 14px', borderRadius: '9px', cursor: 'pointer', font: '800 12px ' + F, color: '#b3b3b3', background: '#242424', border: '1px solid rgba(255,255,255,.1)' } }, ['Cancel']) : null,
-        el('div', { class: 'hoverable', onclick: () => { if (_orSaving) return; _orSaving = true; setState({}); setTimeout(() => { _orSaving = false; setState({ orLane: null, orAddType: null, orReplace: null, orStopOpen: null }); }, 1200); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', height: '34px', borderRadius: '9px', cursor: 'pointer', font: '800 12px ' + F, color: '#0d1a13', background: '#2e9975' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Save changes</span>' })
-      ]);
-
-      // ── tab bar: Stops | Changes ──
-      const tab = state.orTab || 'stops';
+      // Log button → opens the change-history side panel
       const nChanges = _orChangesGet(routeId, key).length;
-      const _tabBtn = (id, label) => el('div', { class: 'hoverable', onclick: () => setState({ orTab: id }), style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 4px', marginRight: '16px', cursor: 'pointer', font: '800 12px ' + F, color: tab === id ? '#e6e6e6' : '#808080', borderBottom: '2px solid ' + (tab === id ? '#6688cc' : 'transparent') } }, [label]);
-      const tabBar = el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
-        _tabBtn('stops', 'Stops'),
-        _tabBtn('changes', 'Changes' + (nChanges ? ' (' + nChanges + ')' : ''))
-      ]);
-      const body = tab === 'changes'
-        ? _changesTab(row)
-        : el('div', { id: 'or-manage-scroll', class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', paddingBottom: '8px' } }, [loadCard, secHead, listArea, impactStrip, fuelBanner]);
-
-      return el('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: '0' } }, [
-        header,
-        _orExecStrip(row),
-        tabBar,
-        body,
-        footer
+      const logBtn = el('div', { class: 'hoverable', onclick: () => setState({ orLog: key }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', margin: '2px 12px 12px', height: '34px', borderRadius: '9px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#b3b3b3', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>Plan change log' + (nChanges ? ' (' + nChanges + ')' : '') + '</span>' });
+      // stops list grows to ~5 stops, then scrolls internally
+      const listWrap = isAdding ? listArea : el('div', { class: 'ef-scroll', style: { maxHeight: '380px', overflowY: 'auto' } }, [listArea]);
+      return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
+        loadCard, secHead, listWrap, impactStrip, fuelBanner, logBtn
       ]);
     }
 
@@ -9984,23 +9974,13 @@ export function initApp() {
 
     // ─────────────────────── RIGHT: map + cards ───────────────────────────
     const addMode = laneMode && !!state.orAddType;   // adding a stop → map grows to pick
-    const mapPanel = el('div', { style: laneMode
-      ? { position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', background: '#1a1a1a' }
-      : { position: 'relative', height: '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
+    const mapPanel = el('div', { style: { position: 'relative', height: laneMode ? '440px' : '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
     // empty slot; the persistent map div (_orMapEl) is re-parented into it after render
     const mapEl = el('div', { id: 'ef-onroad-mapslot', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
     if (laneMode) {
-      // ── stop-filter chips (top-left): start the add flow per service type ──
-      const _searchIc = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-      const _sChip = (label, iconHtml, active, onclick) => el('div', { class: 'hoverable', onclick, style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 13px', borderRadius: '999px', background: active ? '#6688cc' : 'rgba(20,20,20,.9)', border: '1px solid ' + (active ? '#6688cc' : 'rgba(255,255,255,.12)'), backdropFilter: 'blur(6px)', color: active ? '#0d1424' : '#e6e6e6', font: '800 12px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: (iconHtml || '') + '<span>' + label + '</span>' });
-      const _quickTypes = ['fuel', 'wash', 'food', 'parking'];
-      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', right: '92px', zIndex: '1200', display: 'flex', flexWrap: 'wrap', gap: '8px' } }, [
-        _sChip('See all stops', _searchIc, state.orAddType === '__pick', () => setState({ orAddType: state.orAddType === '__pick' ? null : '__pick', orReplace: null })),
-        ..._quickTypes.map(t => _sChip(_OR_SVC[t].label, '<span style="color:' + (state.orAddType === t ? '#0d1424' : _OR_SVC[t].color) + ';display:flex">' + _OR_SVC[t].icon + '</span>', state.orAddType === t, () => setState({ orAddType: state.orAddType === t ? null : t, orReplace: null }))),
-        _sChip('More', IC.chevDown, false, () => setState({ orAddType: '__pick', orReplace: null }))
-      ]));
+      // (adding stops is initiated from the lane's inline panel, not the map)
       // ── View control (top-right) ──
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '8px' } }, [
         _mapCtl('<span>View</span>' + IC.chevDown)
@@ -10046,17 +10026,40 @@ export function initApp() {
     //  still draws clickable candidate markers for the active service type)
 
     // HOS card
-    const hosCard = el('div', { style: { padding: '16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#242424' } }, [
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } }, [
-        el('div', { style: { width: '30px', height: '30px', borderRadius: '50%', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: IC.info }),
-        el('div', { style: { flex: '1', font: '800 14px ' + F, color: '#e6e6e6' } }, ['HOS not available']),
-        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 13px', borderRadius: '999px', background: 'rgba(102,136,204,.12)', border: '1px solid rgba(102,136,204,.28)', color: '#6688cc', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Assign driver</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' })
-      ]),
-      el('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px', marginTop: '10px' } }, [
-        el('div', { style: { color: '#808080', font: '500 12px ' + F, lineHeight: '1.5', maxWidth: '300px' } }, ['Assign a driver to pull live HOS data — or use manual clocks.']),
-        el('div', { class: 'hoverable', style: { font: '800 12.5px ' + F, color: '#e6e6e6', cursor: 'pointer', whiteSpace: 'nowrap' } }, ['Use manual clocks'])
-      ])
-    ]);
+    // HOS card — live clocks when a lane is selected (stays visible in lane view), else the assign prompt.
+    let hosCard;
+    if (laneMode) {
+      const _h = ((r.driver || 'x').length * 7) % 5;
+      const _hos = [
+        { v: (6 - _h) + 'h ' + (10 + _h * 6) + 'm', label: 'Drive left', col: '#47b26b' },
+        { v: (8 - _h) + 'h ' + (5 + _h * 4) + 'm', label: 'Shift left', col: '#6688cc' },
+        { v: (47 - _h * 2) + 'h', label: 'Cycle left', col: '#e6e6e6' },
+        { v: 'in ' + (2 + _h) + 'h ' + (_h * 10) + 'm', label: 'Break due', col: '#b28835' }
+      ];
+      hosCard = el('div', { style: { padding: '13px 16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#242424' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '12px' } }, [
+          el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
+          el('div', { style: { flex: '1', font: '800 13px ' + F, color: '#e6e6e6' } }, ['Hours of Service']),
+          el('div', { style: { font: '700 10.5px ' + F, color: '#47b26b' } }, ['Live · ' + (r.driver || 'Driver')])
+        ]),
+        el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px' } }, _hos.map(m => el('div', {}, [
+          el('div', { style: { font: '900 15px ' + F, color: m.col, whiteSpace: 'nowrap' } }, [m.v]),
+          el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [m.label])
+        ])))
+      ]);
+    } else {
+      hosCard = el('div', { style: { padding: '16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#242424' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } }, [
+          el('div', { style: { width: '30px', height: '30px', borderRadius: '50%', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: IC.info }),
+          el('div', { style: { flex: '1', font: '800 14px ' + F, color: '#e6e6e6' } }, ['HOS not available']),
+          el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 13px', borderRadius: '999px', background: 'rgba(102,136,204,.12)', border: '1px solid rgba(102,136,204,.28)', color: '#6688cc', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Assign driver</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' })
+        ]),
+        el('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px', marginTop: '10px' } }, [
+          el('div', { style: { color: '#808080', font: '500 12px ' + F, lineHeight: '1.5', maxWidth: '300px' } }, ['Assign a driver to pull live HOS data — or use manual clocks.']),
+          el('div', { class: 'hoverable', style: { font: '800 12.5px ' + F, color: '#e6e6e6', cursor: 'pointer', whiteSpace: 'nowrap' } }, ['Use manual clocks'])
+        ])
+      ]);
+    }
 
     // Planned Route card
     function _prMetric(val, label) {
@@ -10079,7 +10082,9 @@ export function initApp() {
 
     const moneyTiles = renderPnlOpsCards(d);
 
-    const rightWrapper = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: addMode ? 'hidden' : 'auto', minHeight: '0', padding: '16px 20px 16px 0' } }, addMode ? [mapPanel] : [mapPanel, hosCard, plannedCard, moneyTiles]);
+    const _selRow = laneMode ? cd.rows.find(r => r.segKey === state.orLane) : null;
+    const rightWrapper = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', minHeight: '0', padding: '16px 20px 16px 0' } },
+      (laneMode && _selRow) ? [_orExecStrip(_selRow), mapPanel, hosCard] : [mapPanel, hosCard, plannedCard, moneyTiles]);
 
     const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
 
@@ -10098,7 +10103,6 @@ export function initApp() {
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors' }).addTo(_orMap);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, opacity: .9, pane: 'shadowPane' }).addTo(_orMap);
         _orMapLayers = L.layerGroup().addTo(_orMap);
-        _orMap.on('click', () => { if (state.orLane != null && !state.orAddType) setState({ orAddType: '__pick', orReplace: null }); });
       }
       const map = _orMap;
       const layers = _orMapLayers;
@@ -10313,25 +10317,26 @@ export function initApp() {
       _orUndo ? el('div', { class: 'hoverable', onclick: _orApplyUndo, style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12px ' + F, color: '#6688cc', cursor: 'pointer', padding: '6px 12px', borderRadius: '9px', border: '1px solid rgba(102,136,204,.3)' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg><span>Undo</span>' }) : null
     ]) : null;
 
-    let manageModal = null;
-    if (laneMode) {
-      const _mrow = cd.rows.find(r => r.segKey === state.orLane) || {};
-      const _mseg = _orSegReg[routeId][state.orLane];
-      const _saveOverlay = _orSaving ? el('div', { style: { position: 'absolute', inset: '0', zIndex: '60', background: 'rgba(10,10,10,.84)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(3px)' } }, [
-        el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' } }, [
-          el('div', { style: { width: '40px', height: '40px', color: '#6688cc', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' }),
-          el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Saving changes…']),
-          el('div', { style: { font: '500 12px ' + F, color: '#808080' } }, ['Updating the recorded plan for this lane.'])
+    // ── Plan change log — slide-in side panel (opened by the inline "Plan change log" button) ──
+    let logPanel = null;
+    if (state.orLog && _orSegReg[routeId] && _orSegReg[routeId][state.orLog]) {
+      const _lrow = cd.rows.find(r => r.segKey === state.orLog) || {};
+      const _lseg = _orSegReg[routeId][state.orLog];
+      const close = () => setState({ orLog: null });
+      logPanel = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '320', background: 'rgba(10,10,10,.55)', display: 'flex', justifyContent: 'flex-end' } }, [
+        el('div', { onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); }, style: { width: '420px', maxWidth: '92%', height: '100%', display: 'flex', flexDirection: 'column', background: '#161616', borderLeft: '1px solid rgba(255,255,255,.1)', boxShadow: '-20px 0 60px rgba(0,0,0,.5)' } }, [
+          el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 16px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 14px ' + F, color: '#e6e6e6' } }, ['Plan change log']),
+              el('div', { style: { font: '600 11px ' + F, color: '#808080', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(_lseg.origin || '') + ' → ' + (_lseg.dest || '')])
+            ]),
+            el('div', { class: 'hoverable', onclick: close, style: { width: '32px', height: '32px', borderRadius: '9px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', background: '#242424', border: '1px solid rgba(255,255,255,.1)', font: '400 19px ' + F, flexShrink: '0' } }, ['×'])
+          ]),
+          _changesTab(_lrow)
         ])
-      ]) : null;
-      const modalCard = el('div', { onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); }, style: { position: 'relative', width: 'min(1240px, 96%)', height: '90%', display: 'flex', flexDirection: 'row', borderRadius: '16px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 32px 80px rgba(0,0,0,.6)' } }, [
-        el('div', { style: { width: '430px', flexShrink: '0', display: 'flex', flexDirection: 'column', minHeight: '0', borderRight: '1px solid rgba(255,255,255,.08)', background: '#161616' } }, [_manageLanePanel(_mrow)]),
-        el('div', { style: { position: 'relative', flex: '1', minHeight: '0', display: 'flex' } }, [mapPanel]),
-        _saveOverlay
       ]);
-      manageModal = el('div', { onclick: () => setState({ orLane: null, orAddType: null, orReplace: null }), style: { position: 'absolute', inset: '0', zIndex: '300', background: 'rgba(10,10,10,.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' } }, [modalCard]);
     }
-    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, manageModal]);
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, logPanel]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
