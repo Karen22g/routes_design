@@ -9151,16 +9151,44 @@ export function initApp() {
       _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * f), frac: f, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS' }, { adjusted: true });
     }
     function _orKeepPlan(routeId, key) { const d = _orActualFor(routeId, key); if (d) { _orPushUndo(routeId, key, 'Deviation accepted · plan kept'); d.dismissed = true; } }
+    // Deviation-resolution popover (opened from the red "Off-plan" chip).
+    function _orDeviationMenu(anchorEl, routeId, key) {
+      const ex = document.getElementById('or-dev-menu'); if (ex) ex.remove();
+      const rect = anchorEl.getBoundingClientRect();
+      const opt = (dot, title, sub, onClick, primary) => el('div', { class: 'hoverable', onclick: () => { const m = document.getElementById('or-dev-menu'); if (m) m.remove(); onClick(); }, style: { display: 'grid', gridTemplateColumns: '9px 1fr', gap: '9px', alignItems: 'start', padding: '9px 10px', borderRadius: '8px', cursor: 'pointer' } }, [
+        el('span', { style: { width: '9px', height: '9px', borderRadius: '50%', background: dot, marginTop: '3px' } }),
+        el('div', {}, [
+          el('div', { style: { font: '800 12px ' + F, color: primary ? '#47b26b' : '#e6e6e6' } }, [title]),
+          el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px', lineHeight: '1.35' } }, [sub])
+        ])
+      ]);
+      const items = [
+        opt('#47b26b', 'Correct plan', 'Match the plan to the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
+        opt('#6688cc', 'Add driver’s stop', 'Record the stop the driver actually made', () => setState({ orAddType: '__pick', orReplace: null })),
+        opt('#b28835', 'Ask to return', 'Send a return-to-route request to the driver', () => { _orPushUndo(routeId, key, 'Return-to-route request sent'); setState({}); }),
+        opt('#808080', 'Keep plan', 'Accept the deviation and keep the plan as is', () => { _orKeepPlan(routeId, key); setState({}); })
+      ];
+      const _menuH = 250;
+      const flipUp = (rect.bottom + 6 + _menuH) > window.innerHeight;
+      const top = flipUp ? Math.max(8, rect.top - _menuH - 6) : (rect.bottom + 6);
+      const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: top + 'px', left: Math.max(8, rect.left) + 'px', width: '264px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
+        el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Resolve deviation']),
+        ...items
+      ]);
+      document.body.appendChild(menu);
+      setTimeout(() => { const off = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
+    }
     const _EX_WARN = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
     const _EX_GAUGE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l3-3"/><path d="M4 20a8 8 0 1 1 16 0"/></svg>';
-    function _orAdherenceChip(adh) {
+    function _orAdherenceChip(adh, onClick) {
       const M = {
         on:       { t: 'On-plan',                                  c: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: IC.check },
         off:      { t: 'Off-plan · +' + Math.round(adh.detourMi) + ' mi', c: '#cc666f', bg: 'rgba(204,102,111,.14)', ic: _EX_WARN },
         accepted: { t: 'Deviation accepted',                       c: '#b28835', bg: 'rgba(178,136,53,.14)', ic: IC.check }
       };
       const m = M[adh.state] || M.on;
-      return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10px ' + F, letterSpacing: '.02em', color: m.c, background: m.bg, padding: '4px 9px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: '0' }, html: m.ic + '<span>' + m.t + '</span>' });
+      const caret = onClick ? '<span style="display:flex;color:' + m.c + ';opacity:.8">' + IC.chevDown + '</span>' : '';
+      return el(onClick ? 'div' : 'span', { class: onClick ? 'hoverable' : '', onclick: onClick || undefined, style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10px ' + F, letterSpacing: '.02em', color: m.c, background: m.bg, padding: '5px 9px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: '0', cursor: onClick ? 'pointer' : 'default', border: '1px solid ' + (onClick ? 'rgba(204,102,111,.5)' : 'transparent') }, html: m.ic + '<span>' + m.t + '</span>' + caret });
     }
     function _execAct(label, onclick, primary) {
       return el('div', { class: 'hoverable', onclick: onclick, style: { font: '800 10.5px ' + F, cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', whiteSpace: 'nowrap', color: primary ? '#0d1a13' : '#b3b3b3', background: primary ? '#2e9975' : '#242424', border: '1px solid ' + (primary ? '#2e9975' : 'rgba(255,255,255,.1)') } }, [label]);
@@ -9187,14 +9215,12 @@ export function initApp() {
         el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%'])]),
         el('div', { style: { position: 'relative', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,.08)' } }, [el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: x.pct + '%', borderRadius: '3px', background: x.late ? '#b28835' : '#2e9975' } })])
       ]);
-      const acts = [];
-      if (adh.state === 'off') {
-        acts.push(_execAct('Correct plan', () => { _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, row.segKey); }, {}); }, true));
-        acts.push(_execAct("Add driver's stop", () => setState({ orAddType: '__pick', orReplace: null })));
-        acts.push(_execAct('Ask to return', () => { _orPushUndo(routeId, row.segKey, 'Return-to-route request sent'); setState({}); }));
-        acts.push(_execAct('Keep plan', () => { _orKeepPlan(routeId, row.segKey); setState({}); }));
-      }
-      const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginTop: '12px' } }, [_orAdherenceChip(adh), ...acts]);
+      // Off-plan → the red chip is a clickable button that opens the resolve-deviation menu.
+      const offPlan = adh.state === 'off';
+      const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' } }, [
+        _orAdherenceChip(adh, offPlan ? ((e) => _orDeviationMenu(e.currentTarget, routeId, row.segKey)) : null),
+        offPlan ? el('span', { style: { font: '600 10px ' + F, color: '#808080' } }, ['Tap to resolve']) : null
+      ]);
       const topRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '11px' } }, [
         el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: x.active ? '#2e9975' : '#666666', animation: x.active ? '_efDotPulse 1.4s ease-in-out infinite' : 'none' } }),
         el('span', {}, [x.active ? 'Live execution' : 'Execution'])
@@ -10090,7 +10116,7 @@ export function initApp() {
 
     const _selRow = laneMode ? cd.rows.find(r => r.segKey === state.orLane) : null;
     const rightWrapper = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', minHeight: '0', padding: '16px 20px 16px 0' } },
-      (laneMode && _selRow) ? [mapPanel, hosCard] : [mapPanel, hosCard, plannedCard, moneyTiles]);
+      [mapPanel, hosCard, plannedCard, moneyTiles]);
 
     const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
 
