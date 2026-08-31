@@ -8680,7 +8680,8 @@ export function initApp() {
       fuel: (_orFuel[routeId] && _orFuel[routeId][laneIdx]) ? Object.assign({}, _orFuel[routeId][laneIdx]) : null,
       alerts: _orAlerts[routeId] ? JSON.parse(JSON.stringify(_orAlerts[routeId])) : [],
       actual: (_orActual[routeId] && _orActual[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orActual[routeId][laneIdx])) : null,
-      status: (_orStopStatus[routeId] && _orStopStatus[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orStopStatus[routeId][laneIdx])) : null
+      status: (_orStopStatus[routeId] && _orStopStatus[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orStopStatus[routeId][laneIdx])) : null,
+      statusManual: (_orStopStatusManual[routeId] && _orStopStatusManual[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orStopStatusManual[routeId][laneIdx])) : null
     };
   }
   function _orRestore(routeId, laneIdx, snap) {
@@ -8693,6 +8694,8 @@ export function initApp() {
     if (snap.actual) _orActual[routeId][laneIdx] = JSON.parse(JSON.stringify(snap.actual));
     if (!_orStopStatus[routeId]) _orStopStatus[routeId] = {};
     _orStopStatus[routeId][laneIdx] = snap.status ? JSON.parse(JSON.stringify(snap.status)) : {};
+    if (!_orStopStatusManual[routeId]) _orStopStatusManual[routeId] = {};
+    _orStopStatusManual[routeId][laneIdx] = snap.statusManual ? JSON.parse(JSON.stringify(snap.statusManual)) : {};
   }
   function _orPushUndo(routeId, laneIdx, label, actor) {
     const snap = _orSnap(routeId, laneIdx);
@@ -8882,7 +8885,8 @@ export function initApp() {
   }
   // Live-telemetry stores: truck progress override (advanced by "Update") + manual stop-status overrides.
   const _orProgress = {};   // _orProgress[routeId][segKey] = miles driven (real, from the app)
-  const _orStopStatus = {}; // _orStopStatus[routeId][segKey][nodeKey] = manual status override
+  const _orStopStatus = {}; // _orStopStatus[routeId][segKey][nodeKey] = status override (dispatcher OR driver/system)
+  const _orStopStatusManual = {}; // same shape → true only when the DISPATCHER set it by hand (drives the "manual" tag)
   function _orExecMi(routeId, key, seg) {
     if (_orProgress[routeId] && _orProgress[routeId][key] != null) return _orProgress[routeId][key];
     return seg.truckMi;
@@ -8929,6 +8933,10 @@ export function initApp() {
     if (!_orStopStatus[routeId]) _orStopStatus[routeId] = {};
     if (!_orStopStatus[routeId][key]) _orStopStatus[routeId][key] = {};
     _orStopStatus[routeId][key][nodeKey] = status;
+    // dispatcher set this by hand → mark it manual (drives the "manual" tag)
+    if (!_orStopStatusManual[routeId]) _orStopStatusManual[routeId] = {};
+    if (!_orStopStatusManual[routeId][key]) _orStopStatusManual[routeId][key] = {};
+    _orStopStatusManual[routeId][key][nodeKey] = true;
     setState({});
   }
   function _orStatusMenu(anchorEl, routeId, key, nodeKey, current) {
@@ -9093,7 +9101,7 @@ export function initApp() {
   let _orLoadSeq = 0;
   function _orLoadOptions(patch) {
     const my = ++_orLoadSeq;
-    setState(Object.assign({ orAddLoading: true, orExpand: false, orRadius: 10 }, patch));
+    setState(Object.assign({ orAddLoading: true, orExpand: false, orRadius: 10, orCandSel: null }, patch));
     setTimeout(function () { if (my === _orLoadSeq) setState({ orAddLoading: false }); }, 750);
   }
   function _orAddCandidate(routeId, laneIdx, cand, opts) {
@@ -9403,11 +9411,11 @@ export function initApp() {
           el('div', { style: { font: '600 8.5px ' + F, color: '#808080', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [label])
         ])
       ]);
-      const grid = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px 16px' } }, [
+      // Keep it lean: departure time + ETA with on-time/late status only
+      // (Update on the map handles ELD re-sync; speed dropped to reduce density).
+      const grid = el('div', { style: { display: 'flex', alignItems: 'center', gap: '28px', flexWrap: 'wrap' } }, [
         cell(IC.truck, x.departedAt, 'Departed', '#47b26b'),
-        cell(IC.clock, x.eta, x.delayTxt, x.late ? '#cc666f' : '#6688cc'),
-        cell(IC.sync, x.lastSync, 'ELD sync', '#47b26b'),
-        cell(_EX_GAUGE, x.active ? (x.speed + ' mph') : '—', x.active ? (x.driveLeftH + 'h ' + x.driveLeftM + 'm drive left') : 'HOS', '#b28835')
+        cell(IC.clock, x.active ? x.eta : '—', x.active ? x.delayTxt : 'ETA', x.late ? '#cc666f' : '#6688cc')
       ]);
       const prog = el('div', { style: { marginTop: '12px' } }, [
         el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%'])]),
@@ -9461,7 +9469,7 @@ export function initApp() {
       return base;
     }
     function _orNodeKey(stops, i) { return i === 0 ? '__pickup' : (i === stops.length + 1 ? '__dropoff' : stops[i - 1].id); }
-    function _orIsManual(key, nodeKey) { return !!(_orStopStatus[routeId] && _orStopStatus[routeId][key] && _orStopStatus[routeId][key][nodeKey]); }
+    function _orIsManual(key, nodeKey) { return !!(_orStopStatusManual[routeId] && _orStopStatusManual[routeId][key] && _orStopStatusManual[routeId][key][nodeKey]); }
     function _segStopsPreview(row) {
       const key = row.segKey;
       const seg = _orSegReg[routeId][key];
@@ -9681,6 +9689,27 @@ export function initApp() {
       }
       return null;
     }
+    // Commit a browsed candidate to the plan (add, replace, or combine) — shared by
+    // the list row, the map pin's detail card, and the profile modal.
+    function _orCommitCand(c) {
+      const laneIdx = state.orLane;
+      const isReplace = !!state.orReplace;
+      const match = c._match;
+      const svc = _OR_SVC[c.type] || _OR_SVC.fuel;
+      _orRunBusy({ title: match ? 'Combining stop…' : (isReplace ? 'Updating plan…' : 'Adding stop…'), sub: match ? 'Adding the service to the existing stop.' : 'Re-routing and updating the map.', color: match ? '#2e9975' : '#6688cc' }, function () {
+        if (match) { _orPushUndo(routeId, laneIdx, 'Service combined into stop'); _orMergeCandidate(routeId, laneIdx, match.id, c); _orLogChange(routeId, laneIdx, { actor: 'Dispatcher', kind: 'add', text: 'Added ' + svc.label.toLowerCase() + ' to ' + (match.type === 'fuel' ? match.brand : match.name) + ' (combined stop)', revertible: true }); return; }
+        let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added');
+        if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); }
+        const _tm = _orTruckMi(routeId, laneIdx); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm });
+        _orAddCandidate(routeId, laneIdx, c, opts);
+      }, { orAddType: null, orReplace: null, orCandSel: null, orProfile: null });
+    }
+    // Find a browsed candidate by id (route + nearby) for the current add type.
+    function _orFindCand(id) {
+      if (!state.orAddType || state.orAddType === '__pick') return null;
+      const b = _orBrowseCands(routeId, state.orLane, state.orAddType);
+      return b.route.concat(b.nearby).find(c => c.id === id) || null;
+    }
     // Inline loading while the backend returns places for the picked stop type.
     function _candidateLoading(type) {
       const svc = _OR_SVC[type] || _OR_SVC.fuel;
@@ -9721,19 +9750,14 @@ export function initApp() {
         const match = c._match;
         const mSvc = match ? _OR_SVC[match.type] : null;
         const status = match ? null : _candStatusBadge(c);
-        const doAdd = () => _orRunBusy({ title: match ? 'Combining stop…' : (isReplace ? 'Updating plan…' : 'Adding stop…'), sub: match ? 'Adding the service to the existing stop.' : 'Re-routing and updating the map.', color: match ? '#2e9975' : '#6688cc' }, function () {
-          if (match) { _orPushUndo(routeId, laneIdx, 'Service combined into stop'); _orMergeCandidate(routeId, laneIdx, match.id, c); _orLogChange(routeId, laneIdx, { actor: 'Dispatcher', kind: 'add', text: 'Added ' + svc.label.toLowerCase() + ' to ' + (match.type === 'fuel' ? match.brand : match.name) + ' (combined stop)', revertible: true }); return; }
-          let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added');
-          if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); }
-          const _tm = _orTruckMi(routeId, laneIdx); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm });
-          _orAddCandidate(routeId, laneIdx, c, opts);
-        }, { orAddType: null, orReplace: null });
-        return el('div', { style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: match ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (match ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.07)') } }, [
+        const doAdd = () => _orCommitCand(c);
+        const sel = state.orCandSel === c.id;
+        return el('div', { style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: sel ? 'rgba(102,136,204,.12)' : (match ? 'rgba(46,153,117,.06)' : '#1f1f1f'), border: '1px solid ' + (sel ? 'rgba(102,136,204,.55)' : (match ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.07)')) } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0' } }, [
-            el('div', { style: { minWidth: '15px', textAlign: 'right', font: '800 11px ' + F, color: match ? '#47b26b' : '#808080' } }, [String(num)]),
+            el('div', { style: { minWidth: '15px', textAlign: 'right', font: '800 11px ' + F, color: sel ? '#6688cc' : (match ? '#47b26b' : '#808080') } }, [String(num)]),
             _svcIconBox(c.type, 28)
           ]),
-          el('div', { style: { minWidth: '0' } }, [
+          el('div', { class: 'hoverable', onclick: () => setState({ orCandSel: sel ? null : c.id }), style: { minWidth: '0', cursor: 'pointer' } }, [
             el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
               el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: '1' } }, [c.name]),
               match
@@ -9754,7 +9778,7 @@ export function initApp() {
       const _chip = (label, active, onClick) => el('div', { class: 'hoverable', onclick: onClick, style: { font: '800 11px ' + F, color: active ? '#0d1a13' : '#b3b3b3', background: active ? '#7fd4c1' : 'transparent', border: '1px solid ' + (active ? '#7fd4c1' : 'rgba(255,255,255,.14)'), padding: '6px 13px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' } }, [label]);
       const kids = [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 12px' } }, [
-          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null, orCandSel: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
           _svcIconBox(type, 28),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
             el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(isReplace ? 'Replace with ' : '') + svc.label]),
@@ -9762,6 +9786,40 @@ export function initApp() {
           ])
         ])
       ];
+      // selected-candidate detail card (opened by clicking a pin on the map or a card)
+      const selC = state.orCandSel ? browse.route.concat(browse.nearby).find(c => c.id === state.orCandSel) : null;
+      if (selC) {
+        const isF = selC.type === 'fuel';
+        const m2 = selC._match;
+        const selAdded = existing.indexOf(selC.id) >= 0;
+        const _pinSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+        kids.push(el('div', { style: { position: 'relative', padding: '13px', borderRadius: '12px', background: 'rgba(102,136,204,.09)', border: '1px solid rgba(102,136,204,.5)', marginBottom: '12px' } }, [
+          el('div', { class: 'hoverable', onclick: () => setState({ orCandSel: null }), style: { position: 'absolute', top: '9px', right: '10px', color: '#808080', cursor: 'pointer', font: '400 17px ' + F, lineHeight: '1' } }, ['×']),
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', paddingRight: '18px' } }, [
+            _svcIconBox(selC.type, 36),
+            el('div', { style: { minWidth: '0', flex: '1' } }, [
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
+                el('div', { style: { font: '800 13.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [selC.name]),
+                m2 ? null : (_candStatusBadge(selC) || null)
+              ]),
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', font: '600 10px ' + F, color: '#808080', marginTop: '3px', minWidth: '0' }, html: _pinSvg + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (selC.address || (svc.label + ' along this lane')) + '</span>' })
+            ])
+          ]),
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '11px' } }, [
+            isF ? _lpTag('$' + selC.pricePerGal.toFixed(2) + '/gal', '#b28835') : null,
+            _lpTag(selC.nearby ? (selC.radiusMi + ' mi from truck') : ('at ' + selC.distanceMi.toLocaleString('en-US') + ' mi'), '#808080'),
+            selC.detourMi ? _lpTag('+' + selC.detourMi + ' mi detour', '#808080') : null,
+            selC.rating ? _lpTag('★ ' + selC.rating, '#808080') : null,
+            m2 ? _lpTag('Combines with ' + (m2.type === 'fuel' ? m2.brand : m2.name), '#47b26b') : null
+          ]),
+          el('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, [
+            el('div', { class: 'hoverable', onclick: () => setState({ orProfile: selC.id }), style: { flex: '1', textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.35)', cursor: 'pointer' } }, ['View full profile']),
+            selAdded
+              ? el('div', { style: { flex: '1', textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
+              : el('div', { class: 'hoverable', onclick: () => _orCommitCand(selC), style: { flex: '1', textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#141414', background: m2 ? '#2e9975' : '#6688cc', cursor: 'pointer' } }, [m2 ? 'Combine' : 'Add Stop'])
+          ])
+        ]));
+      }
       // per-type filter chips
       if (meta.filters && meta.filters.length) {
         kids.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '10px' } }, meta.filters.map(f => _chip(f, (state.orAddFilter || 'All') === f, () => setState({ orAddFilter: f })))));
@@ -10327,7 +10385,7 @@ export function initApp() {
 
     // ─────────────────────── RIGHT: map + cards ───────────────────────────
     const addMode = laneMode && !!state.orAddType;   // adding a stop → map grows to pick
-    const mapPanel = el('div', { style: { position: 'relative', height: laneMode ? '440px' : '360px', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
+    const mapPanel = el('div', { style: { position: 'relative', height: laneMode ? 'calc(100vh - 360px)' : '360px', minHeight: laneMode ? '400px' : '0', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
     // empty slot; the persistent map div (_orMapEl) is re-parented into it after render
     const mapEl = el('div', { id: 'ef-onroad-mapslot', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
@@ -10441,7 +10499,9 @@ export function initApp() {
     const rightWrapper = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', minHeight: '0', padding: '16px 20px 16px 0' } },
       [mapPanel, hosCard, plannedCard, moneyTiles]);
 
-    const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
+    // In lane view the MAP is the primary decision tool → it becomes the wide column
+    // (management panel fixed on the left); overview keeps the list wide + 520px map.
+    const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: laneMode ? '430px minmax(0,1fr)' : 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
 
     // ─────────────────────────── Leaflet init ─────────────────────────────
     setTimeout(() => {
@@ -10449,7 +10509,7 @@ export function initApp() {
       if (!slot) return;
       // Reuse a persistent map instance + tiles; only the dynamic layer group is
       // cleared and redrawn each render, so the map (and tiles) never flash.
-      if (!_orMapEl) { _orMapEl = document.createElement('div'); _orMapEl.style.cssText = 'position:absolute;inset:0'; }
+      if (!_orMapEl) { _orMapEl = document.createElement('div'); _orMapEl.style.cssText = 'position:absolute;inset:0;background:#1a1a1a'; }
       if (_orMapEl.parentNode !== slot) slot.appendChild(_orMapEl);
       let _fresh = false;
       if (!_orMap) {
@@ -10516,9 +10576,11 @@ export function initApp() {
           _sorted.forEach((s, i) => {
             const ll = _sLLs[i];
             const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
-            const isPassed = truckMi >= 0 && s.distanceMi <= truckMi;
-            const col = isPassed ? '#2e9975' : svc.color;
-            const inner = isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon;
+            const _sstat = (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane] && _orStopStatus[routeId][state.orLane][s.id]) || null;
+            const skipped = _sstat === 'Skipped';
+            const isPassed = !skipped && truckMi >= 0 && s.distanceMi <= truckMi;
+            const col = skipped ? '#cc666f' : (isPassed ? '#2e9975' : svc.color);
+            const inner = skipped ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' : (isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon);
             const svcTypes = _orStopSvcTypes(s);
             let html = pinFor(inner, col);
             if (!isPassed && svcTypes.length > 1) { const es = _OR_SVC[svcTypes[1]] || _OR_SVC.fuel; html = pinCombo(inner, col, es.icon, es.color); }
@@ -10528,7 +10590,7 @@ export function initApp() {
             if (s.driverMatched || s.driverMade) { const rc = s.driverMatched ? 'rgba(46,153,117,.28)' : 'rgba(178,136,53,.26)'; html = '<div style="display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:' + rc + '">' + html + '</div>'; sz = 42; }
             const tipnames = svcTypes.map(t => (_OR_SVC[t] || _OR_SVC.fuel).label).join(' + ');
             const tipExtra = s.driverMatched ? ' · matches driver’s stop' : (s.driverMade ? ' · driver fueled off-plan' : '');
-            L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), opacity: isPassed ? .8 : 1, zIndexOffset: (s.driverMatched || s.driverMade) ? 600 : 0 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : '') + tipExtra, { direction: 'top' });
+            L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), opacity: isPassed ? .8 : 1, zIndexOffset: (s.driverMatched || s.driverMade) ? 600 : 0 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (skipped ? ' · skipped' : (isPassed ? ' · passed' : '')) + tipExtra, { direction: 'top' });
           });
           // candidate markers while browsing a service type (hidden while options load)
           if (addType && addType !== '__pick' && !state.orAddLoading) {
@@ -10540,15 +10602,20 @@ export function initApp() {
             const _aicon = (_OR_SVC[addType] || _OR_SVC.fuel).icon;
             const _mkMarker = (c, label, ll, nearby) => {
               const match = c._match;
-              const dot = match
-                ? '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#2e9975;border:2.5px solid #141414;box-shadow:0 2px 8px rgba(0,0,0,.5);color:#141414;cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>'
-                : '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#141414;border:2px ' + (nearby ? 'solid' : 'dashed') + ' ' + _acol + ';color:' + _acol + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + _aicon + '</div>';
-              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: dot, iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: match ? 900 : (nearby ? 500 : 0) }).addTo(layers);
+              const isSel = state.orCandSel === c.id;
+              const sz = isSel ? 38 : 30;
+              let dot;
+              if (match) {
+                dot = '<div style="display:grid;place-items:center;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:#2e9975;border:' + (isSel ? '3px solid #bff0dd' : '2.5px solid #141414') + ';box-shadow:0 2px 8px rgba(0,0,0,.5);color:#141414;cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>';
+              } else if (isSel) {
+                dot = '<div style="display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:' + _acol + ';border:3px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,.6);color:#141414;cursor:pointer">' + _aicon + '</div>';
+              } else {
+                dot = '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#141414;border:2px ' + (nearby ? 'solid' : 'dashed') + ' ' + _acol + ';color:' + _acol + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + _aicon + '</div>';
+              }
+              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: dot, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), zIndexOffset: isSel ? 1500 : (match ? 900 : (nearby ? 500 : 0)) }).addTo(layers);
               m.bindTooltip(match ? ('Combine into ' + (match.type === 'fuel' ? match.brand : match.name)) : (c.name + (nearby ? ' · ' + c.radiusMi + ' mi from truck' : ' · ' + c.detourMi + ' mi detour')), { direction: 'top' });
-              m.on('click', () => { _orRunBusy({ title: match ? 'Combining stop…' : (isReplace ? 'Updating plan…' : 'Adding stop…'), sub: match ? 'Adding the service to the existing stop.' : 'Re-routing and updating the map.', color: match ? '#2e9975' : '#6688cc' }, function () {
-                if (match) { _orPushUndo(routeId, state.orLane, 'Service combined into stop'); _orMergeCandidate(routeId, state.orLane, match.id, c); _orLogChange(routeId, state.orLane, { actor: 'Dispatcher', kind: 'add', text: 'Added ' + (_OR_SVC[addType] || _OR_SVC.fuel).label.toLowerCase() + ' to ' + (match.type === 'fuel' ? match.brand : match.name) + ' (combined stop)', revertible: true }); return; }
-                let opts; _orPushUndo(routeId, state.orLane, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, state.orLane, state.orReplace); } const _tm = _orTruckMi(routeId, state.orLane); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm }); _orAddCandidate(routeId, state.orLane, c, opts);
-              }, { orAddType: null, orReplace: null }); });
+              // clicking a pin selects it → its details open on the left (View profile / Add Stop)
+              m.on('click', () => setState({ orCandSel: c.id }));
             };
             _browse.route.forEach((c, i) => {
               if (existing.indexOf(c.id) >= 0) return;
@@ -10660,7 +10727,9 @@ export function initApp() {
     // ── stop full-profile modal ──
     let profileModal = null;
     if (state.orProfile != null && laneMode) {
-      const sp = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orProfile);
+      let sp = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orProfile);
+      const isCand = !sp;                 // not in the plan yet → a browsed candidate
+      if (isCand) sp = _orFindCand(state.orProfile);
       if (sp) {
         const isFuel = sp.type === 'fuel';
         const svc = _OR_SVC[sp.type] || _OR_SVC.fuel;
@@ -10676,20 +10745,22 @@ export function initApp() {
             ]),
             el('div', { class: 'hoverable', onclick: close, style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', font: '400 18px ' + F } }, ['×'])
           ]),
-          isFuel ? el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1px', margin: '16px 20px 0', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } }, [
+          (isFuel && sp.gallons != null) ? el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1px', margin: '16px 20px 0', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } }, [
             el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#e6e6e6' } }, ['$' + sp.pricePerGal.toFixed(2)]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Price / gal'])]),
             el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#6688cc' } }, [sp.gallons + ' gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Optimal fill'])]),
             el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#47b26b' } }, [money(Math.round(sp.cost))]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Stop cost'])])
-          ]) : null,
+          ]) : ((isFuel && sp.pricePerGal != null) ? el('div', { style: { margin: '16px 20px 0', padding: '12px 14px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px' } }, [el('div', { style: { font: '900 15px ' + F, color: '#b28835' } }, ['$' + sp.pricePerGal.toFixed(2) + ' / gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Pump price'])]) : null),
           el('div', { style: { padding: '16px 20px' } }, [
             el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#b3b3b3', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + (sp.address || (svc.label + ' stop · along this lane')) + '</span>' }),
             el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '16px 0 9px' } }, ['Features']),
             el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, feats.map(ft => el('span', { style: { font: '700 11px ' + F, color: '#b3b3b3', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', padding: '5px 11px', borderRadius: '999px' } }, [ft])))
           ]),
-          el('div', { style: { display: 'flex', gap: '8px', padding: '4px 20px 20px' } }, [
-            el('div', { class: 'hoverable', onclick: () => _orLoadOptions({ orProfile: null, orAddType: sp.type, orReplace: sp.id }), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' } }, ['Replace stop']),
-            el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, state.orLane, 'Stop removed'); _orRemoveStop(routeId, state.orLane, sp.id); setState({ orProfile: null }); }, style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#cc666f', background: 'rgba(204,102,111,.1)', border: '1px solid rgba(204,102,111,.28)', cursor: 'pointer' } }, ['Remove stop'])
-          ])
+          el('div', { style: { display: 'flex', gap: '8px', padding: '4px 20px 20px' } }, isCand
+            ? [el('div', { class: 'hoverable', onclick: () => _orCommitCand(sp), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#141414', background: sp._match ? '#2e9975' : '#6688cc', cursor: 'pointer' } }, [sp._match ? 'Combine stop' : 'Add Stop'])]
+            : [
+              el('div', { class: 'hoverable', onclick: () => _orLoadOptions({ orProfile: null, orAddType: sp.type, orReplace: sp.id }), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' } }, ['Replace stop']),
+              el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, state.orLane, 'Stop removed'); _orRemoveStop(routeId, state.orLane, sp.id); setState({ orProfile: null }); }, style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#cc666f', background: 'rgba(204,102,111,.1)', border: '1px solid rgba(204,102,111,.28)', cursor: 'pointer' } }, ['Remove stop'])
+            ])
         ]);
         bg.appendChild(modal);
         profileModal = bg;
