@@ -3027,7 +3027,7 @@ export function initApp() {
 
   function _doStartSearch(key, originCity, anchorEl) {
     var active = _getActiveSearch();
-    if (active && active.key !== key && active.state === 'searching') {
+    if (active && active.key !== key) {
       _showOneSearchWarning(anchorEl, active.city, originCity, function() {
         delete _lbSearch[active.key];
         delete _lbCount[active.key];
@@ -3303,7 +3303,7 @@ export function initApp() {
     // find any key that is currently active (searching or done), not this one
     var _activeKey = null, _activeCity = null;
     var _activeInfo = _getActiveSearch();
-    if (_activeInfo && _activeInfo.key !== key && _activeInfo.state === 'searching') { _activeKey = _activeInfo.key; _activeCity = _activeInfo.city; }
+    if (_activeInfo && _activeInfo.key !== key) { _activeKey = _activeInfo.key; _activeCity = _activeInfo.city; }
     var bar = document.getElementById('_ef-lb');
     var refRect = (anchorEl && anchorEl.getBoundingClientRect) ? anchorEl.getBoundingClientRect() : (bar ? bar.getBoundingClientRect() : { right: window.innerWidth - 24, top: window.innerHeight / 2 });
     var conf = document.createElement('div'); conf.id = '_ef-lb-conf';
@@ -3631,6 +3631,9 @@ export function initApp() {
               : Math.round(ld.dist * 2.8);
             tgt.origin = originCity; tgt.dest = ld.drop; tgt.miles = ld.dist;
             tgt.income = _avgIncome; tgt.status = 'Booked';
+            // Auto-clear active search for this lane now that it's booked
+            var _bKey = _slRid + '_' + _slLIdx;
+            if (_lbSearch[_bKey]) { delete _lbSearch[_bKey]; delete _lbCount[_bKey]; }
             if (ld.drop !== _oldDest) { _cascadeResult = _cascadeLane(_slRid, _slLIdx, ld.drop); _destChanged = true; }
             _after = _snapStats(_slRid);
             _simAfterLanes = loadsOf(_slRid).filter(function(l){ return l.status !== 'Delivered' && l.status !== 'Paid' && l.status !== 'Invoiced'; }).map(function(l){ return { origin: l.origin, dest: l.dest, status: l.status }; });
@@ -4470,13 +4473,10 @@ export function initApp() {
           '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#cc666f" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>' +
         '</div>' +
         '<div style="font:800 14.5px '+F+';color:#f5f5f5;margin-bottom:7px">No route available</div>' +
-        '<div style="font:400 12px '+F+';color:#808080;line-height:1.65;margin-bottom:18px">The system found no viable plan from the new destination — no direct route or repositioning hub within 300 mi. The plan must be built lane by lane.</div>' +
-        '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:12px 14px;font:400 11px '+F+';color:#666666;line-height:1.55;margin-bottom:20px">' +
-          'Use the destination opportunities tool below to search for available loads from this point.' +
-        '</div>' +
+        '<div style="font:400 12px '+F+';color:#808080;line-height:1.65;margin-bottom:20px">We couldn\'t build the next move from the new destination. There\'s no direct route or repositioning opportunity within 300 mi.<br><br>Use \'Search loads\' below to find available loads from this point.</div>' +
       '</div>' +
-      '<div style="padding:0 24px 20px">' +
-        '<button id="_ef-noroute-ok" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#666666;font:700 12px '+F+';cursor:pointer">Got it</button>' +
+      '<div style="padding:0 24px 20px;display:flex;justify-content:flex-end">' +
+        '<button id="_ef-noroute-ok" style="padding:10px 24px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#666666;font:700 12px '+F+';cursor:pointer">Got it</button>' +
       '</div>';
     var bRetNR = document.createElement('button');
     bRetNR.style.cssText = 'position:absolute;top:16px;left:16px;display:flex;align-items:center;gap:5px;background:rgba(10,10,10,.82);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:6px 11px;color:#808080;font:700 11px '+F+';cursor:pointer;white-space:nowrap;backdrop-filter:blur(6px);z-index:1';
@@ -4498,6 +4498,10 @@ export function initApp() {
     modal.querySelector('#_ef-noroute-ok').addEventListener('click', function(){
       ov.remove();
       _clearDownstreamUnbooked(rId);
+      setTimeout(function() {
+        var _ab = document.querySelector('[data-ef-addbtn="'+rId+'"]');
+        if (_ab) _showAddRowMenu(_ab, rId, originCity);
+      }, 120);
     });
   }
 
@@ -5318,11 +5322,23 @@ export function initApp() {
     function _ftrMetric(label, value, delta, higherIsBetter) {
       var el = document.createElement('div');
       el.style.cssText = 'flex:1;padding:0 20px;min-width:0';
-      var deltaClr = delta ? _pctClr(delta,higherIsBetter) : 'transparent';
-      var deltaText = delta || '';
-      el.innerHTML =
-        '<div style="font:700 9px '+F+';color:#666666;letter-spacing:.08em;margin-bottom:3px">'+label+(deltaText ? ' <span style="color:'+deltaClr+';font-weight:700">'+deltaText+'</span>' : '')+'</div>' +
-        '<div style="font:800 14px '+F+';color:#f5f5f5;white-space:nowrap">'+value+'</div>';
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'display:flex;align-items:baseline;gap:4px;margin-bottom:3px;white-space:nowrap';
+      var lbl = document.createElement('span');
+      lbl.style.cssText = 'font:700 9px '+F+';color:#666666;letter-spacing:.08em';
+      lbl.textContent = label;
+      hdr.appendChild(lbl);
+      if (delta) {
+        var dsp = document.createElement('span');
+        dsp.style.cssText = 'font:700 10px '+F+';color:'+_pctClr(delta, higherIsBetter);
+        dsp.textContent = delta;
+        hdr.appendChild(dsp);
+      }
+      el.appendChild(hdr);
+      var val = document.createElement('div');
+      val.style.cssText = 'font:800 14px '+F+';color:#f5f5f5;white-space:nowrap';
+      val.textContent = value;
+      el.appendChild(val);
       return el;
     }
 
@@ -5336,7 +5352,7 @@ export function initApp() {
 
       // ── Metrics section (flex:1) ──
       var metricsWrap = document.createElement('div');
-      metricsWrap.style.cssText = 'flex:1;display:flex;min-width:0';
+      metricsWrap.style.cssText = 'flex:1;display:flex;flex-direction:column;justify-content:center;min-width:0;padding-top:2px';
       if (snap) {
         var incPct  = isDisc ? null : _fmtPct(ref.income,  snap.income);
         var pftPct  = isDisc ? null : _fmtPct(ref.profit,  snap.profit);
@@ -5357,10 +5373,17 @@ export function initApp() {
           miVal   = Math.round(snap.miles).toLocaleString('en-US')+' mi';
           daysVal = snap.days+'–'+(snap.days+1)+' days';
         }
-        metricsWrap.appendChild(_ftrMetric('INCOME',       incVal,  incPct,  true));
-        metricsWrap.appendChild(_ftrMetric('PROFIT',       pftVal,  pftPct,  true));
-        metricsWrap.appendChild(_ftrMetric('MILEAGE',      miVal,   miPct,   false));
-        metricsWrap.appendChild(_ftrMetric('DAYS ON ROUTE',daysVal, daysPct, false));
+        var metricsTitle = document.createElement('div');
+        metricsTitle.style.cssText = 'font:600 9px '+F+';color:#444444;letter-spacing:.1em;text-transform:uppercase;padding:0 20px 5px';
+        metricsTitle.textContent = 'Route metrics';
+        metricsWrap.appendChild(metricsTitle);
+        var metricsRow = document.createElement('div');
+        metricsRow.style.cssText = 'display:flex';
+        metricsRow.appendChild(_ftrMetric('Income',        incVal,  incPct,  true));
+        metricsRow.appendChild(_ftrMetric('Profit',        pftVal,  pftPct,  true));
+        metricsRow.appendChild(_ftrMetric('Mileage',       miVal,   miPct,   false));
+        metricsRow.appendChild(_ftrMetric('Days on route', daysVal, daysPct, false));
+        metricsWrap.appendChild(metricsRow);
       }
       ftrBar.appendChild(metricsWrap);
 
@@ -6766,8 +6789,8 @@ export function initApp() {
     // "Add route" only makes sense when outbound routes exist from this city
     var _hasOutbound = !!_NEXT_DEST[originCity];
     var _items = [
-      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>', label:'Search loads', sub:'Find available loads from destination opportunities', fn:function() { menu.remove(); renderLaneMap(originCity, routeId, true); } },
-      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>', label:'Add load', sub:'Search or register a load', fn:function() { menu.remove(); _openNewLoadModal(routeId, originCity); } },
+      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg>', label:'Search loads', sub:'Find loads with “Destination opportunities”', fn:function() { menu.remove(); renderLaneMap(originCity, routeId, true, anchorEl); } },
+      { svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>', label:'Add load', sub:'Select a load from My Loads or create a new one', fn:function() { menu.remove(); _openNewLoadModal(routeId, originCity); } },
     ];
     if (_hasOutbound) {
       _items.push({ svg:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>', label:'Add route', sub:'Let the system find the next route for you', fn:function() {
@@ -6824,10 +6847,11 @@ export function initApp() {
   }
 
   // ── Destination opportunities map modal (modal, not fullscreen) ───────
-  function renderLaneMap(origin, rId, addLaneMode) {
+  function renderLaneMap(origin, rId, addLaneMode, addLaneAnchor) {
     _lmSt.origin = origin;
     _lmSt.addLaneMode = !!addLaneMode;
     _lmSt.addLaneRid = rId || null;
+    _lmSt.addLaneAnchor = addLaneAnchor || null;
     _lmSt.topDest = null;
     _doRenderLaneMap();
   }
@@ -7546,7 +7570,7 @@ export function initApp() {
           (function(key, originCity) {
             sbStart.addEventListener('click', function() {
               var active = _getActiveSearch();
-              if (active && active.key !== key && active.state === 'searching') {
+              if (active && active.key !== key) {
                 _showOneSearchWarning(sbStart, active.city, originCity, function() {
                   delete _lbSearch[active.key]; delete _lbCount[active.key];
                   var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
@@ -7630,17 +7654,35 @@ export function initApp() {
             var lsAfter = loadsOf(rId);
             var newIdx = lsAfter.length - 1;
             var newKey = rId + '_' + newIdx;
-            _doStartSearch(newKey, originCity);
+            // Close modal first (lane already created)
             _lmSt.origin = null; _lmSt.addLaneMode = false; _lmSt.addLaneRid = null;
             var lmEl = document.getElementById('_ef-lane-map'); if (lmEl) lmEl.remove();
-            _showAddingLoad(function() { setState({}); });
+            var _slActive = _getActiveSearch();
+            if (_slActive) {
+              _showAdaptingPlan(function() {
+                setState({});
+                var _warnAnchor = document.querySelector('[data-ef-wbtn="'+newKey+'"]') || _lmSt.addLaneAnchor || null;
+                _showOneSearchWarning(_warnAnchor, _slActive.city, originCity, function() {
+                  delete _lbSearch[_slActive.key]; delete _lbCount[_slActive.key];
+                  _lbSearch[newKey] = 'searching';
+                  setState({});
+                  setTimeout(function() { _lbSearch[newKey] = 'done'; _lbCount[newKey] = 2 + Math.floor(Math.random() * 4); _showLbNotif(newKey, originCity); }, 3000);
+                });
+              });
+            } else {
+              _showAdaptingPlan(function() {
+                _lbSearch[newKey] = 'searching';
+                setState({});
+                setTimeout(function() { _lbSearch[newKey] = 'done'; _lbCount[newKey] = 2 + Math.floor(Math.random() * 4); _showLbNotif(newKey, originCity); }, 3000);
+              });
+            }
           });
         })(_lmSt.addLaneRid, _lmOriginCity);
       } else {
         (function(key, originCity) {
           startBtn.addEventListener('click', function() {
             var active = _getActiveSearch();
-            if (active && active.key !== key && active.state === 'searching') {
+            if (active && active.key !== key) {
               _showOneSearchWarning(startBtn, active.city, originCity, function() {
                 delete _lbSearch[active.key]; delete _lbCount[active.key];
                 var lmEl2 = document.getElementById('_ef-lane-map'); if (lmEl2) lmEl2.remove();
@@ -8305,6 +8347,7 @@ export function initApp() {
             var _sk = routeId + '_' + row.loadIdx;
             var _ss = _lbSearch[_sk];
             var _wBtn = document.createElement('button');
+            _wBtn.setAttribute('data-ef-wbtn', _sk);
             var _wColor, _wBg, _wBd, _wAnim = '';
             if (_ss === 'done') {
               _wColor = '#2e9975'; _wBg = 'rgba(46,153,117,.12)'; _wBd = 'rgba(46,153,117,.4)';
@@ -8387,6 +8430,7 @@ export function initApp() {
       var _addBtn = document.createElement('div');
       _addBtn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid rgba(46,153,117,.5);border-radius:8px;color:#2e9975;font:800 12px "General Sans", Nunito, system-ui;cursor:pointer;background:rgba(46,153,117,.07);user-select:none';
       _addBtn.innerHTML = 'Add <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>';
+      _addBtn.setAttribute('data-ef-addbtn', routeId);
       _addBtn.addEventListener('click', function(e) { e.stopPropagation(); _showAddRowMenu(_addBtn, routeId, _addOrigin); });
       _c3.appendChild(_addBtn); addRowDiv.appendChild(_c3);
       // Cols 4-14: dashes + empty wifi col
