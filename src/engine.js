@@ -8768,7 +8768,7 @@ export function initApp() {
   };
   const _OR_PLACE_NAMES = {
     parking: ['TA Overnight Parking', "Love's Reserved Lot", 'Pilot Overnight Lot', 'Secure Truck Yard', 'AtoB Truck Lot'],
-    rest:    ['I-40 Rest Area', 'Welcome Center', 'Milepost 292 Rest', 'Quick Stop Lot', 'Wayside Rest'],
+    rest:    ['Pilot Short-Term Lot', 'TA Quick Park', "Love's 30-min Lot", 'Speedway Truck Lot', 'Roadside Truck Parking'],
     wash:    ['Blue Beacon Truck Wash', 'Super Wash Truck', 'Kwik Truck Wash', 'Interstate Washout', 'Clean Rig Center'],
     scale:   ['DOT Weigh Station', 'State Scale House', 'CAT Scale', 'Interstate Scale', 'Port of Entry Scale'],
     repair:  ['American Reefer Service', 'Speedco Repair', 'Rush Truck Center', 'Fleet Fix Center', 'US Truck Parts & Sales'],
@@ -8776,6 +8776,27 @@ export function initApp() {
     walmart: ['Walmart Supercenter', 'Walmart Neighborhood', 'Walmart #2841', 'Walmart #1523', 'Walmart #4402'],
     driver:  ['Driver Services Center', 'DOT Physical Clinic', 'CDL Services Hub', 'Trucker Med Center', 'Driver Care Hub']
   };
+  // Per-type browse metadata — mirrors the Fuel Optimizer: which status each option
+  // shows (fuel→price, parking→availability Low/Med/High, others→Open/Closed) and
+  // the filter chips (parking→availability filter; wash/repair→subtype filters).
+  const _OR_SVC_META = {
+    fuel:    { status: 'price', filterKind: null,      filters: [] },
+    parking: { status: 'avail', filterKind: 'avail',   filters: ['All', 'Available Parking'] },
+    rest:    { status: 'avail', filterKind: 'avail',   filters: ['All', 'Available Parking'] },
+    wash:    { status: 'open',  filterKind: 'subtype', filters: ['All', 'Truck Wash', 'Trailer Washout', 'Truck Detailing'] },
+    scale:   { status: 'open',  filterKind: null,      filters: [] },
+    repair:  { status: 'open',  filterKind: 'subtype', filters: ['All', 'Reefer Repair', 'Truck Repair', 'Trailer Repair', 'Mobile Shop', 'Tire Repair', 'Oil Change'] },
+    hotel:   { status: 'open',  filterKind: null,      filters: [] },
+    walmart: { status: 'open',  filterKind: null,      filters: [] },
+    driver:  { status: 'open',  filterKind: null,      filters: [] }
+  };
+  function _orApplyCandStatus(c, type, i) {
+    const meta = _OR_SVC_META[type] || {};
+    if (meta.status === 'avail') c.availability = ['High', 'Medium', 'Low', 'High', 'Medium'][i % 5];
+    else if (meta.status === 'open') c.open = (i % 3 !== 2);
+    if (meta.filterKind === 'subtype') c.subtype = meta.filters[1 + (i % (meta.filters.length - 1))];
+    return c;
+  }
   function _orStopsGet(routeId, laneIdx) {
     if (!_orStops[routeId]) _orStops[routeId] = {};
     if (!_orStops[routeId][laneIdx]) _orStops[routeId][laneIdx] = [];
@@ -8928,8 +8949,15 @@ export function initApp() {
     const miles = _orSegMiles(routeId, laneIdx);
     const isFuel = type === 'fuel';
     const names = isFuel ? _OR_BRANDS : (_OR_PLACE_NAMES[type] || ['Option A', 'Option B', 'Option C', 'Option D', 'Option E']);
-    const arr = names.map((nm, i) => {
-      const frac = (i + 0.6) / (names.length + 0.2);
+    // Real results run to the dozens — generate a variable ~22–48 options per type,
+    // cycling the base names with branch numbers so names stay unique + realistic.
+    const _h = (key + type).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const n = 22 + (_h % 27);
+    const arr = [];
+    for (let i = 0; i < n; i++) {
+      const base = names[i % names.length];
+      const nm = i < names.length ? base : (base + ' #' + (1000 + ((i * 37 + _h) % 8999)));
+      const frac = (i + 0.6) / (n + 0.2);
       const c = {
         id: type + '_' + i, type, name: nm, brand: isFuel ? nm : undefined,
         distanceMi: Math.round(miles * frac), frac,
@@ -8938,8 +8966,9 @@ export function initApp() {
         address: _OR_ADDR[(laneIdx + i) % _OR_ADDR.length]
       };
       if (isFuel) c.pricePerGal = +(3.55 + ((i * 13) % 10) / 10 * 0.62).toFixed(3);
-      return c;
-    });
+      _orApplyCandStatus(c, type, i);
+      arr.push(c);
+    }
     if (isFuel) {
       const ps = arr.map(c => c.pricePerGal), lo = Math.min(...ps), hi = Math.max(...ps);
       arr.forEach(c => { c.badge = c.pricePerGal <= lo + (hi - lo) * 0.34 ? 'best' : c.pricePerGal >= lo + (hi - lo) * 0.67 ? 'high' : 'ok'; });
@@ -8948,6 +8977,60 @@ export function initApp() {
     }
     _orCandCache[key] = arr;
     return arr;
+  }
+  // "Expand search" candidates — places within a radius of the truck's CURRENT
+  // position (not necessarily along the route). Used when the driver needs a stop
+  // now and nothing planned is close. Cached per type+radius for stable browsing.
+  function _orNearbyCandidates(routeId, laneIdx, type, radius) {
+    const key = routeId + '|' + laneIdx + '|' + type + '|near' + radius;
+    if (_orCandCache[key]) return _orCandCache[key];
+    const miles = _orSegMiles(routeId, laneIdx);
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][laneIdx];
+    const truckMi = (seg && seg.truckMi >= 0) ? Math.min(seg.truckMi, miles) : miles * 0.4;
+    const truckFrac = miles ? Math.min(0.97, Math.max(0.03, truckMi / miles)) : 0.4;
+    const isFuel = type === 'fuel';
+    const names = isFuel ? _OR_BRANDS : (_OR_PLACE_NAMES[type] || ['Option A', 'Option B', 'Option C']);
+    const _h = (key).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const n = radius >= 50 ? 8 + (_h % 5) : radius >= 30 ? 5 + (_h % 4) : 3 + (_h % 3); // more within a wider radius
+    const arr = [];
+    for (let i = 0; i < n; i++) {
+      const off = +(((i + 0.7) / (n + 0.2)) * radius).toFixed(1);   // miles from the truck, within radius
+      const base = names[(i + 2) % names.length];
+      const c = {
+        id: type + '_near' + radius + '_' + i, type, nearby: true, radiusMi: off,
+        name: i < names.length ? base : (base + ' #' + (1000 + ((i * 41 + _h) % 8999))), brand: isFuel ? base : undefined,
+        distanceMi: Math.max(1, Math.round(truckMi + off)), frac: truckFrac,
+        rating: +(3.4 + (i % 4) * 0.4).toFixed(1), detourMi: off, badge: i === 0 ? 'best' : 'ok',
+        address: _OR_ADDR[(laneIdx + i + 3) % _OR_ADDR.length]
+      };
+      if (isFuel) c.pricePerGal = +(3.62 + (i % 6) * 0.06).toFixed(3);
+      _orApplyCandStatus(c, type, i + 3);
+      if ((_OR_SVC_META[type] || {}).status === 'avail') c.availability = ['High', 'Medium', 'High'][i % 3];
+      else if ((_OR_SVC_META[type] || {}).status === 'open') c.open = true;
+      arr.push(c);
+    }
+    _orCandCache[key] = arr;
+    return arr;
+  }
+  // Browse set for the current add-flow state: route options (filtered) + nearby
+  // options when Expand search is on. List and map both call this so they agree.
+  function _orBrowseCands(routeId, laneIdx, type) {
+    const meta = _OR_SVC_META[type] || {};
+    const filter = state.orAddFilter || 'All';
+    const applyF = (list) => {
+      if (!filter || filter === 'All') return list;
+      if (filter === 'Available Parking') return list.filter(c => c.availability && c.availability !== 'Low');
+      return list.filter(c => c.subtype === filter);
+    };
+    return { meta: meta, filter: filter, route: applyF(_orCandMatches(routeId, laneIdx, type)), nearby: state.orExpand ? applyF(_orNearbyCandidates(routeId, laneIdx, type, state.orRadius || 10)) : [] };
+  }
+  // Picking a stop type calls a backend to fetch places → show an inline loading
+  // state in the options panel until they arrive. Seq guards against fast re-picks.
+  let _orLoadSeq = 0;
+  function _orLoadOptions(patch) {
+    const my = ++_orLoadSeq;
+    setState(Object.assign({ orAddLoading: true, orExpand: false, orRadius: 10 }, patch));
+    setTimeout(function () { if (my === _orLoadSeq) setState({ orAddLoading: false }); }, 750);
   }
   function _orAddCandidate(routeId, laneIdx, cand, opts) {
     const arr = _orStopsGet(routeId, laneIdx);
@@ -9504,7 +9587,7 @@ export function initApp() {
         el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '7px' } }, types.map(t => {
           const svc = _OR_SVC[t];
           return el('div', {
-            class: 'hoverable', onclick: () => setState({ orAddType: t }),
+            class: 'hoverable', onclick: () => _orLoadOptions({ orAddType: t, orAddFilter: 'All' }),
             style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 8px', minHeight: '92px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)', cursor: 'pointer', textAlign: 'center' }
           }, [
             _svcIconBox(t, 34),
@@ -9513,60 +9596,130 @@ export function initApp() {
         }))
       ]);
     }
+    // per-option status pill — parking→availability (Low/Med/High), most→Open/Closed
+    function _candStatusBadge(c) {
+      const st = (_OR_SVC_META[c.type] || {}).status;
+      if (st === 'avail' && c.availability) {
+        const col = c.availability === 'High' ? '#47b26b' : c.availability === 'Medium' ? '#b28835' : '#cc666f';
+        return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 9.5px ' + F, color: col, background: 'rgba(255,255,255,.05)', border: '1px solid ' + col + '55', padding: '3px 8px', borderRadius: '999px', whiteSpace: 'nowrap' }, html: '<span style="width:6px;height:6px;border-radius:50%;background:' + col + '"></span><span>' + c.availability + '</span>' });
+      }
+      if (st === 'open') {
+        const col = c.open ? '#47b26b' : '#cc666f';
+        return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 9.5px ' + F, color: col, background: 'rgba(255,255,255,.05)', border: '1px solid ' + col + '55', padding: '3px 8px', borderRadius: '999px', whiteSpace: 'nowrap' }, html: '<span style="width:6px;height:6px;border-radius:50%;background:' + col + '"></span><span>' + (c.open ? 'Open' : 'Closed') + '</span>' });
+      }
+      return null;
+    }
+    // Inline loading while the backend returns places for the picked stop type.
+    function _candidateLoading(type) {
+      const svc = _OR_SVC[type] || _OR_SVC.fuel;
+      const skel = () => el('div', { style: { display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: '10px', padding: '11px', borderRadius: '11px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', animation: '_efDotPulse 1.4s ease-in-out infinite' } }, [
+        el('div', { style: { width: '22px', height: '22px', borderRadius: '50%', background: '#2c2c2c' } }),
+        el('div', { style: { minWidth: '0' } }, [
+          el('div', { style: { width: '52%', height: '10px', borderRadius: '5px', background: '#2c2c2c' } }),
+          el('div', { style: { width: '78%', height: '8px', borderRadius: '4px', background: '#242424', marginTop: '7px' } })
+        ]),
+        el('div', { style: { width: '52px', height: '26px', borderRadius: '999px', background: '#2c2c2c' } })
+      ]);
+      return el('div', { style: { padding: '4px 16px 16px' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 14px' } }, [
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null, orAddLoading: false }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
+          _svcIconBox(type, 28),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [svc.label]),
+              el('span', { style: { color: '#2e9975', display: 'flex' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="animation:_efAdaptSpin .8s linear infinite"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' })
+            ]),
+            el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '1px' } }, ['Finding ' + svc.label.toLowerCase() + ' options along your route…'])
+          ])
+        ]),
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, [skel(), skel(), skel(), skel()])
+      ]);
+    }
     function _candidateBrowser(laneIdx, type) {
       const svc = _OR_SVC[type];
-      const cands = _orCandMatches(routeId, laneIdx, type);
-      const existing = _orStopsGet(routeId, laneIdx).map(s => s.id);
       const isReplace = !!state.orReplace;
-      const nCombine = cands.filter(c => c._match).length;
-      return el('div', { style: { padding: '4px 16px 16px' } }, [
+      const browse = _orBrowseCands(routeId, laneIdx, type);
+      const meta = browse.meta;
+      const existing = _orStopsGet(routeId, laneIdx).map(s => s.id);
+      const total = browse.route.length + browse.nearby.length;
+      const nCombine = browse.route.filter(c => c._match).length;
+      const radius = state.orRadius || 10;
+      const _candRow = (c, num) => {
+        const added = existing.indexOf(c.id) >= 0;
+        const match = c._match;
+        const mSvc = match ? _OR_SVC[match.type] : null;
+        const status = match ? null : _candStatusBadge(c);
+        const doAdd = () => _orRunBusy({ title: match ? 'Combining stop…' : (isReplace ? 'Updating plan…' : 'Adding stop…'), sub: match ? 'Adding the service to the existing stop.' : 'Re-routing and updating the map.', color: match ? '#2e9975' : '#6688cc' }, function () {
+          if (match) { _orPushUndo(routeId, laneIdx, 'Service combined into stop'); _orMergeCandidate(routeId, laneIdx, match.id, c); _orLogChange(routeId, laneIdx, { actor: 'Dispatcher', kind: 'add', text: 'Added ' + svc.label.toLowerCase() + ' to ' + (match.type === 'fuel' ? match.brand : match.name) + ' (combined stop)', revertible: true }); return; }
+          let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added');
+          if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); }
+          const _tm = _orTruckMi(routeId, laneIdx); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm });
+          _orAddCandidate(routeId, laneIdx, c, opts);
+        }, { orAddType: null, orReplace: null });
+        return el('div', { style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: match ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (match ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.07)') } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0' } }, [
+            el('div', { style: { minWidth: '15px', textAlign: 'right', font: '800 11px ' + F, color: match ? '#47b26b' : '#808080' } }, [String(num)]),
+            _svcIconBox(c.type, 28)
+          ]),
+          el('div', { style: { minWidth: '0' } }, [
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: '1' } }, [c.name]),
+              match
+                ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 9px ' + F, letterSpacing: '.03em', textTransform: 'uppercase', color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '2px 7px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Combine</span>' })
+                : (status || _badgePill(c.badge))
+            ]),
+            el('div', { style: { font: '600 9.5px ' + F, color: match ? '#47b26b' : '#666666', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [
+              match
+                ? ('Same location as ' + (match.type === 'fuel' ? match.brand : match.name) + ' · ' + mSvc.label + ' + ' + svc.label)
+                : ((c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + (c.nearby ? (c.radiusMi + ' mi from truck') : ('at ' + c.distanceMi.toLocaleString('en-US') + ' mi')) + ' · ' + c.detourMi + ' mi detour · ★ ' + c.rating)
+            ])
+          ]),
+          added
+            ? el('div', { style: { font: '800 10.5px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
+            : el('div', { class: 'hoverable', onclick: doAdd, style: { font: '800 11px ' + F, color: '#141414', background: match ? '#2e9975' : '#6688cc', padding: '6px 11px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' } }, [match ? 'Combine' : (isReplace ? 'Choose' : 'Add +')])
+        ]);
+      };
+      const _chip = (label, active, onClick) => el('div', { class: 'hoverable', onclick: onClick, style: { font: '800 11px ' + F, color: active ? '#0d1a13' : '#b3b3b3', background: active ? '#7fd4c1' : 'transparent', border: '1px solid ' + (active ? '#7fd4c1' : 'rgba(255,255,255,.14)'), padding: '6px 13px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' } }, [label]);
+      const kids = [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 12px' } }, [
           el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
           _svcIconBox(type, 28),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
             el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(isReplace ? 'Replace with ' : '') + svc.label]),
-            el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '1px' } }, [cands.length + ' along this lane · tap the map or a card' + (nCombine ? ' · ' + nCombine + ' combine' : '')])
+            el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '1px' } }, [total + (state.orExpand ? ' options · tap the map or a card' : ' along this lane') + (nCombine ? ' · ' + nCombine + ' combine' : '')])
           ])
-        ]),
-        // "Expand search" toggle (mirrors the Fuel Optimizer browse panel)
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '11px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.06)', marginBottom: '10px' } }, [
-          el('span', { style: { color: '#6688cc', display: 'flex' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>' }),
-          el('span', { style: { flex: '1', font: '800 11.5px ' + F, color: '#e6e6e6' } }, ['Expand search']),
-          el('span', { style: { font: '700 10px ' + F, color: '#666666' } }, ['Off']),
-          el('span', { style: { width: '34px', height: '19px', borderRadius: '999px', background: '#333333', position: 'relative', flexShrink: '0' } }, [el('span', { style: { position: 'absolute', top: '2px', left: '2px', width: '15px', height: '15px', borderRadius: '50%', background: '#e6e6e6' } })])
-        ]),
-        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, cands.map((c, i) => {
-          const added = existing.indexOf(c.id) >= 0;
-          const match = c._match;
-          const mSvc = match ? _OR_SVC[match.type] : null;
-          const doAdd = () => _orRunBusy({ title: match ? 'Combining stop…' : (isReplace ? 'Updating plan…' : 'Adding stop…'), sub: match ? 'Adding the service to the existing stop.' : 'Re-routing and updating the map.', color: match ? '#2e9975' : '#6688cc' }, function () {
-            if (match) { _orPushUndo(routeId, laneIdx, 'Service combined into stop'); _orMergeCandidate(routeId, laneIdx, match.id, c); _orLogChange(routeId, laneIdx, { actor: 'Dispatcher', kind: 'add', text: 'Added ' + svc.label.toLowerCase() + ' to ' + (match.type === 'fuel' ? match.brand : match.name) + ' (combined stop)', revertible: true }); return; }
-            let opts; _orPushUndo(routeId, laneIdx, isReplace ? 'Stop replaced' : 'Stop added');
-            if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); }
-            const _tm = _orTruckMi(routeId, laneIdx); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm });
-            _orAddCandidate(routeId, laneIdx, c, opts);
-          }, { orAddType: null, orReplace: null });
-          return el('div', { style: { display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: match ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (match ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.07)') } }, [
-            el('div', { style: { width: '22px', height: '22px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: match ? 'rgba(46,153,117,.2)' : '#292929', color: match ? '#47b26b' : '#e6e6e6', font: '800 11px ' + F }, }, [String(i + 1)]),
-            el('div', { style: { minWidth: '0' } }, [
-              el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
-                el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [c.name]),
-                match
-                  ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 9px ' + F, letterSpacing: '.03em', textTransform: 'uppercase', color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '2px 7px', borderRadius: '999px', whiteSpace: 'nowrap' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Combine</span>' })
-                  : _badgePill(c.badge)
-              ]),
-              el('div', { style: { font: '600 9.5px ' + F, color: match ? '#47b26b' : '#666666', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [
-                match
-                  ? ('Same location as ' + (match.type === 'fuel' ? match.brand : match.name) + ' · ' + mSvc.label + ' + ' + svc.label)
-                  : ((c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + 'at ' + c.distanceMi.toLocaleString('en-US') + ' mi · ' + c.detourMi + ' mi detour · ★ ' + c.rating)
-              ])
-            ]),
-            added
-              ? el('div', { style: { font: '800 10.5px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
-              : el('div', { class: 'hoverable', onclick: doAdd, style: { font: '800 11px ' + F, color: '#141414', background: match ? '#2e9975' : '#6688cc', padding: '6px 11px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [match ? 'Combine' : (isReplace ? 'Choose' : 'Add +')])
-          ]);
-        }))
-      ]);
+        ])
+      ];
+      // per-type filter chips
+      if (meta.filters && meta.filters.length) {
+        kids.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '10px' } }, meta.filters.map(f => _chip(f, (state.orAddFilter || 'All') === f, () => setState({ orAddFilter: f })))));
+      }
+      // Expand search toggle (functional) + radius chips when on
+      const on = !!state.orExpand;
+      kids.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '11px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.06)', marginBottom: '10px' } }, [
+        el('span', { style: { color: '#7fd4c1', display: 'flex' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>' }),
+        el('span', { style: { flex: '1', font: '800 11.5px ' + F, color: '#e6e6e6' } }, ['Expand search']),
+        el('span', { style: { font: '700 10px ' + F, color: on ? '#7fd4c1' : '#666666' } }, [on ? ('On · ' + radius + ' mi') : 'Off']),
+        el('div', { class: 'hoverable', onclick: () => setState({ orExpand: !on }), style: { width: '38px', height: '21px', borderRadius: '999px', background: on ? '#2e9975' : '#333333', position: 'relative', flexShrink: '0', cursor: 'pointer', transition: 'background .15s' } }, [el('span', { style: { position: 'absolute', top: '2px', left: on ? '19px' : '2px', width: '17px', height: '17px', borderRadius: '50%', background: '#fff', transition: 'left .15s' } })])
+      ]));
+      if (on) kids.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } }, [
+        el('span', { style: { font: '700 10.5px ' + F, color: '#808080', marginRight: '2px' } }, ['Radius']),
+        _chip('10 mi', radius === 10, () => setState({ orRadius: 10 })),
+        _chip('30 mi', radius === 30, () => setState({ orRadius: 30 })),
+        _chip('50 mi', radius === 50, () => setState({ orRadius: 50 }))
+      ]));
+      // options list (route + nearby) — scrolls internally since results run to dozens
+      const listKids = [];
+      listKids.push(el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, browse.route.length ? browse.route.map((c, i) => _candRow(c, i + 1)) : [el('div', { style: { font: '600 11px ' + F, color: '#666666', padding: '10px 2px' } }, ['No ' + svc.label.toLowerCase() + ' options match this filter along the lane.'])]));
+      if (on) {
+        listKids.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', margin: '14px 0 8px' } }, [
+          el('span', { style: { color: '#7fd4c1', display: 'flex' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' }),
+          el('span', { style: { font: '800 10px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Near the truck · within ' + radius + ' mi'])
+        ]));
+        listKids.push(el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, browse.nearby.length ? browse.nearby.map((c, i) => _candRow(c, browse.route.length + i + 1)) : [el('div', { style: { font: '600 11px ' + F, color: '#666666', padding: '10px 2px' } }, ['Nothing within ' + radius + ' mi of the truck for this filter.'])]));
+      }
+      kids.push(el('div', { class: 'ef-scroll', style: { maxHeight: '340px', overflowY: 'auto', paddingRight: '3px', margin: '0 -3px' } }, listKids));
+      return el('div', { style: { padding: '4px 16px 16px' } }, kids);
     }
     function _segExpansion(row) {
       const key = row.segKey;
@@ -9805,7 +9958,7 @@ export function initApp() {
         kids.push(el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '12px' } }, [
           el('div', { class: 'hoverable', onclick: () => setState({ orProfile: s.id }), style: { font: '800 11px ' + F, color: '#6688cc', cursor: 'pointer' } }, ['View full profile']),
           el('div', { style: { display: 'flex', gap: '6px' } }, [
-            _miniAction(passed ? 'Adjust' : 'Replace', () => setState({ orAddType: s.type, orReplace: s.id })),
+            _miniAction(passed ? 'Adjust' : 'Replace', () => _orLoadOptions({ orAddType: s.type, orReplace: s.id })),
             _miniAction(passed ? 'Remove' : 'Delete', () => { _orPushUndo(routeId, key, passed ? 'Recorded stop removed' : 'Stop removed'); _orRemoveStop(routeId, key, s.id); setState({ orStopOpen: null }); }, true)
           ])
         ]));
@@ -9917,7 +10070,7 @@ export function initApp() {
       // body: add flow (picker/browser) OR the stops timeline
       let listArea;
       if (isAdding) {
-        listArea = state.orAddType === '__pick' ? _typePicker(key) : _candidateBrowser(key, state.orAddType);
+        listArea = state.orAddType === '__pick' ? _typePicker(key) : (state.orAddLoading ? _candidateLoading(state.orAddType) : _candidateBrowser(key, state.orAddType));
       } else {
         const _seed = key.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
         const _pickAddr = _OR_ADDR[_seed % _OR_ADDR.length].split(',')[0];
@@ -10011,7 +10164,7 @@ export function initApp() {
         const ty = old ? old.type : 'fuel';
         if (a.stopId) _orRemoveStop(routeId, segKey, a.stopId);
         _orResolveAlert(routeId, a.id);
-        setState({ orAlertsOpen: false, orLane: segKey, orAddType: ty, orReplace: null });
+        _orLoadOptions({ orAlertsOpen: false, orLane: segKey, orAddType: ty, orReplace: null });
         return;
       }
       if (kind === 'removeStop' && a.stopId) _orRemoveStop(routeId, segKey, a.stopId);
@@ -10296,24 +10449,38 @@ export function initApp() {
             const tipnames = svcTypes.map(t => (_OR_SVC[t] || _OR_SVC.fuel).label).join(' + ');
             L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .8 : 1 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
           });
-          // candidate markers while browsing a service type
-          if (addType && addType !== '__pick') {
+          // candidate markers while browsing a service type (hidden while options load)
+          if (addType && addType !== '__pick' && !state.orAddLoading) {
             const existing = _orStopsGet(routeId, state.orLane).map(s => s.id);
             const _acol = (_OR_SVC[addType] || _OR_SVC.fuel).color;
-            _orCandMatches(routeId, state.orLane, addType).forEach((c, i) => {
-              if (existing.indexOf(c.id) >= 0) return;
+            const isReplace = !!state.orReplace;
+            const _browse = _orBrowseCands(routeId, state.orLane, addType);
+            const _truckPt = (truckFrac > 0 && truckFrac < 1) ? _pathAt(pathPts, truckFrac).pt : _orLerp(a, b, 0.4);
+            const _aicon = (_OR_SVC[addType] || _OR_SVC.fuel).icon;
+            const _mkMarker = (c, label, ll, nearby) => {
               const match = c._match;
-              const ll = match ? _sLLs[_sorted.findIndex(s => s.id === match.id)] || _orOffset(a, b, c.frac, 0) : _orOffset(a, b, c.frac, (i % 2 ? 1 : -1) * 0.05);
-              const isReplace = !!state.orReplace;
               const dot = match
                 ? '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#2e9975;border:2.5px solid #141414;box-shadow:0 2px 8px rgba(0,0,0,.5);color:#141414;cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>'
-                : '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1a1a1a;border:2px dashed ' + _acol + ';color:' + _acol + ';font:800 12px ' + F + ';cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + (i + 1) + '</div>';
-              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: dot, iconSize: [match ? 30 : 28, match ? 30 : 28], iconAnchor: [match ? 15 : 14, match ? 15 : 14] }), zIndexOffset: match ? 900 : 0 }).addTo(layers);
-              m.bindTooltip(match ? ('Combine into ' + (match.type === 'fuel' ? match.brand : match.name)) : (c.name + ' · ' + c.detourMi + ' mi detour'), { direction: 'top' });
+                : '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#141414;border:2px ' + (nearby ? 'solid' : 'dashed') + ' ' + _acol + ';color:' + _acol + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer;animation:_efDotPulse 1.8s ease-in-out infinite">' + _aicon + '</div>';
+              const m = L.marker(ll, { icon: L.divIcon({ className: '', html: dot, iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: match ? 900 : (nearby ? 500 : 0) }).addTo(layers);
+              m.bindTooltip(match ? ('Combine into ' + (match.type === 'fuel' ? match.brand : match.name)) : (c.name + (nearby ? ' · ' + c.radiusMi + ' mi from truck' : ' · ' + c.detourMi + ' mi detour')), { direction: 'top' });
               m.on('click', () => { _orRunBusy({ title: match ? 'Combining stop…' : (isReplace ? 'Updating plan…' : 'Adding stop…'), sub: match ? 'Adding the service to the existing stop.' : 'Re-routing and updating the map.', color: match ? '#2e9975' : '#6688cc' }, function () {
                 if (match) { _orPushUndo(routeId, state.orLane, 'Service combined into stop'); _orMergeCandidate(routeId, state.orLane, match.id, c); _orLogChange(routeId, state.orLane, { actor: 'Dispatcher', kind: 'add', text: 'Added ' + (_OR_SVC[addType] || _OR_SVC.fuel).label.toLowerCase() + ' to ' + (match.type === 'fuel' ? match.brand : match.name) + ' (combined stop)', revertible: true }); return; }
                 let opts; _orPushUndo(routeId, state.orLane, isReplace ? 'Stop replaced' : 'Stop added'); if (isReplace) { const old = _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, state.orLane, state.orReplace); } const _tm = _orTruckMi(routeId, state.orLane); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm }); _orAddCandidate(routeId, state.orLane, c, opts);
               }, { orAddType: null, orReplace: null }); });
+            };
+            _browse.route.forEach((c, i) => {
+              if (existing.indexOf(c.id) >= 0) return;
+              const ll = c._match ? (_sLLs[_sorted.findIndex(s => s.id === c._match.id)] || _orOffset(a, b, c.frac, 0)) : _orOffset(a, b, c.frac, (i % 2 ? 1 : -1) * 0.05);
+              _mkMarker(c, String(i + 1), ll, false);
+            });
+            // Expand-search markers scattered (golden-angle) around the truck position
+            _browse.nearby.forEach((c, i) => {
+              if (existing.indexOf(c.id) >= 0) return;
+              const ang = i * 2.399963;                       // golden angle → even spread, no overlap
+              const rad = 0.03 + (i % 4) * 0.022;
+              const ll = [_truckPt[0] + Math.sin(ang) * rad, _truckPt[1] + Math.cos(ang) * rad];
+              _mkMarker(c, String(_browse.route.length + i + 1), ll, true);
             });
           }
           // truck at its live position on this lane
@@ -10439,7 +10606,7 @@ export function initApp() {
             el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, feats.map(ft => el('span', { style: { font: '700 11px ' + F, color: '#b3b3b3', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', padding: '5px 11px', borderRadius: '999px' } }, [ft])))
           ]),
           el('div', { style: { display: 'flex', gap: '8px', padding: '4px 20px 20px' } }, [
-            el('div', { class: 'hoverable', onclick: () => setState({ orProfile: null, orAddType: sp.type, orReplace: sp.id }), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' } }, ['Replace stop']),
+            el('div', { class: 'hoverable', onclick: () => _orLoadOptions({ orProfile: null, orAddType: sp.type, orReplace: sp.id }), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' } }, ['Replace stop']),
             el('div', { class: 'hoverable', onclick: () => { _orPushUndo(routeId, state.orLane, 'Stop removed'); _orRemoveStop(routeId, state.orLane, sp.id); setState({ orProfile: null }); }, style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#cc666f', background: 'rgba(204,102,111,.1)', border: '1px solid rgba(204,102,111,.28)', cursor: 'pointer' } }, ['Remove stop'])
           ])
         ]);
