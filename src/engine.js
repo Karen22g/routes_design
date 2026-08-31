@@ -8868,7 +8868,10 @@ export function initApp() {
     if (!_orActual[routeId]) _orActual[routeId] = {};
     if (!(key in _orActual[routeId])) {
       const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-      _orActual[routeId][key] = { f0: 0.30, f1: 0.66, side: (h % 2 ? 1 : -1), mag: 0.20, detourMi: 22 + (h % 5) * 7 };
+      // the deviation also captures that the driver fueled off-route → the dispatcher
+      // can correct the plan to the driver's path and re-optimize fuel around it.
+      _orActual[routeId][key] = { f0: 0.30, f1: 0.66, side: (h % 2 ? 1 : -1), mag: 0.20, detourMi: 22 + (h % 5) * 7,
+        fuelStop: { brand: _OR_BRANDS[h % _OR_BRANDS.length], pricePerGal: +(3.49 + (h % 7) * 0.05).toFixed(3), gallons: 90 + (h % 5) * 10, rating: +(3.8 + (h % 3) * 0.4).toFixed(1) } };
     }
     return _orActual[routeId][key];
   }
@@ -8959,15 +8962,16 @@ export function initApp() {
     const remMiles = Math.max(60, miles * (1 - startFrac));
     const n = remMiles > 700 ? 3 : remMiles > 320 ? 2 : 1;
     const totalGal = Math.max(30, Math.round(remMiles / 6.4));
-    // drop ALL existing fuel stops (manual + previous plan); keep non-fuel stops
+    // capture a fuel stop the driver already made off-plan, then drop ALL fuel stops
+    // (manual + previous plan) and keep non-fuel stops.
+    const driverFuel = _orStopsGet(routeId, laneIdx).find(s => s.type === 'fuel' && s.driverMade);
     const arr = _orStopsGet(routeId, laneIdx).filter(s => s.type !== 'fuel');
-    let rem = totalGal, totalCost = 0;
+    let rem = totalGal;
     for (let i = 0; i < n; i++) {
       const gal = i === n - 1 ? rem : Math.round(totalGal / n); rem -= gal;
       const price = +(3.55 + Math.random() * 0.6).toFixed(3);
       const rank = i === 0 ? 'best' : (Math.random() < 0.5 ? 'ok' : 'high');
       const frac = startFrac + (1 - startFrac) * (i + 1) / (n + 1);
-      totalCost += gal * price;
       arr.push({
         id: 'fs' + laneIdx + '_' + i + '_' + Math.floor(Math.random() * 9999),
         type: 'fuel', fuelPlan: true, brand: _OR_BRANDS[Math.floor(Math.random() * _OR_BRANDS.length)],
@@ -8978,9 +8982,25 @@ export function initApp() {
         address: _OR_ADDR[Math.floor(Math.random() * _OR_ADDR.length)]
       });
     }
+    // The optimal plan lands on the exact stop the driver already fueled at → snap the
+    // nearest generated stop to it and flag the match (that stop "coincides").
+    if (driverFuel) {
+      const gen = arr.filter(s => s.fuelPlan);
+      if (gen.length) {
+        let best = gen[0], bd = Infinity;
+        gen.forEach(s => { const dd = Math.abs((s.frac || 0) - (driverFuel.frac || 0)); if (dd < bd) { bd = dd; best = s; } });
+        best.frac = driverFuel.frac; best.distanceMi = driverFuel.distanceMi;
+        best.brand = driverFuel.brand; best.pricePerGal = driverFuel.pricePerGal;
+        best.cost = +(best.gallons * best.pricePerGal).toFixed(2);
+        best.rank = 'best'; best.driverMatched = true; best.address = 'Where the driver fueled · off-plan';
+      }
+    }
+    const finalFuel = arr.filter(s => s.fuelPlan);
+    const totalCost = finalFuel.reduce((s, x) => s + x.cost, 0);
+    const finalGal = finalFuel.reduce((s, x) => s + x.gallons, 0);
     _orStops[routeId][laneIdx] = arr;
     _orFuel[routeId] = _orFuel[routeId] || {};
-    _orFuel[routeId][laneIdx] = { applied: true, count: n, totalGal, totalCost: +totalCost.toFixed(2), ppg: +(totalCost / totalGal).toFixed(2), savings: Math.round(18 + miles * 0.035 + Math.random() * 22) };
+    _orFuel[routeId][laneIdx] = { applied: true, count: n, totalGal: finalGal, totalCost: +totalCost.toFixed(2), ppg: +(totalCost / finalGal).toFixed(2), savings: Math.round(18 + miles * 0.035 + Math.random() * 22), driverMatched: !!driverFuel };
   }
   function _orClearFuel(routeId, laneIdx) {
     if (_orStops[routeId]) _orStops[routeId][laneIdx] = _orStopsGet(routeId, laneIdx).filter(s => !s.fuelPlan);
@@ -9081,9 +9101,9 @@ export function initApp() {
     if (arr.some(s => s.id === cand.id)) return;
     if (cand.type === 'fuel') {
       const gallons = (opts && opts.gallons) || Math.max(30, Math.round(_orSegMiles(routeId, laneIdx) / 6.4 / 2));
-      arr.push({ id: cand.id, type: 'fuel', added: true, adjusted: !!(opts && opts.adjusted), brand: cand.brand || cand.name, pricePerGal: cand.pricePerGal, gallons: gallons, cost: +(gallons * cand.pricePerGal).toFixed(2), distanceMi: cand.distanceMi, frac: cand.frac, rank: cand.badge, rating: cand.rating, detourMi: cand.detourMi, address: cand.address });
+      arr.push({ id: cand.id, type: 'fuel', added: true, adjusted: !!(opts && opts.adjusted), driverMade: !!(opts && opts.driverMade), brand: cand.brand || cand.name, pricePerGal: cand.pricePerGal, gallons: gallons, cost: +(gallons * cand.pricePerGal).toFixed(2), distanceMi: cand.distanceMi, frac: cand.frac, rank: cand.badge, rating: cand.rating, detourMi: cand.detourMi, address: cand.address });
     } else {
-      arr.push({ id: cand.id, type: cand.type, name: cand.name, distanceMi: cand.distanceMi, frac: cand.frac, rating: cand.rating, detourMi: cand.detourMi, address: cand.address, added: true, adjusted: !!(opts && opts.adjusted) });
+      arr.push({ id: cand.id, type: cand.type, name: cand.name, distanceMi: cand.distanceMi, frac: cand.frac, rating: cand.rating, detourMi: cand.detourMi, address: cand.address, added: true, adjusted: !!(opts && opts.adjusted), driverMade: !!(opts && opts.driverMade) });
     }
   }
   function _orRemoveStop(routeId, laneIdx, id) {
@@ -9318,7 +9338,14 @@ export function initApp() {
       const miles = _orSegMiles(routeId, key);
       const f = (dact.f0 + dact.f1) / 2;
       _orPushUndo(routeId, key, 'Plan corrected to driver route');
-      _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * f), frac: f, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS' }, { adjusted: true });
+      if (dact.fuelStop) {
+        // the driver fueled off-route → record their actual fuel stop into the plan so
+        // the polyline follows it; a later fuel re-optimization will land on it.
+        _orAddCandidate(routeId, key, { id: 'drvfuel' + Math.floor(Math.random() * 99999), type: 'fuel', brand: dact.fuelStop.brand, pricePerGal: dact.fuelStop.pricePerGal, distanceMi: Math.round(miles * f), frac: f, rating: dact.fuelStop.rating, detourMi: dact.detourMi, address: 'Recorded from driver GPS · off-plan' }, { adjusted: true, driverMade: true, gallons: dact.fuelStop.gallons });
+        _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Corrected plan to driver route · recorded ' + dact.fuelStop.brand + ' fuel stop', revertible: true });
+      } else {
+        _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * f), frac: f, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS' }, { adjusted: true });
+      }
     }
     function _orKeepPlan(routeId, key) { const d = _orActualFor(routeId, key); if (d) { _orPushUndo(routeId, key, 'Deviation accepted · plan kept'); d.dismissed = true; } }
     // Deviation-resolution popover (opened from the red "Off-plan" chip).
@@ -9332,8 +9359,9 @@ export function initApp() {
           el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px', lineHeight: '1.35' } }, [sub])
         ])
       ]);
+      const _dvf = (_orActualFor(routeId, key) || {}).fuelStop;
       const items = [
-        opt('#47b26b', 'Correct plan', 'Match the plan to the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
+        opt('#47b26b', 'Correct plan', _dvf ? ('Follow the driver’s route · records their ' + _dvf.brand + ' fuel stop') : 'Match the plan to the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
         opt('#6688cc', 'Add driver’s stop', 'Record the stop the driver actually made', () => setState({ orAddType: '__pick', orReplace: null })),
         opt('#b28835', 'Ask to return', 'Send a return-to-route request to the driver', () => { _orPushUndo(routeId, key, 'Return-to-route request sent'); setState({}); }),
         opt('#808080', 'Keep plan', 'Accept the deviation and keep the plan as is', () => { _orKeepPlan(routeId, key); setState({}); })
@@ -9959,8 +9987,10 @@ export function initApp() {
         ...svcTypes.map(t => _lpTag(_OR_SVC[t] ? _OR_SVC[t].label : t, _OR_SVC[t] ? _OR_SVC[t].color : '#808080')),
         isFuel ? _lpTag('$' + s.pricePerGal.toFixed(2) + '/gal', '#b28835') : (s.rating ? _lpTag('★ ' + s.rating, '#808080') : null),
         (s.detourMi && !combined) ? _lpTag('+' + s.detourMi + ' mi', '#808080') : null,
-        (s.added && !s.adjusted && !passed) ? _lpTag('Added', '#2e9975') : null,
-        s.adjusted ? _lpTag('Adjusted', '#b28835') : null
+        (s.added && !s.adjusted && !passed && !s.driverMade) ? _lpTag('Added', '#2e9975') : null,
+        (s.adjusted && !s.driverMade) ? _lpTag('Adjusted', '#b28835') : null,
+        s.driverMade ? _lpTag('Driver stop · off-plan', '#b28835') : null,
+        s.driverMatched ? _lpTag('✓ Matches driver stop', '#47b26b') : null
       ]);
       const head = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto 16px', gap: '8px', alignItems: 'flex-start' } }, [
         el('div', { class: 'hoverable', onclick: () => setState({ orStopOpen: open ? null : s.id }), style: { minWidth: '0', cursor: 'pointer' } }, [
@@ -10167,7 +10197,7 @@ export function initApp() {
             el('div', { style: { color: '#b28835', display: 'flex' }, html: _OR_SVC.fuel.icon }),
             el('div', { style: { flex: '1', minWidth: '0' } }, [
               el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Optimal fuel plan · save ' + money(fuelMeta.savings)]),
-              el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px' } }, [activeFuel.length + ' stop' + (activeFuel.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total'])
+              el('div', { style: { font: '600 10.5px ' + F, color: fuelMeta.driverMatched ? '#47b26b' : '#b28835', marginTop: '1px' } }, [fuelMeta.driverMatched ? ('Includes the stop the driver already fueled · ' + activeFuel.length + ' stop' + (activeFuel.length > 1 ? 's' : '') + ' · ' + tg + ' gal') : (activeFuel.length + ' stop' + (activeFuel.length > 1 ? 's' : '') + ' · ' + tg + ' gal · ' + money(Math.round(tc)) + ' total')])
             ]),
             el('div', { class: 'hoverable', title: 'Recalculate from the truck’s current position', onclick: _recalc, style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', padding: '4px 9px', borderRadius: '7px', border: '1px solid rgba(178,136,53,.35)' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg><span>Recalculate</span>' }),
             _removeBtn
@@ -10464,21 +10494,23 @@ export function initApp() {
           };
           const _act = _orActualFor(routeId, state.orLane);
           const _recon = _act ? _orReconciled(routeId, state.orLane, _act) : true;
+          // base planned polyline — ALWAYS routed through the added stops (waypoints),
+          // so adding a stop bends the line through it regardless of deviation state
+          L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
+          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
+          // traveled (green) portion follows the routed path up to the truck
+          if (truckFrac > 0 && truckFrac < 1) {
+            L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+          }
+          // unreconciled deviation → overlay the driver's actual detour as an annotation
+          // anchored on the routed line (planned dashed + red actual + off-plan pin)
           if (_act && !_recon) {
-            // driver deviated from the planned polyline → blue planned / red actual / green matched ends
-            const pf0 = _orLerp(a, b, _act.f0), pf1 = _orLerp(a, b, _act.f1), apex = _orOffset(a, b, (_act.f0 + _act.f1) / 2, _act.side * _act.mag);
-            L.polyline([a, pf0], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(layers);
-            L.polyline([pf1, b], { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round' }).addTo(layers);
+            const pf0 = _pathAt(pathPts, _act.f0).pt, pf1 = _pathAt(pathPts, _act.f1).pt;
+            const apex = _orOffset(a, b, (_act.f0 + _act.f1) / 2, _act.side * _act.mag);
             L.polyline([pf0, pf1], { color: '#6688cc', weight: 3.5, opacity: .9, dashArray: '2 9', lineCap: 'round' }).addTo(layers).bindTooltip('Planned route', { sticky: true });
             L.polyline([pf0, apex, pf1], { color: '#cc666f', weight: 4, opacity: .95, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual route', { sticky: true });
             L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
-          } else {
-            L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
-          }
-          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
-          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
-          if (truckFrac > 0 && truckFrac < 1 && _recon) {
-            L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           }
           // stop markers sit ON the routed waypoint positions
           _sorted.forEach((s, i) => {
@@ -10490,8 +10522,13 @@ export function initApp() {
             const svcTypes = _orStopSvcTypes(s);
             let html = pinFor(inner, col);
             if (!isPassed && svcTypes.length > 1) { const es = _OR_SVC[svcTypes[1]] || _OR_SVC.fuel; html = pinCombo(inner, col, es.icon, es.color); }
+            // highlight the stop the driver made off-plan (amber ring) / the optimal stop
+            // that coincides with it after re-optimization (green ring)
+            let sz = 30;
+            if (s.driverMatched || s.driverMade) { const rc = s.driverMatched ? 'rgba(46,153,117,.28)' : 'rgba(178,136,53,.26)'; html = '<div style="display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:' + rc + '">' + html + '</div>'; sz = 42; }
             const tipnames = svcTypes.map(t => (_OR_SVC[t] || _OR_SVC.fuel).label).join(' + ');
-            L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [30, 30], iconAnchor: [15, 15] }), opacity: isPassed ? .8 : 1 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : ''), { direction: 'top' });
+            const tipExtra = s.driverMatched ? ' · matches driver’s stop' : (s.driverMade ? ' · driver fueled off-plan' : '');
+            L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), opacity: isPassed ? .8 : 1, zIndexOffset: (s.driverMatched || s.driverMade) ? 600 : 0 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (isPassed ? ' · passed' : '') + tipExtra, { direction: 'top' });
           });
           // candidate markers while browsing a service type (hidden while options load)
           if (addType && addType !== '__pick' && !state.orAddLoading) {
