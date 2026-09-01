@@ -8672,6 +8672,7 @@ export function initApp() {
   let _orSaving = false;    // "Save changes" loading overlay flag (closes the manage-stops modal)
   // Undo (changes go live to the driver immediately → every edit is revertible)
   let _orUndo = null;       // { routeId, laneIdx, stops, fuel, label }
+  let _orEditSnap = null;   // pre-edit snapshot for the manual route-edit session (Save/Cancel)
   let _orToast = null;      // toast label string
   let _orToastTimer = null;
   function _orSnap(routeId, laneIdx) {
@@ -9109,9 +9110,9 @@ export function initApp() {
     if (arr.some(s => s.id === cand.id)) return;
     if (cand.type === 'fuel') {
       const gallons = (opts && opts.gallons) || Math.max(30, Math.round(_orSegMiles(routeId, laneIdx) / 6.4 / 2));
-      arr.push({ id: cand.id, type: 'fuel', added: true, adjusted: !!(opts && opts.adjusted), driverMade: !!(opts && opts.driverMade), brand: cand.brand || cand.name, pricePerGal: cand.pricePerGal, gallons: gallons, cost: +(gallons * cand.pricePerGal).toFixed(2), distanceMi: cand.distanceMi, frac: cand.frac, rank: cand.badge, rating: cand.rating, detourMi: cand.detourMi, address: cand.address });
+      arr.push({ id: cand.id, type: 'fuel', added: true, adjusted: !!(opts && opts.adjusted), driverMade: !!(opts && opts.driverMade), manual: !!(opts && opts.manual), brand: cand.brand || cand.name, pricePerGal: cand.pricePerGal, gallons: gallons, cost: +(gallons * cand.pricePerGal).toFixed(2), distanceMi: cand.distanceMi, frac: cand.frac, rank: cand.badge, rating: cand.rating, detourMi: cand.detourMi, address: cand.address, lat: cand.lat, lng: cand.lng });
     } else {
-      arr.push({ id: cand.id, type: cand.type, name: cand.name, distanceMi: cand.distanceMi, frac: cand.frac, rating: cand.rating, detourMi: cand.detourMi, address: cand.address, added: true, adjusted: !!(opts && opts.adjusted), driverMade: !!(opts && opts.driverMade) });
+      arr.push({ id: cand.id, type: cand.type, name: cand.name, distanceMi: cand.distanceMi, frac: cand.frac, rating: cand.rating, detourMi: cand.detourMi, address: cand.address, added: true, adjusted: !!(opts && opts.adjusted), driverMade: !!(opts && opts.driverMade), manual: !!(opts && opts.manual), lat: cand.lat, lng: cand.lng });
     }
   }
   function _orRemoveStop(routeId, laneIdx, id) {
@@ -9163,6 +9164,25 @@ export function initApp() {
     const len = Math.hypot(dlat, dlng) || 1;
     const p = _orLerp(a, b, t);
     return [p[0] + (-dlng / len) * off, p[1] + (dlat / len) * off];
+  }
+  // Project a lat/lng onto the a→b lane line → { frac (0..1 along), detourMi (perp dist) }.
+  function _orProject(a, b, ll) {
+    const dlat = b[0] - a[0], dlng = b[1] - a[1];
+    const l2 = dlat * dlat + dlng * dlng || 1;
+    let t = ((ll[0] - a[0]) * dlat + (ll[1] - a[1]) * dlng) / l2;
+    t = Math.max(0.02, Math.min(0.98, t));
+    const proj = [a[0] + dlat * t, a[1] + dlng * t];
+    const perp = Math.hypot(ll[0] - proj[0], ll[1] - proj[1]);
+    return { frac: t, detourMi: +(perp * 69 * 2).toFixed(1) };  // ~69 mi/deg, round-trip detour
+  }
+  // A point manually placed/dragged on the map: bends the plan line and lists as a stop.
+  function _orMakePoint(routeId, laneKey, ll, opts) {
+    const miles = _orSegMiles(routeId, laneKey);
+    const pr = (opts && opts.a && opts.b) ? _orProject(opts.a, opts.b, ll) : { frac: 0.5, detourMi: 0 };
+    return Object.assign({
+      id: (opts && opts.id) || ('m' + Math.floor(Math.random() * 999999)),
+      lat: ll[0], lng: ll[1], frac: pr.frac, distanceMi: Math.round(miles * pr.frac), detourMi: pr.detourMi
+    }, opts && opts.extra ? opts.extra : {});
   }
 
   function renderControl(routeId) {
@@ -9343,19 +9363,53 @@ export function initApp() {
     // 1-click adherence actions
     function _orCorrectToDriver(routeId, key) {
       const dact = _orActualFor(routeId, key); if (!dact) return;
+      const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
+      const a = seg && _OR_COORD[seg.origin], b = seg && _OR_COORD[seg.dest];
       const miles = _orSegMiles(routeId, key);
-      const f = (dact.f0 + dact.f1) / 2;
+      const mid = (dact.f0 + dact.f1) / 2;
       _orPushUndo(routeId, key, 'Plan corrected to driver route');
+      // 1) overlay the driver's actual path: drop a via at the deviation apex so the
+      //    planned polyline bends onto the red trace.
+      if (a && b) {
+        const apex = _orOffset(a, b, mid, dact.side * dact.mag);
+        _orStopsGet(routeId, key).push(_orMakePoint(routeId, key, apex, { id: 'via' + Math.floor(Math.random() * 999999), a: a, b: b, extra: { via: true, name: 'Route point', added: true, adjusted: true } }));
+      }
+      // 2) record the driver's off-route fuel stop (or a generic recorded stop), placed
+      //    ON the red trace.
+      const fFrac = dact.f0 + (dact.f1 - dact.f0) * 0.62;
+      const fLL = (a && b) ? _orOffset(a, b, fFrac, dact.side * dact.mag * 0.92) : null;
       if (dact.fuelStop) {
-        // the driver fueled off-route → record their actual fuel stop into the plan so
-        // the polyline follows it; a later fuel re-optimization will land on it.
-        _orAddCandidate(routeId, key, { id: 'drvfuel' + Math.floor(Math.random() * 99999), type: 'fuel', brand: dact.fuelStop.brand, pricePerGal: dact.fuelStop.pricePerGal, distanceMi: Math.round(miles * f), frac: f, rating: dact.fuelStop.rating, detourMi: dact.detourMi, address: 'Recorded from driver GPS · off-plan' }, { adjusted: true, driverMade: true, gallons: dact.fuelStop.gallons });
+        _orAddCandidate(routeId, key, { id: 'drvfuel' + Math.floor(Math.random() * 99999), type: 'fuel', brand: dact.fuelStop.brand, pricePerGal: dact.fuelStop.pricePerGal, distanceMi: Math.round(miles * fFrac), frac: fFrac, rating: dact.fuelStop.rating, detourMi: dact.detourMi, address: 'Recorded from driver GPS · off-plan', lat: fLL ? fLL[0] : undefined, lng: fLL ? fLL[1] : undefined }, { adjusted: true, driverMade: true, gallons: dact.fuelStop.gallons });
         _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Corrected plan to driver route · recorded ' + dact.fuelStop.brand + ' fuel stop', revertible: true });
       } else {
-        _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * f), frac: f, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS' }, { adjusted: true });
+        _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * fFrac), frac: fFrac, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS', lat: fLL ? fLL[0] : undefined, lng: fLL ? fLL[1] : undefined }, { adjusted: true });
       }
     }
     function _orKeepPlan(routeId, key) { const d = _orActualFor(routeId, key); if (d) { _orPushUndo(routeId, key, 'Deviation accepted · plan kept'); d.dismissed = true; } }
+    // Option 3: keep the plan untouched — no metric change, deviation stays flagged (red).
+    function _orKeepDeviation(routeId, key) {
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Deviation reviewed · plan kept (still flagged)', revertible: false });
+      _orToast = 'Plan kept · deviation still flagged'; _orUndo = null;
+      if (_orToastTimer) clearTimeout(_orToastTimer);
+      _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000);
+      setState({});
+    }
+    // Option 2: manual route edit — snapshot for Save/Cancel, then enter edit mode.
+    function _orEnterEdit(routeId, key) {
+      _orEditSnap = _orSnap(routeId, key);
+      setState({ orLane: key, orEdit: true, orEditTool: 'drag', orEditAdd: null, orAddType: null, orReplace: null, orCandSel: null });
+    }
+    function _orCancelEdit(routeId, key) {
+      if (_orEditSnap) _orRestore(routeId, key, _orEditSnap);
+      _orEditSnap = null;
+      setState({ orEdit: false, orEditTool: null, orEditAdd: null });
+    }
+    function _orSaveEdit(routeId, key) {
+      const snap = _orEditSnap; _orEditSnap = null;
+      _orRunBusy({ title: 'Updating plan…', sub: 'Re-routing and recalculating the plan.', color: '#6688cc' }, function () {
+        if (snap) { _orUndo = Object.assign({ routeId: routeId, laneIdx: key, label: 'Route adjusted manually' }, snap); _orToast = 'Route adjusted manually'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; _orUndo = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 5000); _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Adjusted plan manually', revertible: true, snap: snap }); }
+      }, { orEdit: false, orEditTool: null, orEditAdd: null }, 900);
+    }
     // Deviation-resolution popover (opened from the red "Off-plan" chip).
     function _orDeviationMenu(anchorEl, routeId, key) {
       const ex = document.getElementById('or-dev-menu'); if (ex) ex.remove();
@@ -9369,12 +9423,11 @@ export function initApp() {
       ]);
       const _dvf = (_orActualFor(routeId, key) || {}).fuelStop;
       const items = [
-        opt('#47b26b', 'Correct plan', _dvf ? ('Follow the driver’s route · records their ' + _dvf.brand + ' fuel stop') : 'Match the plan to the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
-        opt('#6688cc', 'Add driver’s stop', 'Record the stop the driver actually made', () => setState({ orAddType: '__pick', orReplace: null })),
-        opt('#b28835', 'Ask to return', 'Send a return-to-route request to the driver', () => { _orPushUndo(routeId, key, 'Return-to-route request sent'); setState({}); }),
-        opt('#808080', 'Keep plan', 'Accept the deviation and keep the plan as is', () => { _orKeepPlan(routeId, key); setState({}); })
+        opt('#47b26b', 'Correct plan automatically', _dvf ? ('Follow the driver’s route · overlays the plan and records their ' + _dvf.brand + ' fuel stop') : 'Overlay the plan onto the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
+        opt('#6688cc', 'Adjust manually', 'Move the route or add a stop on the map — drag, address or coordinates', () => _orEnterEdit(routeId, key)),
+        opt('#808080', 'Keep plan', 'Keep the current plan — nothing changes, the deviation stays flagged', () => _orKeepDeviation(routeId, key))
       ];
-      const _menuH = 250;
+      const _menuH = 210;
       const flipUp = (rect.bottom + 6 + _menuH) > window.innerHeight;
       const top = flipUp ? Math.max(8, rect.top - _menuH - 6) : (rect.bottom + 6);
       const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: top + 'px', left: Math.max(8, rect.left) + 'px', width: '264px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
@@ -9921,7 +9974,7 @@ export function initApp() {
       // ── plan impact strip (detour / ETA / fuel savings) ──
       const nStops = stops.length;
       const addedDetour = stops.reduce((s, x) => s + (x.detourMi || 0), 0);
-      const dwellMin = stops.reduce((s, x) => s + (_OR_DWELL[x.type] || 20), 0);
+      const dwellMin = stops.reduce((s, x) => s + (x.via ? 0 : (_OR_DWELL[x.type] || 20)), 0);
       const etaMin = Math.round(addedDetour / 50 * 60) + dwellMin;
       const etaTxt = etaMin >= 60 ? Math.floor(etaMin / 60) + 'h ' + (etaMin % 60) + 'm' : etaMin + 'm';
       const hasOptFuel = fuelMeta && fuelMeta.applied && stops.some(s => s.type === 'fuel' && s.fuelPlan);
@@ -10033,6 +10086,19 @@ export function initApp() {
       return _lpRow(_lpNode(box.replace(/width="15" height="15"/, 'width="13" height="13"'), col, isDrop ? 'rgba(46,82,153,.18)' : 'rgba(46,153,117,.18)'), card);
     }
     function _lanePanelStopCard(s, key, status, num, onStatusClick, manual) {
+      // via-waypoint (route shape point created by dragging) → shows as a generic "Stop"
+      if (s.via) {
+        const cardV = el('div', { id: 'or-stop-' + s.id, style: { padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+          el('div', { style: { display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '8px' } }, [
+            el('div', { style: { minWidth: '0' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Stop']),
+              el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '2px' } }, ['Route point · at ' + s.distanceMi.toLocaleString('en-US') + ' mi' + (s.detourMi ? ' · +' + s.detourMi + ' mi' : '')])
+            ]),
+            _miniAction('Remove', () => { _orPushUndo(routeId, key, 'Route point removed'); _orRemoveStop(routeId, key, s.id); setState({}); }, true)
+          ])
+        ]);
+        return _lpRow(_lpNode('<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', '#6688cc', 'rgba(102,136,204,.16)'), cardV);
+      }
       const isFuel = s.type === 'fuel';
       const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
       const passed = status === 'Completed', next = status === 'In progress';
@@ -10265,7 +10331,7 @@ export function initApp() {
 
       // impact strip
       const addedDetour = stops.reduce((s, x) => s + (x.detourMi || 0), 0);
-      const dwellMin = stops.reduce((s, x) => s + (_OR_DWELL[x.type] || 20), 0);
+      const dwellMin = stops.reduce((s, x) => s + (x.via ? 0 : (_OR_DWELL[x.type] || 20)), 0);
       const etaMin = Math.round(addedDetour / 50 * 60) + dwellMin;
       const etaTxt = etaMin >= 60 ? Math.floor(etaMin / 60) + 'h ' + (etaMin % 60) + 'm' : etaMin + 'm';
       const hasOptFuel = hasOptimalFuel;
@@ -10390,7 +10456,50 @@ export function initApp() {
     const mapEl = el('div', { id: 'ef-onroad-mapslot', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
-    if (laneMode) {
+    if (laneMode && state.orEdit) {
+      // ─────────── manual route-edit overlay (toolbar + add form) ───────────
+      const _eseg = _orSegReg[routeId][state.orLane];
+      const a = _eseg && _OR_COORD[_eseg.origin], b = _eseg && _OR_COORD[_eseg.dest];
+      const tool = state.orEditTool || 'drag';
+      const eadd = state.orEditAdd || null;
+      const _toolBtn = (label, icon, active, on) => el('div', { class: 'hoverable', onclick: on, style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: active ? 'rgba(102,136,204,.28)' : 'rgba(20,20,20,.85)', border: '1px solid ' + (active ? 'rgba(102,136,204,.55)' : 'rgba(255,255,255,.1)'), backdropFilter: 'blur(6px)', color: active ? '#8fb0ff' : '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' }, html: icon + '<span>' + label + '</span>' });
+      const _dragIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
+      const _plusIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '8px' } }, [
+        _toolBtn('Drag route', _dragIc, tool === 'drag', () => setState({ orEditTool: 'drag', orEditAdd: null })),
+        _toolBtn('Add stop', _plusIc, tool === 'add', () => setState({ orEditTool: 'add', orEditAdd: { mode: 'address' } }))
+      ]));
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '8px' } }, [
+        el('div', { class: 'hoverable', onclick: () => _orCancelEdit(routeId, state.orLane), style: { height: '34px', padding: '0 14px', display: 'flex', alignItems: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' } }, ['Cancel']),
+        el('div', { class: 'hoverable', onclick: () => _orSaveEdit(routeId, state.orLane), style: { height: '34px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9px', background: '#2e9975', border: '1px solid #2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Save</span>' })
+      ]));
+      // hint pill
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '58px', left: '14px', zIndex: '1300', padding: '6px 11px', borderRadius: '8px', background: 'rgba(20,20,20,.82)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', font: '600 10.5px ' + F, color: '#b3b3b3' } }, [tool === 'drag' ? 'Drag the blue points — or the line — to reshape the route toward the red driver path' : 'Add a stop by address, coordinates, or clicking the map']));
+      // add-stop form (bottom-left)
+      if (tool === 'add') {
+        const _tab = (label, m) => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: { mode: m } }), style: { flex: '1', textAlign: 'center', padding: '7px 6px', borderRadius: '8px', font: '800 10.5px ' + F, cursor: 'pointer', color: (eadd && eadd.mode === m) ? '#0d1a13' : '#b3b3b3', background: (eadd && eadd.mode === m) ? '#7fd4c1' : 'transparent', border: '1px solid ' + ((eadd && eadd.mode === m) ? '#7fd4c1' : 'rgba(255,255,255,.12)') } }, [label]);
+        const _inp = (id, ph, w) => el('input', { id: id, placeholder: ph, style: { width: w || '100%', boxSizing: 'border-box', height: '34px', padding: '0 10px', borderRadius: '8px', background: '#141414', border: '1px solid rgba(255,255,255,.14)', color: '#e6e6e6', font: '600 12px ' + F, outline: 'none' } });
+        const pending = eadd && eadd.lat != null;
+        const body = [];
+        body.push(el('div', { style: { display: 'flex', gap: '6px', marginBottom: '10px' } }, [_tab('Address', 'address'), _tab('Coordinates', 'coords'), _tab('Click map', 'click')]));
+        if (!pending) {
+          const mode = (eadd && eadd.mode) || 'address';
+          if (mode === 'address') body.push(el('div', { style: { display: 'flex', gap: '7px' } }, [_inp('ed-addr', 'Write address of the stop'), el('div', { class: 'hoverable', onclick: () => { const v = (document.getElementById('ed-addr') || {}).value || 'Custom address'; const ll = _orOffset(a, b, 0.5, 0.02); setState({ orEditAdd: { mode: 'address', lat: ll[0], lng: ll[1], address: v } }); }, style: { flexShrink: '0', padding: '0 14px', height: '34px', display: 'flex', alignItems: 'center', borderRadius: '8px', background: '#6688cc', color: '#141414', font: '800 12px ' + F, cursor: 'pointer' } }, ['Place'])]));
+          else if (mode === 'coords') body.push(el('div', { style: { display: 'flex', gap: '7px' } }, [_inp('ed-lat', 'Lat', '90px'), _inp('ed-lng', 'Lng', '90px'), el('div', { class: 'hoverable', onclick: () => { const la = parseFloat((document.getElementById('ed-lat') || {}).value), lo = parseFloat((document.getElementById('ed-lng') || {}).value); if (isNaN(la) || isNaN(lo)) return; setState({ orEditAdd: { mode: 'coords', lat: la, lng: lo, address: la.toFixed(4) + ', ' + lo.toFixed(4) } }); }, style: { flex: '1', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', background: '#6688cc', color: '#141414', font: '800 12px ' + F, cursor: 'pointer' } }, ['Place'])]));
+          else body.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: '#141414', border: '1px dashed rgba(255,255,255,.18)', font: '600 11.5px ' + F, color: '#808080' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Click anywhere on the map to drop the stop</span>' }));
+        } else {
+          // location chosen → pick a type + optional name, then add
+          const selType = eadd.type || 'fuel';
+          body.push(el('div', { style: { font: '600 10px ' + F, color: '#666666', marginBottom: '7px' }, html: '<span style="color:#7fd4c1">✓</span> ' + (eadd.address || (eadd.lat.toFixed(3) + ', ' + eadd.lng.toFixed(3))) }));
+          body.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px' } }, Object.keys(_OR_SVC).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: Object.assign({}, eadd, { type: t }) }), style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0', padding: '5px 9px', borderRadius: '999px', cursor: 'pointer', border: '1px solid ' + (selType === t ? _OR_SVC[t].color : 'rgba(255,255,255,.12)'), background: selType === t ? _OR_SVC[t].bg : 'transparent', color: selType === t ? _OR_SVC[t].color : '#b3b3b3', font: '800 10px ' + F }, html: _OR_SVC[t].icon.replace(/width="15" height="15"/, 'width="12" height="12"') + '<span>' + _OR_SVC[t].label + '</span>' }))));
+          body.push(el('div', { style: { display: 'flex', gap: '7px', marginTop: '2px' } }, [
+            _inp('ed-name', 'Name (optional)'),
+            el('div', { class: 'hoverable', onclick: () => { const nm = (document.getElementById('ed-name') || {}).value || _OR_SVC[selType].label; _orRunBusy({ title: 'Adding stop…', sub: 'Placing the stop and updating the route.', color: '#6688cc' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: selType, name: nm, brand: selType === 'fuel' ? nm : undefined, pricePerGal: selType === 'fuel' ? 3.79 : undefined, rating: 4.2, address: eadd.address } }); _orAddCandidate(routeId, state.orLane, c, { manual: true }); }, { orEditAdd: null }); }, style: { flexShrink: '0', padding: '0 14px', height: '34px', display: 'flex', alignItems: 'center', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' } }, ['Add stop'])
+          ]));
+        }
+        mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '18px', zIndex: '1300', width: '360px', maxWidth: 'calc(100% - 28px)', padding: '12px', borderRadius: '12px', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(8px)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, body));
+      }
+    } else if (laneMode) {
       // (adding stops is initiated from the lane's inline panel, not the map)
       // ── Update (pull latest from driver app) + View (top-right) ──
       const _laneActive = (function () { const r0 = cd.rows.find(r => r.segKey === state.orLane); return r0 && r0.exec === 'In progress'; })();
@@ -10538,6 +10647,7 @@ export function initApp() {
           // route the planned polyline THROUGH the added stops (a detour bends the line)
           const _sorted = _orLaneStopsSorted(routeId, state.orLane);
           const _stopLL = (s) => {
+            if (s.lat != null && s.lng != null) return [s.lat, s.lng];   // manually placed / dragged point
             const t = s.frac != null ? s.frac : (laneMiles ? s.distanceMi / laneMiles : .5);
             const side = (s.id && s.id.charCodeAt(s.id.length - 1) % 2) ? 1 : -1;
             const mag = s.type === 'fuel' ? (0.03 + (s.detourMi || 0.5) * 0.05) : (0.10 + (s.detourMi || 0.6) * 0.10);
@@ -10572,10 +10682,11 @@ export function initApp() {
             L.polyline([pf0, apex, pf1], { color: '#cc666f', weight: 4, opacity: .95, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual route', { sticky: true });
             L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
           }
-          // stop markers sit ON the routed waypoint positions
-          _sorted.forEach((s, i) => {
+          // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
+          const _dragging = state.orEdit && state.orEditTool === 'drag';
+          if (!_dragging) _sorted.forEach((s, i) => {
             const ll = _sLLs[i];
-            const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
+            const svc = s.via ? { icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', color: '#6688cc' } : (_OR_SVC[s.type] || _OR_SVC.fuel);
             const _sstat = (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane] && _orStopStatus[routeId][state.orLane][s.id]) || null;
             const skipped = _sstat === 'Skipped';
             const isPassed = !skipped && truckMi >= 0 && s.distanceMi <= truckMi;
@@ -10592,8 +10703,48 @@ export function initApp() {
             const tipExtra = s.driverMatched ? ' · matches driver’s stop' : (s.driverMade ? ' · driver fueled off-plan' : '');
             L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), opacity: isPassed ? .8 : 1, zIndexOffset: (s.driverMatched || s.driverMade) ? 600 : 0 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (skipped ? ' · skipped' : (isPassed ? ' · passed' : '')) + tipExtra, { direction: 'top' });
           });
-          // candidate markers while browsing a service type (hidden while options load)
-          if (addType && addType !== '__pick' && !state.orAddLoading) {
+          // ── manual route-edit layers: driver reference + draggable handles + click-to-place ──
+          if (state.orEdit) {
+            // in drag mode disable map panning so a missed grab doesn't pan the map
+            try { if (state.orEditTool === 'drag') map.dragging.disable(); else map.dragging.enable(); } catch (e) {}
+            const de = _orActualFor(routeId, state.orLane);
+            if (de) {
+              const pf0 = _pathAt(pathPts, de.f0).pt, pf1 = _pathAt(pathPts, de.f1).pt, apx = _orOffset(a, b, (de.f0 + de.f1) / 2, de.side * de.mag);
+              L.polyline([pf0, apx, pf1], { color: '#cc666f', weight: 3, opacity: .85, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver actual — drag the plan onto this', { sticky: true });
+            }
+            if (state.orEditTool === 'drag') {
+              // a wide invisible hit area behind a smaller visible dot → easy to grab
+              const _handle = (visible, hit) => '<div style="display:grid;place-items:center;width:' + hit + 'px;height:' + hit + 'px;cursor:grab">' + visible + '</div>';
+              // draggable handles for existing stops/vias
+              _sorted.forEach((s, i) => {
+                const isV = !!s.via, d = isV ? 16 : 22, hit = 40;
+                const vis = '<div style="width:' + d + 'px;height:' + d + 'px;border-radius:50%;background:' + (isV ? '#6688cc' : '#fff') + ';border:3px solid #6688cc;box-shadow:0 2px 8px rgba(0,0,0,.55)"></div>';
+                const m = L.marker(_sLLs[i], { icon: L.divIcon({ className: '', html: _handle(vis, hit), iconSize: [hit, hit], iconAnchor: [hit / 2, hit / 2] }), draggable: true, zIndexOffset: 1400 }).addTo(layers);
+                m.bindTooltip((isV ? 'Route point' : (s.type === 'fuel' ? s.brand : s.name)) + ' · drag to move', { direction: 'top' });
+                m.on('dragend', function (ev) { const p = ev.target.getLatLng(); const pr = _orProject(a, b, [p.lat, p.lng]); const st = _orStopsGet(routeId, state.orLane).find(x => x.id === s.id); if (st) { st.lat = p.lat; st.lng = p.lng; st.frac = pr.frac; st.distanceMi = Math.round(laneMiles * pr.frac); st.detourMi = pr.detourMi; } setState({}); });
+              });
+              // ghost handles along each segment → grab the line to insert a via (Google-Maps style)
+              for (let i = 1; i < pathPts.length; i++) {
+                [0.34, 0.66].forEach(function (f) {
+                  const mp = [pathPts[i - 1][0] + (pathPts[i][0] - pathPts[i - 1][0]) * f, pathPts[i - 1][1] + (pathPts[i][1] - pathPts[i - 1][1]) * f];
+                  const vis = '<div style="width:15px;height:15px;border-radius:50%;background:rgba(102,136,204,.7);border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5)"></div>';
+                  const g = L.marker(mp, { icon: L.divIcon({ className: '', html: _handle(vis, 34), iconSize: [34, 34], iconAnchor: [17, 17] }), draggable: true, zIndexOffset: 1300 }).addTo(layers);
+                  g.bindTooltip('Drag to bend the route here', { direction: 'top' });
+                  g.on('dragend', function (ev) { const p = ev.target.getLatLng(); _orStopsGet(routeId, state.orLane).push(_orMakePoint(routeId, state.orLane, [p.lat, p.lng], { a: a, b: b, extra: { via: true, name: 'Route point', added: true } })); setState({}); });
+                });
+              }
+            }
+            // pending placement pin (from address/coords/click before choosing a type)
+            if (state.orEditAdd && state.orEditAdd.lat != null) {
+              L.marker([state.orEditAdd.lat, state.orEditAdd.lng], { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#6688cc;border:2.5px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.6)"><div style="transform:rotate(45deg);width:8px;height:8px;border-radius:50%;background:#fff"></div></div>', iconSize: [32, 32], iconAnchor: [16, 30] }), zIndexOffset: 1600 }).addTo(layers);
+            }
+            // click-on-map to place (only in add → click sub-mode)
+            const _clickMode = state.orEditTool === 'add' && state.orEditAdd && state.orEditAdd.mode === 'click' && state.orEditAdd.lat == null;
+            map.getContainer().style.cursor = _clickMode ? 'crosshair' : '';
+            if (_clickMode) map.once('click', function (ev) { setState({ orEditAdd: { mode: 'click', lat: ev.latlng.lat, lng: ev.latlng.lng, address: ev.latlng.lat.toFixed(4) + ', ' + ev.latlng.lng.toFixed(4) } }); });
+          } else { try { map.dragging.enable(); map.getContainer().style.cursor = ''; } catch (e) {} }
+          // candidate markers while browsing a service type (hidden while options load / editing)
+          if (addType && addType !== '__pick' && !state.orAddLoading && !state.orEdit) {
             const existing = _orStopsGet(routeId, state.orLane).map(s => s.id);
             const _acol = (_OR_SVC[addType] || _OR_SVC.fuel).color;
             const isReplace = !!state.orReplace;
