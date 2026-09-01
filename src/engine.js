@@ -9184,6 +9184,22 @@ export function initApp() {
       lat: ll[0], lng: ll[1], frac: pr.frac, distanceMi: Math.round(miles * pr.frac), detourMi: pr.detourMi
     }, opts && opts.extra ? opts.extra : {});
   }
+  // Lightweight styled hover tooltip (self-contained; survives re-renders on body).
+  function _orShowTip(anchor, text) {
+    if (!text || !anchor) return;
+    let tip = document.getElementById('or-tip');
+    if (!tip) { tip = document.createElement('div'); tip.id = 'or-tip'; document.body.appendChild(tip); }
+    tip.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;max-width:250px;padding:7px 10px;border-radius:8px;background:#0d0d0d;border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 32px rgba(0,0,0,.6);color:#e6e6e6;font:600 11px "General Sans", Nunito, system-ui;line-height:1.35;display:block';
+    tip.textContent = text;
+    const r = anchor.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = r.left + r.width / 2 - tw / 2;
+    x = Math.max(8, Math.min(x, window.innerWidth - tw - 8));
+    let y = r.bottom + 8;
+    if (y + th + 8 > window.innerHeight) y = r.top - th - 8;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function _orHideTip() { const t = document.getElementById('or-tip'); if (t) t.remove(); }
 
   function renderControl(routeId) {
     const F = '"General Sans", Nunito, system-ui';
@@ -9588,6 +9604,26 @@ export function initApp() {
         ...items
       ]);
     }
+    // Overview attention indicator: shows if a lane is off-plan, has skipped stops,
+    // or has feasibility alerts — so the dispatcher knows which lane to open.
+    function _laneIssues(row) {
+      const key = row.segKey;
+      const adh = _orAdherence(routeId, key);
+      const offPlan = adh.state === 'off' && row.exec === 'In progress';   // only the active lane is actionable
+      const ss = (_orStopStatus[routeId] && _orStopStatus[routeId][key]) || null;
+      const skipped = ss ? Object.keys(ss).filter(k => ss[k] === 'Skipped').length : 0;
+      const alerts = _orAlertsGet(routeId).filter(a => (a.segKey || 'L' + a.laneIdx) === key);
+      if (!offPlan && !skipped && !alerts.length) return el('div', {});
+      const crit = alerts.some(a => a.sev === 'crit');
+      const chip = (icon, txt, col, title) => el('span', { onmouseenter: (e) => _orShowTip(e.currentTarget, title), onmouseleave: _orHideTip, style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 9.5px ' + F, color: col, background: col + '1f', border: '1px solid ' + col + '55', padding: '3px 6px', borderRadius: '999px', whiteSpace: 'nowrap', lineHeight: '1', cursor: 'help' }, html: icon + (txt ? '<span>' + txt + '</span>' : '') });
+      const bell = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+      const xic = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+      const out = [];
+      if (offPlan) out.push(chip(_EX_WARN, '', '#cc666f', 'Driver off-plan · +' + Math.round(adh.detourMi) + ' mi'));
+      if (skipped) out.push(chip(xic, String(skipped), '#cc666f', skipped + ' skipped stop' + (skipped > 1 ? 's' : '')));
+      if (alerts.length) out.push(chip(bell, String(alerts.length), crit ? '#cc666f' : '#b28835', alerts.length + ' feasibility alert' + (alerts.length > 1 ? 's' : '')));
+      return el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0' } }, out);
+    }
     const segItems = [];
     cd.rows.forEach(row => {
       // On Road only manages operational stops for lanes already finished or in
@@ -9597,13 +9633,14 @@ export function initApp() {
       const active = row.exec === 'In progress';
       const isSel = row.segKey === state.orLane;   // lane selected → inline panel + lane-focused right panel
       const _toggle = () => setState({ orLane: isSel ? null : row.segKey, orAddType: null, orReplace: null, orStopOpen: null });
-      segItems.push(el('div', { class: 'row-hoverable', onclick: _toggle, style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '13px', padding: '12px 14px', borderRadius: '12px', background: isSel ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isSel || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isSel ? '.5' : '1', cursor: 'pointer' } }, [
+      segItems.push(el('div', { class: 'row-hoverable', onclick: _toggle, style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto auto 30px', alignItems: 'center', gap: '13px', padding: '12px 14px', borderRadius: '12px', background: isSel ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isSel || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isSel ? '.5' : '1', cursor: 'pointer' } }, [
         _badge(row),
         el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 20px 1fr', alignItems: 'center', gap: '10px', minWidth: '0' } }, [
           _endpoint(row.origin, row.originDate, null, false),
           el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
           _endpoint(row.dest, row.destDate, active ? 'ETA' : (done ? 'Arrived' : null), false)
         ]),
+        _laneIssues(row),
         _etaChip(row),
         _statusDrop(row.exec),
         el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _toggle(); }, title: isSel ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSel ? '#6688cc' : '#666666', transform: isSel ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
