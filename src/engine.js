@@ -8906,7 +8906,7 @@ export function initApp() {
       _orProgress[routeId][key] = next;
       // Missed-stop detection: if the truck just drove past a planned stop that wasn't
       // serviced, the driver may have skipped it → flag it "Skipped" + log a driver event.
-      const _passed = _orLaneStopsSorted(routeId, key).filter(s => s.distanceMi > cur && s.distanceMi <= next && !(_orStopStatus[routeId] && _orStopStatus[routeId][key] && _orStopStatus[routeId][key][s.id]));
+      const _passed = _orLaneStopsSorted(routeId, key).filter(s => !s.via && s.distanceMi > cur && s.distanceMi <= next && !(_orStopStatus[routeId] && _orStopStatus[routeId][key] && _orStopStatus[routeId][key][s.id]));
       if (_passed.length && Math.random() < 0.5) {
         const sk = _passed[Math.floor(Math.random() * _passed.length)];
         if (!_orStopStatus[routeId]) _orStopStatus[routeId] = {};
@@ -10505,8 +10505,26 @@ export function initApp() {
       const _laneActive = (function () { const r0 = cd.rows.find(r => r.segKey === state.orLane); return r0 && r0.exec === 'In progress'; })();
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '8px' } }, [
         _laneActive ? el('div', { class: 'hoverable', onclick: () => _orAdvance(routeId, state.orLane), style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: 'rgba(102,136,204,.2)', border: '1px solid rgba(102,136,204,.4)', backdropFilter: 'blur(6px)', color: '#8fb0ff', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync }) : null,
-        _mapCtl('<span>View</span>' + IC.chevDown)
+        el('div', { class: 'hoverable', onclick: () => setState({ orViewOpen: !state.orViewOpen }), style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: state.orViewOpen ? 'rgba(102,136,204,.2)' : 'rgba(20,20,20,.85)', border: '1px solid ' + (state.orViewOpen ? 'rgba(102,136,204,.4)' : 'rgba(255,255,255,.1)'), backdropFilter: 'blur(6px)', color: state.orViewOpen ? '#8fb0ff' : '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, html: '<span>View</span>' + IC.chevDown })
       ]));
+      // View dropdown: map layer toggles (hub area / stops / planned route)
+      if (state.orViewOpen) {
+        const _sw = (on) => el('div', { style: { width: '38px', height: '21px', borderRadius: '999px', background: on ? '#2e9975' : '#333333', position: 'relative', flexShrink: '0', transition: 'background .15s' } }, [el('span', { style: { position: 'absolute', top: '2px', left: on ? '19px' : '2px', width: '17px', height: '17px', borderRadius: '50%', background: '#fff', transition: 'left .15s' } })]);
+        const _vrow = (title, sub, on, toggle) => el('div', { class: 'hoverable', onclick: toggle, style: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'center', padding: '10px 11px', borderRadius: '9px', cursor: 'pointer' } }, [
+          el('div', { style: { minWidth: '0' } }, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [title]),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px', lineHeight: '1.35' } }, [sub])
+          ]),
+          _sw(on)
+        ]);
+        const showHub = !!state.orVHub, showStops = state.orVStops !== false, showPlan = state.orVPlan !== false;
+        mapPanel.appendChild(el('div', { onclick: () => setState({ orViewOpen: false }), style: { position: 'absolute', inset: '0', zIndex: '1250' } }));
+        mapPanel.appendChild(el('div', { onclick: (e) => e.stopPropagation(), style: { position: 'absolute', top: '56px', right: '14px', zIndex: '1300', width: '290px', background: 'rgba(26,26,26,.97)', border: '1px solid rgba(255,255,255,.14)', borderRadius: '12px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', backdropFilter: 'blur(8px)', padding: '5px' } }, [
+          _vrow('Hub area', 'Show a ~50 mi radius around the lane’s origin & destination hubs', showHub, () => setState({ orVHub: !showHub })),
+          _vrow('Stops', 'Show fuel and other added stops (not the load pickup / drop-off)', showStops, () => setState({ orVStops: !showStops })),
+          _vrow('Planned route', 'Show the optimal polyline — off shows only what the driver has done', showPlan, () => setState({ orVPlan: !showPlan }))
+        ]));
+      }
       // plan-vs-actual legend (bottom-right) — only when this lane has actual telemetry
       const _lact = _orActualFor(routeId, state.orLane);
       if (_lact) {
@@ -10664,9 +10682,17 @@ export function initApp() {
           };
           const _act = _orActualFor(routeId, state.orLane);
           const _recon = _act ? _orReconciled(routeId, state.orLane, _act) : true;
-          // base planned polyline — ALWAYS routed through the added stops (waypoints),
-          // so adding a stop bends the line through it regardless of deviation state
-          L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+          // View-menu layer toggles
+          const _vHub = !!state.orVHub, _vStops = state.orVStops !== false, _vPlan = state.orVPlan !== false;
+          // Hub area: ~50 mi radius rings around the lane's origin & destination hubs
+          if (_vHub) {
+            [a, b].forEach(function (c, i) {
+              L.circle(c, { radius: 80467, color: i ? '#6688cc' : '#47b26b', weight: 1.5, opacity: .5, fillColor: i ? '#6688cc' : '#47b26b', fillOpacity: .08 }).addTo(layers).bindTooltip((i ? 'Destination' : 'Origin') + ' hub · ~50 mi', { direction: 'top' });
+            });
+          }
+          // base planned polyline — routed through the added stops (waypoints); hidden by
+          // the "Planned route" toggle so only the driver's traveled/actual path shows
+          if (_vPlan) L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
           // traveled (green) portion follows the routed path up to the truck
@@ -10684,12 +10710,12 @@ export function initApp() {
           }
           // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
           const _dragging = state.orEdit && state.orEditTool === 'drag';
-          if (!_dragging) _sorted.forEach((s, i) => {
+          if (_vStops && !_dragging) _sorted.forEach((s, i) => {
             const ll = _sLLs[i];
             const svc = s.via ? { icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', color: '#6688cc' } : (_OR_SVC[s.type] || _OR_SVC.fuel);
             const _sstat = (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane] && _orStopStatus[routeId][state.orLane][s.id]) || null;
-            const skipped = _sstat === 'Skipped';
-            const isPassed = !skipped && truckMi >= 0 && s.distanceMi <= truckMi;
+            const skipped = !s.via && _sstat === 'Skipped';   // route waypoints are never "skipped"
+            const isPassed = !s.via && !skipped && truckMi >= 0 && s.distanceMi <= truckMi;   // nor "passed"
             const col = skipped ? '#cc666f' : (isPassed ? '#2e9975' : svc.color);
             const inner = skipped ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' : (isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon);
             const svcTypes = _orStopSvcTypes(s);
@@ -10699,9 +10725,9 @@ export function initApp() {
             // that coincides with it after re-optimization (green ring)
             let sz = 30;
             if (s.driverMatched || s.driverMade) { const rc = s.driverMatched ? 'rgba(46,153,117,.28)' : 'rgba(178,136,53,.26)'; html = '<div style="display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:' + rc + '">' + html + '</div>'; sz = 42; }
-            const tipnames = svcTypes.map(t => (_OR_SVC[t] || _OR_SVC.fuel).label).join(' + ');
+            const tipnames = s.via ? 'Route point' : svcTypes.map(t => (_OR_SVC[t] || _OR_SVC.fuel).label).join(' + ');
             const tipExtra = s.driverMatched ? ' · matches driver’s stop' : (s.driverMade ? ' · driver fueled off-plan' : '');
-            L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), opacity: isPassed ? .8 : 1, zIndexOffset: (s.driverMatched || s.driverMade) ? 600 : 0 }).addTo(layers).bindTooltip((s.type === 'fuel' ? s.brand : s.name) + ' · ' + tipnames + ' · at ' + s.distanceMi + ' mi' + (skipped ? ' · skipped' : (isPassed ? ' · passed' : '')) + tipExtra, { direction: 'top' });
+            L.marker(ll, { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), opacity: isPassed ? .8 : 1, zIndexOffset: (s.driverMatched || s.driverMade) ? 600 : 0 }).addTo(layers).bindTooltip((s.via ? 'Route point' : (s.type === 'fuel' ? s.brand : s.name)) + (s.via ? '' : ' · ' + tipnames) + ' · at ' + s.distanceMi + ' mi' + (skipped ? ' · skipped' : (isPassed ? ' · passed' : '')) + tipExtra, { direction: 'top' });
           });
           // ── manual route-edit layers: driver reference + draggable handles + click-to-place ──
           if (state.orEdit) {
