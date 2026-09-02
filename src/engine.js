@@ -9608,8 +9608,11 @@ export function initApp() {
     // or has feasibility alerts — so the dispatcher knows which lane to open.
     function _laneIssues(row) {
       const key = row.segKey;
+      // the expanded lane already surfaces its alert in the exec strip, and the list
+      // column is narrow while a lane is open → skip the header chip for that lane
+      if (key === state.orLane) return el('div', {});
       const adh = _orAdherence(routeId, key);
-      const offPlan = adh.state === 'off' && row.exec === 'In progress';   // only the active lane is actionable
+      const offPlan = adh.state === 'off';   // flag on any lane with an unresolved deviation (completed or in-transit)
       const ss = (_orStopStatus[routeId] && _orStopStatus[routeId][key]) || null;
       const skipped = ss ? Object.keys(ss).filter(k => ss[k] === 'Skipped').length : 0;
       const alerts = _orAlertsGet(routeId).filter(a => (a.segKey || 'L' + a.laneIdx) === key);
