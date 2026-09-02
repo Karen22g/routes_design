@@ -9185,11 +9185,14 @@ export function initApp() {
     }, opts && opts.extra ? opts.extra : {});
   }
   // Lightweight styled hover tooltip (self-contained; survives re-renders on body).
-  function _orShowTip(anchor, text) {
+  function _orShowTip(anchor, text, color) {
     if (!text || !anchor) return;
     let tip = document.getElementById('or-tip');
     if (!tip) { tip = document.createElement('div'); tip.id = 'or-tip'; document.body.appendChild(tip); }
-    tip.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;max-width:250px;padding:7px 10px;border-radius:8px;background:#0d0d0d;border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 32px rgba(0,0,0,.6);color:#e6e6e6;font:600 11px "General Sans", Nunito, system-ui;line-height:1.35;display:block';
+    const bg = color || '#0d0d0d';
+    const fg = color ? '#141414' : '#e6e6e6';
+    const bd = color ? 'rgba(0,0,0,.28)' : 'rgba(255,255,255,.16)';
+    tip.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;max-width:250px;padding:6px 10px;border-radius:8px;background:' + bg + ';border:1px solid ' + bd + ';box-shadow:0 12px 32px rgba(0,0,0,.6);color:' + fg + ';font:800 11px "General Sans", Nunito, system-ui;line-height:1.35;display:block';
     tip.textContent = text;
     const r = anchor.getBoundingClientRect();
     const tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -9618,7 +9621,7 @@ export function initApp() {
       const alerts = _orAlertsGet(routeId).filter(a => (a.segKey || 'L' + a.laneIdx) === key);
       if (!offPlan && !skipped && !alerts.length) return el('div', {});
       const crit = alerts.some(a => a.sev === 'crit');
-      const chip = (icon, txt, col, title) => el('span', { onmouseenter: (e) => _orShowTip(e.currentTarget, title), onmouseleave: _orHideTip, style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 9.5px ' + F, color: col, background: col + '1f', border: '1px solid ' + col + '55', padding: '3px 6px', borderRadius: '999px', whiteSpace: 'nowrap', lineHeight: '1', cursor: 'help' }, html: icon + (txt ? '<span>' + txt + '</span>' : '') });
+      const chip = (icon, txt, col, title) => el('span', { onmouseenter: (e) => _orShowTip(e.currentTarget, 'Click to view', col), onmouseleave: _orHideTip, onclick: _orHideTip, style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 9.5px ' + F, color: col, background: col + '1f', border: '1px solid ' + col + '55', padding: '3px 6px', borderRadius: '999px', whiteSpace: 'nowrap', lineHeight: '1', cursor: 'pointer' }, html: icon + (txt ? '<span>' + txt + '</span>' : '') });
       const bell = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
       const xic = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
       const out = [];
