@@ -8812,7 +8812,11 @@ export function initApp() {
     repair:  { label: 'Lite maintenance',    short: 'LM', color: '#b3b3b3', bg: 'rgba(255,255,255,.08)', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>' },
     hotel:   { label: 'Hotel',               short: 'H',  color: '#cc666f', bg: 'rgba(204,102,111,.16)', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V5a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v16"/><path d="M9 8h.01M13 8h.01M9 12h.01M13 12h.01"/><path d="M10 21v-4h4v4"/></svg>' },
     walmart: { label: 'Walmart',             short: 'W',  color: '#d1a54a', bg: 'rgba(209,165,74,.16)',  icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>' },
-    driver:  { label: 'Driver services',     short: 'DS', color: '#8066cc', bg: 'rgba(128,102,204,.16)', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' }
+    driver:  { label: 'Driver services',     short: 'DS', color: '#8066cc', bg: 'rgba(128,102,204,.16)', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' },
+    // Load stops (part of the freight itself — a multi-pickup / multi-drop load).
+    // `load:true` keeps them out of the "add stop" type picker (they come with the load).
+    pickup:  { label: 'Pickup',  short: 'PU', color: '#47b26b', bg: 'rgba(71,178,107,.16)',  load: true, icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>' },
+    dropoff: { label: 'Drop-off', short: 'DO', color: '#6688cc', bg: 'rgba(102,136,204,.16)', load: true, icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>' }
   };
   const _OR_PLACE_NAMES = {
     parking: ['TA Overnight Parking', "Love's Reserved Lot", 'Pilot Overnight Lot', 'Secure Truck Yard', 'AtoB Truck Lot'],
@@ -9184,6 +9188,43 @@ export function initApp() {
       lat: ll[0], lng: ll[1], frac: pr.frac, distanceMi: Math.round(miles * pr.frac), detourMi: pr.detourMi
     }, opts && opts.extra ? opts.extra : {});
   }
+  // In practice loads arrive with stops already assigned (load pickups/drops, fuel,
+  // etc.). Seed a realistic plan once per route so the flows aren't empty — including
+  // an example where the driver MISSED a planned mid-load pickup (skipped, no extra
+  // miles) so the dispatcher gets alerted.
+  const _orSeeded = {};
+  function _orSeedPlan(routeId) {
+    if (_orSeeded[routeId]) return;
+    _orSeeded[routeId] = true;
+    const reg = _orSegReg[routeId]; if (!reg) return;
+    const loadKeys = Object.keys(reg).filter(k => reg[k].isLoad);
+    const _pt = (key, frac, side, extra) => {
+      const seg = reg[key], a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest];
+      const ll = (a && b) ? _orOffset(a, b, frac, 0.016 * side) : null;
+      return Object.assign({ frac: frac, distanceMi: Math.round(seg.miles * frac), lat: ll ? ll[0] : undefined, lng: ll ? ll[1] : undefined, address: _OR_ADDR[(seg.miles + Math.round(frac * 10)) % _OR_ADDR.length] }, extra);
+    };
+    const _setStatus = (key, id, st) => { if (!_orStopStatus[routeId]) _orStopStatus[routeId] = {}; if (!_orStopStatus[routeId][key]) _orStopStatus[routeId][key] = {}; _orStopStatus[routeId][key][id] = st; };
+    loadKeys.forEach(key => {
+      const seg = reg[key];
+      const arr = _orStopsGet(routeId, key);
+      if (arr.length) return;                       // don't clobber user edits
+      const inProgress = seg.truckMi >= 0 && seg.truckMi <= seg.miles;
+      const done = seg.truckMi > seg.miles;
+      const gal = Math.max(30, Math.round(seg.miles / 6.4 / 2));
+      // seeded stops sit OUTSIDE the deviation window (~0.18–0.78) so they don't
+      // reconcile the mileage off-plan — the two cases stay independent.
+      if (inProgress) {
+        // multi-pickup load: a 2nd pickup the driver SKIPPED (behind the truck), + an upcoming fuel stop
+        arr.push(_pt(key, 0.14, -1, { id: 'seedpu_' + key, type: 'pickup', load: true, name: '2nd Pickup · load ' + ('L' + (10000000 + (seg.loadIdx || 0))).slice(-4), detourMi: 0, rating: 0 }));
+        arr.push(_pt(key, 0.86, 1, { id: 'seedfuel_' + key, type: 'fuel', added: true, brand: 'Pilot', pricePerGal: 3.69, gallons: gal, cost: +(gal * 3.69).toFixed(2), rank: 'ok', rating: 4.2, detourMi: 0.6 }));
+        _setStatus(key, 'seedpu_' + key, 'Skipped');   // ← driver missed the planned pickup
+        _orLogChange(routeId, key, { actor: 'Driver', kind: 'remove', text: 'Drove past the 2nd pickup without stopping', revertible: false });
+      } else if (done) {
+        // completed lanes already had their planned fuel stop (serviced)
+        arr.push(_pt(key, 0.14, 1, { id: 'seedfuel_' + key, type: 'fuel', added: true, brand: "Love's", pricePerGal: 3.55, gallons: gal, cost: +(gal * 3.55).toFixed(2), rank: 'best', rating: 4.4, detourMi: 0.5 }));
+      }
+    });
+  }
   // Lightweight styled hover tooltip (self-contained; survives re-renders on body).
   function _orShowTip(anchor, text, color) {
     if (!text || !anchor) return;
@@ -9233,6 +9274,7 @@ export function initApp() {
         _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0 };
       });
     })();
+    _orSeedPlan(routeId);   // pre-assign a realistic plan (load stops, fuel, a missed pickup)
 
     // ── inline icons ──
     const IC = {
@@ -9751,7 +9793,7 @@ export function initApp() {
       return el('div', { style: { padding: '13px 14px', borderRadius: '13px', background: next ? 'rgba(46,153,117,.06)' : '#1f1f1f', border: '1px solid ' + (next ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.06)'), opacity: passed ? '.72' : '1' } }, children);
     }
     function _typePicker(laneIdx) {
-      const types = Object.keys(_OR_SVC);
+      const types = Object.keys(_OR_SVC).filter(t => !_OR_SVC[t].load);   // load stops come with the freight, not added here
       return el('div', { style: { padding: '4px 16px 16px' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 10px' } }, [
           el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
@@ -10385,13 +10427,37 @@ export function initApp() {
         hasOptFuel ? _impChip('<span>save ' + money(fuelMeta.savings) + ' fuel</span>', 'green') : null
       ]) : null;
 
+      // Missed planned stop: the driver drove past a planned stop (a load pickup, a
+      // manual fuel stop, etc.) without servicing it — NOT a mileage deviation. Fuel-
+      // plan (optimizer) skips are handled by the fuel banner above.
+      let missedBanner = null;
+      const _mss = _orStopStatus[routeId] && _orStopStatus[routeId][key];
+      const missedStops = stops.filter(s => !s.fuelPlan && _mss && _mss[s.id] === 'Skipped');
+      if (missedStops.length) {
+        const m0 = missedStops[0];
+        const nm = m0.type === 'fuel' ? (m0.brand || 'Fuel stop') : (m0.name || (_OR_SVC[m0.type] || _OR_SVC.fuel).label);
+        const svcLabel = (_OR_SVC[m0.type] || {}).label || 'Stop';
+        const more = missedStops.length - 1;
+        const _return = () => { _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Asked driver to return for ' + nm, revertible: false }); _orToast = 'Return request sent to driver'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
+        const _drop = () => { _orPushUndo(routeId, key, 'Missed stop removed from plan'); missedStops.forEach(s => { _orRemoveStop(routeId, key, s.id); if (_orStopStatus[routeId] && _orStopStatus[routeId][key]) delete _orStopStatus[routeId][key][s.id]; }); setState({}); };
+        missedBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
+          el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Driver missed a planned stop' + (more > 0 ? ' (+' + more + ' more)' : '')]),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#cc666f', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [nm + ' · ' + svcLabel + ' not serviced · at ' + m0.distanceMi.toLocaleString('en-US') + ' mi'])
+          ]),
+          el('div', { class: 'hoverable', title: 'Send a return-to-route request to the driver', onclick: _return, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#cc666f', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>Ask to return</span>' }),
+          el('div', { class: 'hoverable', title: 'Accept the miss and remove it from the plan', onclick: _drop, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' } }, ['Remove'])
+        ]);
+      }
+
       // Log button → opens the change-history side panel
       const nChanges = _orChangesGet(routeId, key).length;
       const logBtn = el('div', { class: 'hoverable', onclick: () => setState({ orLog: key }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', margin: '2px 12px 12px', height: '34px', borderRadius: '9px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#b3b3b3', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>Plan change log' + (nChanges ? ' (' + nChanges + ')' : '') + '</span>' });
       // stops list grows to ~5 stops, then scrolls internally
       const listWrap = isAdding ? listArea : el('div', { class: 'ef-scroll', style: { maxHeight: '380px', overflowY: 'auto' } }, [listArea]);
       return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
-        loadCard, _orExecStrip(row), secHead, listWrap, impactStrip, fuelBanner, logBtn
+        loadCard, _orExecStrip(row), missedBanner, secHead, listWrap, impactStrip, fuelBanner, logBtn
       ]);
     }
 
@@ -10534,7 +10600,7 @@ export function initApp() {
           // location chosen → pick a type + optional name, then add
           const selType = eadd.type || 'fuel';
           body.push(el('div', { style: { font: '600 10px ' + F, color: '#666666', marginBottom: '7px' }, html: '<span style="color:#7fd4c1">✓</span> ' + (eadd.address || (eadd.lat.toFixed(3) + ', ' + eadd.lng.toFixed(3))) }));
-          body.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px' } }, Object.keys(_OR_SVC).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: Object.assign({}, eadd, { type: t }) }), style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0', padding: '5px 9px', borderRadius: '999px', cursor: 'pointer', border: '1px solid ' + (selType === t ? _OR_SVC[t].color : 'rgba(255,255,255,.12)'), background: selType === t ? _OR_SVC[t].bg : 'transparent', color: selType === t ? _OR_SVC[t].color : '#b3b3b3', font: '800 10px ' + F }, html: _OR_SVC[t].icon.replace(/width="15" height="15"/, 'width="12" height="12"') + '<span>' + _OR_SVC[t].label + '</span>' }))));
+          body.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px' } }, Object.keys(_OR_SVC).filter(t => !_OR_SVC[t].load).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: Object.assign({}, eadd, { type: t }) }), style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0', padding: '5px 9px', borderRadius: '999px', cursor: 'pointer', border: '1px solid ' + (selType === t ? _OR_SVC[t].color : 'rgba(255,255,255,.12)'), background: selType === t ? _OR_SVC[t].bg : 'transparent', color: selType === t ? _OR_SVC[t].color : '#b3b3b3', font: '800 10px ' + F }, html: _OR_SVC[t].icon.replace(/width="15" height="15"/, 'width="12" height="12"') + '<span>' + _OR_SVC[t].label + '</span>' }))));
           body.push(el('div', { style: { display: 'flex', gap: '7px', marginTop: '2px' } }, [
             _inp('ed-name', 'Name (optional)'),
             el('div', { class: 'hoverable', onclick: () => { const nm = (document.getElementById('ed-name') || {}).value || _OR_SVC[selType].label; _orRunBusy({ title: 'Adding stop…', sub: 'Placing the stop and updating the route.', color: '#6688cc' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: selType, name: nm, brand: selType === 'fuel' ? nm : undefined, pricePerGal: selType === 'fuel' ? 3.79 : undefined, rating: 4.2, address: eadd.address } }); _orAddCandidate(routeId, state.orLane, c, { manual: true }); }, { orEditAdd: null }); }, style: { flexShrink: '0', padding: '0 14px', height: '34px', display: 'flex', alignItems: 'center', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' } }, ['Add stop'])
