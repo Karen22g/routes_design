@@ -9391,11 +9391,9 @@ export function initApp() {
       el('span', { style: { font: '700 12px ' + F, color: '#b3b3b3', whiteSpace: 'nowrap' } }, [_noUnit ? '--' : r.unit])
     ]);
     const settingsBtn = el('div', { class: 'hoverable', style: { width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: IC.sliders });
-    const _alCount = _orAlertCount(routeId);
-    const _alCrit = _orAlertsCrit(routeId);
-    const bellBtn = el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: !state.orAlertsOpen, orLane: null, orAddType: null }), title: 'Feasibility alerts', style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: state.orAlertsOpen ? 'rgba(102,136,204,.14)' : '#292929', border: '1px solid ' + (state.orAlertsOpen ? 'rgba(102,136,204,.4)' : 'rgba(255,255,255,.08)'), color: _alCount ? (_alCrit ? '#cc666f' : '#b28835') : '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' + (_alCount ? '<span style="position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:' + (_alCrit ? '#cc666f' : '#b28835') + ';color:#1a1a1a;font:900 9.5px ' + F + ';display:flex;align-items:center;justify-content:center;' + (_alCrit ? 'animation:_efDotPulse 1.2s ease-in-out infinite' : '') + '">' + _alCount + '</span>' : '') });
+    // Alerts live only at the lane level (row chips + in-lane banners) — no plan-wide bell/badge.
     const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [
-      backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, bellBtn, settingsBtn
+      backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, settingsBtn
     ]);
 
     // ─────────────────────────────── TAB BAR ──────────────────────────────
@@ -10683,108 +10681,7 @@ export function initApp() {
         ])
       ]);
     }
-    function _lateCard(x) {
-      const meta = _OR_ALERT_META.late, l = x.load || {}, info = x.info;
-      const _ack = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][x.key] = info.byMin; setState({}); };
-      return el('div', { style: { borderRadius: '13px', overflow: 'hidden', background: '#1f1f1f', border: '1px solid ' + meta.color + '44' } }, [
-        el('div', { style: { height: '3px', background: meta.color } }),
-        el('div', { style: { padding: '13px 14px' } }, [
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
-            el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: meta.color + '22', color: meta.color }, html: meta.icon }),
-            el('div', { style: { flex: '1', minWidth: '0' } }, [
-              el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [meta.label]),
-              el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '1px' } }, ['ETA ' + info.liveEta])
-            ]),
-            el('span', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: meta.color } }, ['Attention'])
-          ]),
-          el('div', { style: { font: '500 11.5px ' + F, color: '#b3b3b3', lineHeight: '1.5', margin: '9px 0 8px' } }, ['Live ETA ' + info.liveEta + ' is ' + info.byMin + ' min past the delivery window (' + (info.winDate || '') + ' ' + (info.winStr || '') + ').']),
-          el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: meta.color, background: meta.color + '18', padding: '4px 10px', borderRadius: '999px', marginBottom: '10px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>+' + info.byMin + ' min vs appointment</span>' }),
-          el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: x.key, orAddType: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11px ' + F, color: '#6688cc', cursor: 'pointer', marginBottom: '11px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Lane ' + (x.laneIdx + 1) + ' · ' + (l.origin || '').split(',')[0] + ' → ' + (l.dest || '').split(',')[0] + ' · view</span>' }),
-          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, [
-            el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: x.key, orApptEdit: x.key }), style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#1a1a1a', background: meta.color } }, ['Reschedule']),
-            el('div', { class: 'hoverable', onclick: _ack, style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)' } }, ['Acknowledge'])
-          ])
-        ])
-      ]);
-    }
-    function _hosCard(x) {
-      const meta = _OR_ALERT_META.hos, l = x.load || {}, hos = x.hos;
-      const overdue = hos.breakInH <= 0;
-      const _ack = () => { if (!_orHosAck[routeId]) _orHosAck[routeId] = {}; _orHosAck[routeId][x.key] = true; setState({}); };
-      const _rest = () => _orRunBusy({ title: 'Adding HOS rest stop…', color: meta.color }, function () { _orAddRestBeforeLimit(routeId, x.key); }, { orAlertsOpen: false, orLane: x.key });
-      const descTxt = overdue
-        ? 'The 30-minute break is overdue — the driver has exceeded 8 hours of driving without a reset.'
-        : 'Only ' + _hClock(hos.driveLeftH) + ' of drive time left but ' + _hClock(hos.remDriveH) + ' still to go — short by ' + _hClock(hos.shortByH) + ' before delivery.';
-      return el('div', { style: { borderRadius: '13px', overflow: 'hidden', background: '#1f1f1f', border: '1px solid ' + meta.color + '44' } }, [
-        el('div', { style: { height: '3px', background: meta.color } }),
-        el('div', { style: { padding: '13px 14px' } }, [
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
-            el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: meta.color + '22', color: meta.color }, html: meta.icon }),
-            el('div', { style: { flex: '1', minWidth: '0' } }, [
-              el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [overdue ? 'Break overdue (HOS)' : meta.label]),
-              el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '1px' } }, ['Drive ' + _hClock(hos.driveLeftH) + ' left'])
-            ]),
-            el('span', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: meta.color } }, ['Critical'])
-          ]),
-          el('div', { style: { font: '500 11.5px ' + F, color: '#b3b3b3', lineHeight: '1.5', margin: '9px 0 8px' } }, [descTxt]),
-          el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: meta.color, background: meta.color + '18', padding: '4px 10px', borderRadius: '999px', marginBottom: '10px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>' + (overdue ? 'Break overdue · rest now' : 'Short by ' + _hClock(hos.shortByH) + ' of drive time') + '</span>' }),
-          el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: x.key, orAddType: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11px ' + F, color: '#6688cc', cursor: 'pointer', marginBottom: '11px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Lane ' + (x.laneIdx + 1) + ' · ' + (l.origin || '').split(',')[0] + ' → ' + (l.dest || '').split(',')[0] + ' · view</span>' }),
-          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, [
-            el('div', { class: 'hoverable', onclick: _rest, style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#1a1a1a', background: meta.color } }, ['Add rest stop']),
-            el('div', { class: 'hoverable', onclick: _ack, style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)' } }, ['Acknowledge'])
-          ])
-        ])
-      ]);
-    }
-    function _simRow() {
-      const types = [['missed', 'Missed stop'], ['deviation', 'Deviation'], ['fuel', 'Low fuel'], ['hos', 'HOS risk']];
-      return el('div', { style: { padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,.06)' } }, [
-        el('div', { style: { font: '700 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', marginBottom: '8px' } }, ['Simulate event (demo)']),
-        el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } }, types.map(t => el('div', { class: 'hoverable', onclick: () => { _orInjectAlert(routeId, t[0]); setState({}); }, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', font: '700 11px ' + F, cursor: 'pointer' }, html: '<span style="width:6px;height:6px;border-radius:50%;background:' + _OR_ALERT_META[t[0]].color + '"></span><span>' + t[1] + '</span>' })))
-      ]);
-    }
-    function _alertsPanel() {
-      const alerts = _orAlertsGet(routeId);
-      const lateLanes = _orLateLanes(routeId);
-      const hosLanes = _orHosRiskLanes(routeId);
-      const total = alerts.length + lateLanes.length + hosLanes.length;
-      const head = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
-        el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#e6e6e6', background: '#292929', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' }),
-        el('div', { style: { flex: '1' } }, [
-          el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Feasibility alerts']),
-          el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '1px' } }, [total ? total + ' issue' + (total > 1 ? 's' : '') + ' affecting the plan' : 'Plan is on track'])
-        ])
-      ]);
-      const bodyKids = total
-        ? hosLanes.map(x => _hosCard(x)).concat(lateLanes.map(x => _lateCard(x))).concat(alerts.map(a => _alertCard(a)))
-        : [el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '40px 20px', textAlign: 'center' } }, [
-            el('div', { style: { width: '48px', height: '48px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'rgba(46,153,117,.12)', color: '#47b26b' }, html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' }),
-            el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['No feasibility issues']),
-            el('div', { style: { font: '500 11.5px ' + F, color: '#666666', maxWidth: '240px', lineHeight: '1.5' } }, ['The driver is on plan. Simulate an event below to see how alerts and 1-click fixes work.'])
-          ])];
-      return el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [
-        head, _simRow(),
-        el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '14px 16px 18px', display: 'flex', flexDirection: 'column', gap: '10px' } }, bodyKids)
-      ]);
-    }
-    function _feasStrip() {
-      const n = _orAlertCount(routeId);
-      if (!n) return null;
-      const crit = _orAlertsCrit(routeId);
-      const col = crit ? '#cc666f' : '#b28835';
-      return el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: true }), style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '12px 20px 2px', padding: '11px 13px', borderRadius: '12px', background: col + '14', border: '1px solid ' + col + '55', cursor: 'pointer' } }, [
-        el('span', { style: { width: '9px', height: '9px', borderRadius: '50%', background: col, flexShrink: '0', animation: crit ? '_efDotPulse 1.2s ease-in-out infinite' : 'none' } }),
-        el('div', { style: { flex: '1', minWidth: '0' } }, [
-          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [n + ' issue' + (n > 1 ? 's' : '') + ' affecting feasibility']),
-          el('div', { style: { font: '600 10.5px ' + F, color: col, marginTop: '1px' } }, ['Driver is off-plan — review and adjust'])
-        ]),
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11.5px ' + F, color: col }, html: '<span>Review</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
-      ]);
-    }
-
-    let leftBody;
-    if (state.orAlertsOpen) leftBody = _alertsPanel();
-    else leftBody = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [_feasStrip(), segList]);
+    const leftBody = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [segList]);
     const leftCol = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [tabBar, leftBody]);
 
     // ─────────────────────── RIGHT: map + cards ───────────────────────────
@@ -11219,17 +11116,7 @@ export function initApp() {
         // truck marker at active lane origin
         const truckLL = (cd.ls[sim.activeLaneIdx] && _OR_COORD[cd.ls[sim.activeLaneIdx].origin]) || latlngs[0];
         L.marker(truckLL, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:44px;height:44px"><div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:15px;height:15px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [44, 44], iconAnchor: [22, 22] }), zIndexOffset: 1000 }).addTo(layers);
-        // feasibility alert pins at each affected lane's midpoint (clickable → open panel)
-        _orAlertsGet(routeId).forEach((al, ai) => {
-          const seg2 = _orSegReg[routeId][al.segKey || 'L' + al.laneIdx];
-          const ca = seg2 && _OR_COORD[seg2.origin], cb = seg2 && _OR_COORD[seg2.dest];
-          if (!ca || !cb) return;
-          const p = _orOffset(ca, cb, 0.5, (ai % 2 ? 1 : -1) * 0.05);
-          const meta = _OR_ALERT_META[al.type];
-          const m = L.marker(p, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:' + meta.color + ';border:2.5px solid #141414;box-shadow:0 2px 10px rgba(0,0,0,.5);color:#141414;animation:_efDotPulse 1.4s ease-in-out infinite">' + meta.icon + '</div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1200 }).addTo(layers);
-          m.bindTooltip(meta.label, { direction: 'top' });
-          m.on('click', () => setState({ orAlertsOpen: true }));
-        });
+        // (plan-level alert pins removed — alerts surface only at the lane level)
         const _rb = L.latLngBounds(latlngs);
         if (_fresh || _orMapFitKey !== 'overview') {
           _orMapFitKey = 'overview';
@@ -11314,7 +11201,7 @@ export function initApp() {
       const _lrow = cd.rows.find(r => r.segKey === state.orLog) || {};
       const _lseg = _orSegReg[routeId][state.orLog];
       const close = () => setState({ orLog: null });
-      logPanel = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '320', background: 'rgba(10,10,10,.55)', display: 'flex', justifyContent: 'flex-end' } }, [
+      logPanel = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '1600', background: 'rgba(10,10,10,.55)', display: 'flex', justifyContent: 'flex-end' } }, [
         el('div', { onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); }, style: { width: '420px', maxWidth: '92%', height: '100%', display: 'flex', flexDirection: 'column', background: '#161616', borderLeft: '1px solid rgba(255,255,255,.1)', boxShadow: '-20px 0 60px rgba(0,0,0,.5)' } }, [
           el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 16px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
             el('div', { style: { flex: '1', minWidth: '0' } }, [
