@@ -8749,11 +8749,71 @@ export function initApp() {
     missed:    { label: 'Missed stop',            sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><line x1="9" y1="7" x2="15" y2="13"/><line x1="15" y1="7" x2="9" y2="13"/></svg>' },
     deviation: { label: 'Off optimal route',      sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L10 8 L15 15 L20 4"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>' },
     fuel:      { label: 'Low fuel',               sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>' },
-    hos:       { label: 'HOS runs out before break', sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' }
+    hos:       { label: 'HOS runs out before break', sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' },
+    late:      { label: 'Running late',            sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' }
   };
+  // ── Late detection (Phase 1): live ETA vs the delivery window end ──
+  const _orApptOverride = {};  // routeId -> segKey -> { date, time, endMin }  (rescheduled appointment)
+  const _orLateAck = {};       // routeId -> segKey -> true  (dispatcher acknowledged the delay)
+  function _orMin(s) { if (!s || s === '--') return null; const m = String(s).match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  function _orHHMM(min) { min = ((Math.round(min) % 1440) + 1440) % 1440; const h = Math.floor(min / 60), m = min % 60; return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m; }
+  // live ETA = base load ETA + delay from an active (unreconciled) off-plan detour
+  function _orLateInfo(routeId, key, load) {
+    if (!load) return { late: false };
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
+    if (!seg || seg.truckMi < 0 || seg.truckMi > seg.miles) return { late: false };   // in-progress only
+    const baseMin = _orMin(load.eta); if (baseMin == null) return { late: false };
+    const d = _orActualFor(routeId, key);
+    const off = !!(d && !_orReconciled(routeId, key, d) && !d.dismissed);
+    const delay = off ? Math.round((d.detourMi || 0) / 50 * 60) : 0;
+    const liveMin = baseMin + delay;
+    const ov = _orApptOverride[routeId] && _orApptOverride[routeId][key];
+    const winEnd = ov ? ov.endMin : _orMin((load.deliveryTime || '').split(' - ')[1] || load.deliveryTime);
+    if (winEnd == null) return { late: false };
+    const byMin = liveMin - winEnd;
+    // Acknowledge silences the delay, but it RE-alerts if it gets meaningfully worse
+    // (>15 min past the byMin at ack time) — a fresh, worse slip is a new problem.
+    const ackVal = _orLateAck[routeId] && _orLateAck[routeId][key];
+    const acked = ackVal != null && byMin <= ackVal + 15;
+    return { late: byMin > 0, byMin: byMin, liveMin: liveMin, liveEta: _orHHMM(liveMin), winEnd: winEnd, winStr: ov ? ov.time : (load.deliveryTime || ''), winDate: ov ? ov.date : (load.delivery || ''), delay: delay, off: off, acked: acked, rescheduled: !!ov };
+  }
+  function _orLateLanes(routeId) {
+    const reg = _orSegReg[routeId]; if (!reg) return [];
+    const loads = loadsOf(routeId);
+    return Object.keys(reg).filter(k => reg[k].isLoad).map(k => { const li = reg[k].loadIdx; return { key: k, laneIdx: li, load: loads[li], info: _orLateInfo(routeId, k, loads[li]) }; }).filter(x => x.info.late && !x.info.acked);
+  }
+  // ── Live HOS (Phase 3): clocks derived from real progress; risk when the driver
+  // can't finish the remaining lane on today's drive hours (or the break is overdue).
+  // PC miles are off-duty → excluded from drive time. A planned HOS rest resets it.
+  const _orHosAck = {};   // routeId -> segKey -> true
+  function _hClock(h) { h = Math.max(0, h); return Math.floor(h) + 'h ' + Math.round((h - Math.floor(h)) * 60) + 'm'; }
+  function _orHos(routeId, key) {
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
+    if (!seg || !seg.isLoad || seg.truckMi < 0 || seg.truckMi > seg.miles) return null;
+    const AVG = 55, miles = seg.miles, driven = Math.max(0, Math.min(miles, seg.truckMi)), remMi = Math.max(0, miles - driven);
+    const stops = _orStopsGet(routeId, key);
+    const pcMi = stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0);
+    const hasReset = stops.some(s => s.hosBreak);
+    const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const usedH = (0.8 + (h % 4) * 0.4) + Math.max(0, driven - pcMi) / AVG;   // prior duty + this lane's drive (PC excluded)
+    const driveLeftH = Math.max(0, 11 - usedH);
+    const shiftLeftH = Math.max(0, 14 - (usedH + 1.5));
+    const cycleLeftH = Math.max(0, 70 - (18 + usedH));
+    const breakInH = 8 - usedH;
+    const remDriveH = remMi / AVG;
+    const shortByH = Math.max(0, remDriveH - driveLeftH);
+    const risk = !hasReset && (remDriveH > driveLeftH + 0.05 || breakInH <= 0);
+    const acked = !!(_orHosAck[routeId] && _orHosAck[routeId][key]);
+    return { driveLeftH: driveLeftH, shiftLeftH: shiftLeftH, cycleLeftH: cycleLeftH, breakInH: breakInH, remDriveH: remDriveH, remMi: remMi, risk: risk, shortByH: shortByH, hasReset: hasReset, acked: acked, pcMi: pcMi };
+  }
+  function _orHosRiskLanes(routeId) {
+    const reg = _orSegReg[routeId]; if (!reg) return [];
+    const loads = loadsOf(routeId);
+    return Object.keys(reg).filter(k => reg[k].isLoad).map(k => ({ key: k, laneIdx: reg[k].loadIdx, load: loads[reg[k].loadIdx], hos: _orHos(routeId, k) })).filter(x => x.hos && x.hos.risk && !x.hos.acked);
+  }
   function _orAlertsGet(routeId) { if (!_orAlerts[routeId]) _orAlerts[routeId] = []; return _orAlerts[routeId]; }
-  function _orAlertCount(routeId) { return _orAlertsGet(routeId).length; }
-  function _orAlertsCrit(routeId) { return _orAlertsGet(routeId).some(a => a.sev === 'crit'); }
+  function _orAlertCount(routeId) { return _orAlertsGet(routeId).length + _orLateLanes(routeId).length + _orHosRiskLanes(routeId).length; }
+  function _orAlertsCrit(routeId) { return _orAlertsGet(routeId).some(a => a.sev === 'crit') || _orHosRiskLanes(routeId).length > 0; }
   function _orInjectAlert(routeId, type) {
     const s = _ctrlSimGet(routeId);
     const li = s.activeLaneIdx;
@@ -9124,6 +9184,9 @@ export function initApp() {
     const wasFuel = _orStopsGet(routeId, laneIdx).some(s => s.id === id && s.fuelPlan);
     _orStops[routeId][laneIdx] = _orStopsGet(routeId, laneIdx).filter(s => s.id !== id);
     if (wasFuel && !_orStopsGet(routeId, laneIdx).some(s => s.fuelPlan) && _orFuel[routeId]) delete _orFuel[routeId][laneIdx];
+    // clean up any status override so a removed stop can't leave a phantom skipped/manual flag
+    if (_orStopStatus[routeId] && _orStopStatus[routeId][laneIdx]) delete _orStopStatus[routeId][laneIdx][id];
+    if (_orStopStatusManual[routeId] && _orStopStatusManual[routeId][laneIdx]) delete _orStopStatusManual[routeId][laneIdx][id];
   }
   // A stop can bundle several services (e.g. a fuel stop that ALSO does light
   // maintenance). The primary service is stop.type; extra ones live in stop.extra[].
@@ -9417,6 +9480,7 @@ export function initApp() {
     function _orAdherence(routeId, key) {
       const dact = _orActualFor(routeId, key);
       if (!dact) return { state: 'on', detourMi: 0, dact: null };
+      if (dact.pc) return { state: 'pc', detourMi: dact.detourMi, dact: dact };   // justified as Personal Conveyance
       if (_orReconciled(routeId, key, dact)) return { state: 'on', detourMi: dact.detourMi, dact: dact };
       if (dact.dismissed) return { state: 'accepted', detourMi: dact.detourMi, dact: dact };
       return { state: 'off', detourMi: dact.detourMi, dact: dact };
@@ -9447,6 +9511,22 @@ export function initApp() {
       }
     }
     function _orKeepPlan(routeId, key) { const d = _orActualFor(routeId, key); if (d) { _orPushUndo(routeId, key, 'Deviation accepted · plan kept'); d.dismissed = true; } }
+    // Personal Conveyance: the deviation happened off-duty (PC) → justified. Adjust the
+    // plan onto the driver's path as a distinct PC segment; the extra miles are PC
+    // (excluded from deviation scoring and from HOS drive time).
+    function _orMarkPC(routeId, key) {
+      const dact = _orActualFor(routeId, key); if (!dact) return;
+      const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
+      const a = seg && _OR_COORD[seg.origin], b = seg && _OR_COORD[seg.dest];
+      const mid = (dact.f0 + dact.f1) / 2;
+      _orPushUndo(routeId, key, 'Deviation justified as Personal Conveyance');
+      dact.pc = true; dact.pcMiles = dact.detourMi;
+      if (a && b) {
+        const apex = _orOffset(a, b, mid, dact.side * dact.mag);
+        _orStopsGet(routeId, key).push(_orMakePoint(routeId, key, apex, { id: 'pc' + Math.floor(Math.random() * 999999), a: a, b: b, extra: { via: true, pc: true, name: 'Personal Conveyance', pcMiles: dact.detourMi, added: true } }));
+      }
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Justified deviation as Personal Conveyance · +' + Math.round(dact.detourMi) + ' mi PC (off-duty, excluded from HOS)', revertible: true });
+    }
     // Option 3: keep the plan untouched — no metric change, deviation stays flagged (red).
     function _orKeepDeviation(routeId, key) {
       _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Deviation reviewed · plan kept (still flagged)', revertible: false });
@@ -9486,9 +9566,10 @@ export function initApp() {
       const items = [
         opt('#47b26b', 'Correct plan automatically', _dvf ? ('Follow the driver’s route · overlays the plan and records their ' + _dvf.brand + ' fuel stop') : 'Overlay the plan onto the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
         opt('#6688cc', 'Adjust manually', 'Move the route or add a stop on the map — drag, address or coordinates', () => _orEnterEdit(routeId, key)),
+        opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → justify it, follow it as a PC segment, exclude the miles from HOS', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orMarkPC(routeId, key); }, {})),
         opt('#808080', 'Keep plan', 'Keep the current plan — nothing changes, the deviation stays flagged', () => _orKeepDeviation(routeId, key))
       ];
-      const _menuH = 210;
+      const _menuH = 258;
       const flipUp = (rect.bottom + 6 + _menuH) > window.innerHeight;
       const top = flipUp ? Math.max(8, rect.top - _menuH - 6) : (rect.bottom + 6);
       const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: top + 'px', left: Math.max(8, rect.left) + 'px', width: '264px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
@@ -9504,7 +9585,8 @@ export function initApp() {
       const M = {
         on:       { t: 'On-plan',                                  c: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: IC.check },
         off:      { t: 'Off-plan · +' + Math.round(adh.detourMi) + ' mi', c: '#cc666f', bg: 'rgba(204,102,111,.14)', ic: _EX_WARN },
-        accepted: { t: 'Deviation accepted',                       c: '#b28835', bg: 'rgba(178,136,53,.14)', ic: IC.check }
+        accepted: { t: 'Deviation accepted',                       c: '#b28835', bg: 'rgba(178,136,53,.14)', ic: IC.check },
+        pc:       { t: 'Personal Conveyance · +' + Math.round(adh.detourMi) + ' mi', c: '#8066cc', bg: 'rgba(128,102,204,.16)', ic: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' }
       };
       const m = M[adh.state] || M.on;
       const caret = onClick ? '<span style="display:flex;color:' + m.c + ';opacity:.8">' + IC.chevDown + '</span>' : '';
@@ -9659,14 +9741,23 @@ export function initApp() {
       const adh = _orAdherence(routeId, key);
       const offPlan = adh.state === 'off';   // flag on any lane with an unresolved deviation (completed or in-transit)
       const ss = (_orStopStatus[routeId] && _orStopStatus[routeId][key]) || null;
-      const skipped = ss ? Object.keys(ss).filter(k => ss[k] === 'Skipped').length : 0;
+      const _validNodes = _orStopsGet(routeId, key).map(s => s.id).concat(['__pickup', '__dropoff']);
+      const skipped = ss ? Object.keys(ss).filter(k => ss[k] === 'Skipped' && _validNodes.indexOf(k) >= 0).length : 0;
       const alerts = _orAlertsGet(routeId).filter(a => (a.segKey || 'L' + a.laneIdx) === key);
-      if (!offPlan && !skipped && !alerts.length) return el('div', {});
+      const li = _orLateInfo(routeId, key, row.load);
+      const late = li.late && !li.acked;
+      const hos = _orHos(routeId, key);
+      const hosRisk = !!(hos && hos.risk && !hos.acked);
+      if (!offPlan && !skipped && !alerts.length && !late && !hosRisk) return el('div', {});
       const crit = alerts.some(a => a.sev === 'crit');
       const chip = (icon, txt, col, title) => el('span', { onmouseenter: (e) => _orShowTip(e.currentTarget, 'Click to view', col), onmouseleave: _orHideTip, onclick: _orHideTip, style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 9.5px ' + F, color: col, background: col + '1f', border: '1px solid ' + col + '55', padding: '3px 6px', borderRadius: '999px', whiteSpace: 'nowrap', lineHeight: '1', cursor: 'pointer' }, html: icon + (txt ? '<span>' + txt + '</span>' : '') });
       const bell = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
       const xic = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+      const clk = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+      const gauge = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13a4 4 0 1 0-4-4"/><path d="M12 13v8"/><path d="M5 21h14"/></svg>';
       const out = [];
+      if (hosRisk) out.push(chip(gauge, hos.breakInH <= 0 ? 'break due' : 'HOS', '#cc666f', hos.breakInH <= 0 ? 'HOS risk · 30-min break overdue' : 'HOS risk · driver runs out of hours ' + _hClock(hos.shortByH) + ' before delivery'));
+      if (late) out.push(chip(clk, '+' + li.byMin + 'm', '#b28835', 'Running late · ETA ' + li.liveEta + ', ' + li.byMin + ' min past the delivery window'));
       if (offPlan) out.push(chip(_EX_WARN, '', '#cc666f', 'Driver off-plan · +' + Math.round(adh.detourMi) + ' mi'));
       if (skipped) out.push(chip(xic, String(skipped), '#cc666f', skipped + ' skipped stop' + (skipped > 1 ? 's' : '')));
       if (alerts.length) out.push(chip(bell, String(alerts.length), crit ? '#cc666f' : '#b28835', alerts.length + ' feasibility alert' + (alerts.length > 1 ? 's' : '')));
@@ -9747,7 +9838,7 @@ export function initApp() {
       ]);
     }
     function _impChip(html, tone) {
-      const c = tone === 'green' ? '#47b26b' : tone === 'amber' ? '#b28835' : '#b3b3b3';
+      const c = tone === 'green' ? '#47b26b' : tone === 'amber' ? '#b28835' : tone === 'pc' ? '#8066cc' : '#b3b3b3';
       return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10.5px ' + F, color: c, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)', padding: '5px 10px', borderRadius: '999px', whiteSpace: 'nowrap' }, html: html });
     }
     function _statusChip(status) {
@@ -10173,16 +10264,21 @@ export function initApp() {
     function _lanePanelStopCard(s, key, status, num, onStatusClick, manual) {
       // via-waypoint (route shape point created by dragging) → shows as a generic "Stop"
       if (s.via) {
-        const cardV = el('div', { id: 'or-stop-' + s.id, style: { padding: '11px 12px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+        const _isPC = !!s.pc;
+        const _vcol = _isPC ? '#8066cc' : '#6688cc';
+        const _vTitle = _isPC ? 'Personal Conveyance' : 'Stop';
+        const _vSub = _isPC ? ('PC · +' + Math.round(s.pcMiles || s.detourMi || 0) + ' mi off-duty · excluded from HOS') : ('Route point · at ' + s.distanceMi.toLocaleString('en-US') + ' mi' + (s.detourMi ? ' · +' + s.detourMi + ' mi' : ''));
+        const _vIcon = _isPC ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>';
+        const cardV = el('div', { id: 'or-stop-' + s.id, style: { padding: '11px 12px', borderRadius: '12px', background: _isPC ? 'rgba(128,102,204,.08)' : '#1f1f1f', border: '1px solid ' + (_isPC ? 'rgba(128,102,204,.3)' : 'rgba(255,255,255,.06)') } }, [
           el('div', { style: { display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '8px' } }, [
             el('div', { style: { minWidth: '0' } }, [
-              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Stop']),
-              el('div', { style: { font: '600 10px ' + F, color: '#666666', marginTop: '2px' } }, ['Route point · at ' + s.distanceMi.toLocaleString('en-US') + ' mi' + (s.detourMi ? ' · +' + s.detourMi + ' mi' : '')])
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_vTitle, _isPC ? el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8066cc', background: 'rgba(128,102,204,.16)', padding: '1px 6px', borderRadius: '999px' } }, ['PC']) : null]),
+              el('div', { style: { font: '600 10px ' + F, color: _isPC ? '#8066cc' : '#666666', marginTop: '2px' } }, [_vSub])
             ]),
-            _miniAction('Remove', () => { _orPushUndo(routeId, key, 'Route point removed'); _orRemoveStop(routeId, key, s.id); setState({}); }, true)
+            _miniAction('Remove', () => { _orPushUndo(routeId, key, _isPC ? 'Personal Conveyance removed' : 'Route point removed'); if (_isPC) { const d = _orActualFor(routeId, key); if (d) { d.pc = false; delete d.pcMiles; } } _orRemoveStop(routeId, key, s.id); setState({}); }, true)
           ])
         ]);
-        return _lpRow(_lpNode('<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', '#6688cc', 'rgba(102,136,204,.16)'), cardV);
+        return _lpRow(_lpNode(_vIcon, _vcol, _isPC ? 'rgba(128,102,204,.16)' : 'rgba(102,136,204,.16)'), cardV);
       }
       const isFuel = s.type === 'fuel';
       const svc = _OR_SVC[s.type] || _OR_SVC.fuel;
@@ -10415,7 +10511,8 @@ export function initApp() {
       }
 
       // impact strip
-      const addedDetour = stops.reduce((s, x) => s + (x.detourMi || 0), 0);
+      const addedDetour = stops.reduce((s, x) => s + (x.pc ? 0 : (x.detourMi || 0)), 0);   // PC miles are not a plan detour
+      const pcMiles = stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0);
       const dwellMin = stops.reduce((s, x) => s + (x.via ? 0 : (_OR_DWELL[x.type] || 20)), 0);
       const etaMin = Math.round(addedDetour / 50 * 60) + dwellMin;
       const etaTxt = etaMin >= 60 ? Math.floor(etaMin / 60) + 'h ' + (etaMin % 60) + 'm' : etaMin + 'm';
@@ -10424,6 +10521,7 @@ export function initApp() {
         _impChip('<span>' + stops.length + ' stop' + (stops.length > 1 ? 's' : '') + '</span>'),
         _impChip('<span>+' + addedDetour.toFixed(1) + ' mi detour</span>', 'amber'),
         _impChip('<span>+' + etaTxt + ' ETA</span>', 'amber'),
+        pcMiles ? _impChip('<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>' + Math.round(pcMiles) + ' mi PC</span>', 'pc') : null,
         hasOptFuel ? _impChip('<span>save ' + money(fuelMeta.savings) + ' fuel</span>', 'green') : null
       ]) : null;
 
@@ -10451,13 +10549,88 @@ export function initApp() {
         ]);
       }
 
+      // Running-late banner (Phase 1): live ETA vs the delivery window → notify driver /
+      // reschedule the appointment (inline editor) / acknowledge.
+      let lateBanner = null;
+      const _li = _orLateInfo(routeId, key, row.load);
+      const _editingAppt = state.orApptEdit === key;
+      if ((_li.late && !_li.acked) || _editingAppt) {
+        const _notify = () => { _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Notified driver: running ' + _li.byMin + ' min late (ETA ' + _li.liveEta + ')', revertible: false }); _orToast = 'Driver notified of the delay'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
+        const _ack = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][key] = _li.byMin; setState({}); };
+        const _saveAppt = () => {
+          const dt = (document.getElementById('appt-date') || {}).value || _li.winDate;
+          const st = (document.getElementById('appt-start') || {}).value || '';
+          const en = (document.getElementById('appt-end') || {}).value || '';
+          const endMin = _orMin(en); if (endMin == null) return;
+          if (!_orApptOverride[routeId]) _orApptOverride[routeId] = {};
+          _orApptOverride[routeId][key] = { date: dt, time: (st ? st + ' - ' : '') + en, endMin: endMin };
+          if (_orLateAck[routeId]) delete _orLateAck[routeId][key];   // fresh window → re-evaluate
+          _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Appointment rescheduled to ' + dt + ' · ' + ((st ? st + ' - ' : '') + en), revertible: false });
+          const _fits = _li.liveMin <= endMin;
+          _orToast = _fits ? ('Appointment rescheduled · ' + en + ' — now on time') : ('Appointment rescheduled · still ' + (_li.liveMin - endMin) + ' min late');
+          _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4500);
+          setState({ orApptEdit: null });
+        };
+        const _inp = (id, val, w) => el('input', { id: id, value: val, style: { width: w, boxSizing: 'border-box', height: '30px', padding: '0 9px', borderRadius: '7px', background: '#141414', border: '1px solid rgba(255,255,255,.14)', color: '#e6e6e6', font: '700 11.5px ' + F, outline: 'none' } });
+        const _parts = (_li.winStr || '').split(' - ');
+        const bannerRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px' } }, [
+          el('div', { style: { color: '#b28835', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_li.rescheduled && !_li.late ? 'Appointment rescheduled' : ('Running late · ' + _li.byMin + ' min past window')]),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Live ETA ' + _li.liveEta + ' · delivery ' + (_li.winDate || '') + ' ' + (_li.winStr || '')])
+          ]),
+          _li.late ? el('div', { class: 'hoverable', title: 'Notify the driver they are running late', onclick: _notify, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#b28835', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Notify driver</span>' }) : null,
+          el('div', { class: 'hoverable', onclick: () => setState({ orApptEdit: _editingAppt ? null : key }), style: { font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', padding: '4px 9px', borderRadius: '7px', border: '1px solid rgba(178,136,53,.4)', whiteSpace: 'nowrap', flexShrink: '0' } }, [_editingAppt ? 'Close' : 'Reschedule']),
+          (_li.late && !_editingAppt) ? el('div', { class: 'hoverable', title: 'Acknowledge the delay', onclick: _ack, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' } }, ['Acknowledge']) : null
+        ]);
+        const kids = [bannerRow];
+        if (_editingAppt) {
+          kids.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(178,136,53,.25)' } }, [
+            el('span', { style: { font: '700 10px ' + F, color: '#808080', flexShrink: '0' } }, ['New appointment']),
+            _inp('appt-date', _li.winDate || '', '96px'),
+            _inp('appt-start', _parts[0] || '', '62px'),
+            el('span', { style: { color: '#666666' } }, ['–']),
+            _inp('appt-end', _parts[1] || _parts[0] || '', '62px'),
+            el('div', { style: { flex: '1' } }),
+            el('div', { class: 'hoverable', onclick: _saveAppt, style: { font: '800 11px ' + F, color: '#0d1a13', background: '#2e9975', cursor: 'pointer', padding: '6px 13px', borderRadius: '8px', flexShrink: '0' } }, ['Save'])
+          ]));
+        }
+        lateBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.10)', border: '1px solid rgba(178,136,53,.4)' } }, kids);
+      }
+
+      // HOS-risk banner (Phase 3): live drive hours run out before the break/delivery →
+      // add a rest stop (resets the clock) / acknowledge.
+      let hosBanner = null;
+      const _hb = _orHos(routeId, key);
+      if (_hb && _hb.risk && !_hb.acked) {
+        const HC = '#cc666f';
+        const _overdue = _hb.breakInH <= 0;
+        const _hack = () => { if (!_orHosAck[routeId]) _orHosAck[routeId] = {}; _orHosAck[routeId][key] = true; setState({}); };
+        const _hrest = () => _orRunBusy({ title: 'Adding HOS rest stop…', color: HC }, function () { _orAddRestBeforeLimit(routeId, key); }, {});
+        const _htitle = _overdue ? 'Break overdue · HOS' : 'HOS risk · drive hours run out early';
+        const _hsub = _overdue
+          ? '30-min break overdue · ' + _hClock(_hb.driveLeftH) + ' drive left'
+          : 'Drive ' + _hClock(_hb.driveLeftH) + ' left · ' + _hClock(_hb.remDriveH) + ' to go · short by ' + _hClock(_hb.shortByH);
+        hosBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px' } }, [
+            el('div', { style: { color: HC, display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_htitle]),
+              el('div', { style: { font: '600 10.5px ' + F, color: HC, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [_hsub])
+            ]),
+            el('div', { class: 'hoverable', title: 'Insert a rest stop that resets the HOS clock', onclick: _hrest, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#1a0e0f', background: HC, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Add rest stop</span>' }),
+            el('div', { class: 'hoverable', title: 'Acknowledge the HOS risk', onclick: _hack, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' } }, ['Acknowledge'])
+          ])
+        ]);
+      }
+
       // Log button → opens the change-history side panel
       const nChanges = _orChangesGet(routeId, key).length;
       const logBtn = el('div', { class: 'hoverable', onclick: () => setState({ orLog: key }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', margin: '2px 12px 12px', height: '34px', borderRadius: '9px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#b3b3b3', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>Plan change log' + (nChanges ? ' (' + nChanges + ')' : '') + '</span>' });
       // stops list grows to ~5 stops, then scrolls internally
       const listWrap = isAdding ? listArea : el('div', { class: 'ef-scroll', style: { maxHeight: '380px', overflowY: 'auto' } }, [listArea]);
       return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
-        loadCard, _orExecStrip(row), missedBanner, secHead, listWrap, impactStrip, fuelBanner, logBtn
+        loadCard, _orExecStrip(row), hosBanner, lateBanner, missedBanner, secHead, listWrap, impactStrip, fuelBanner, logBtn
       ]);
     }
 
@@ -10510,6 +10683,59 @@ export function initApp() {
         ])
       ]);
     }
+    function _lateCard(x) {
+      const meta = _OR_ALERT_META.late, l = x.load || {}, info = x.info;
+      const _ack = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][x.key] = info.byMin; setState({}); };
+      return el('div', { style: { borderRadius: '13px', overflow: 'hidden', background: '#1f1f1f', border: '1px solid ' + meta.color + '44' } }, [
+        el('div', { style: { height: '3px', background: meta.color } }),
+        el('div', { style: { padding: '13px 14px' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
+            el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: meta.color + '22', color: meta.color }, html: meta.icon }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [meta.label]),
+              el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '1px' } }, ['ETA ' + info.liveEta])
+            ]),
+            el('span', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: meta.color } }, ['Attention'])
+          ]),
+          el('div', { style: { font: '500 11.5px ' + F, color: '#b3b3b3', lineHeight: '1.5', margin: '9px 0 8px' } }, ['Live ETA ' + info.liveEta + ' is ' + info.byMin + ' min past the delivery window (' + (info.winDate || '') + ' ' + (info.winStr || '') + ').']),
+          el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: meta.color, background: meta.color + '18', padding: '4px 10px', borderRadius: '999px', marginBottom: '10px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>+' + info.byMin + ' min vs appointment</span>' }),
+          el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: x.key, orAddType: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11px ' + F, color: '#6688cc', cursor: 'pointer', marginBottom: '11px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Lane ' + (x.laneIdx + 1) + ' · ' + (l.origin || '').split(',')[0] + ' → ' + (l.dest || '').split(',')[0] + ' · view</span>' }),
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, [
+            el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: x.key, orApptEdit: x.key }), style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#1a1a1a', background: meta.color } }, ['Reschedule']),
+            el('div', { class: 'hoverable', onclick: _ack, style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)' } }, ['Acknowledge'])
+          ])
+        ])
+      ]);
+    }
+    function _hosCard(x) {
+      const meta = _OR_ALERT_META.hos, l = x.load || {}, hos = x.hos;
+      const overdue = hos.breakInH <= 0;
+      const _ack = () => { if (!_orHosAck[routeId]) _orHosAck[routeId] = {}; _orHosAck[routeId][x.key] = true; setState({}); };
+      const _rest = () => _orRunBusy({ title: 'Adding HOS rest stop…', color: meta.color }, function () { _orAddRestBeforeLimit(routeId, x.key); }, { orAlertsOpen: false, orLane: x.key });
+      const descTxt = overdue
+        ? 'The 30-minute break is overdue — the driver has exceeded 8 hours of driving without a reset.'
+        : 'Only ' + _hClock(hos.driveLeftH) + ' of drive time left but ' + _hClock(hos.remDriveH) + ' still to go — short by ' + _hClock(hos.shortByH) + ' before delivery.';
+      return el('div', { style: { borderRadius: '13px', overflow: 'hidden', background: '#1f1f1f', border: '1px solid ' + meta.color + '44' } }, [
+        el('div', { style: { height: '3px', background: meta.color } }),
+        el('div', { style: { padding: '13px 14px' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
+            el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: meta.color + '22', color: meta.color }, html: meta.icon }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [overdue ? 'Break overdue (HOS)' : meta.label]),
+              el('div', { style: { font: '500 10px "JetBrains Mono",monospace', color: '#666666', marginTop: '1px' } }, ['Drive ' + _hClock(hos.driveLeftH) + ' left'])
+            ]),
+            el('span', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: meta.color } }, ['Critical'])
+          ]),
+          el('div', { style: { font: '500 11.5px ' + F, color: '#b3b3b3', lineHeight: '1.5', margin: '9px 0 8px' } }, [descTxt]),
+          el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: meta.color, background: meta.color + '18', padding: '4px 10px', borderRadius: '999px', marginBottom: '10px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>' + (overdue ? 'Break overdue · rest now' : 'Short by ' + _hClock(hos.shortByH) + ' of drive time') + '</span>' }),
+          el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false, orLane: x.key, orAddType: null }), style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11px ' + F, color: '#6688cc', cursor: 'pointer', marginBottom: '11px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Lane ' + (x.laneIdx + 1) + ' · ' + (l.origin || '').split(',')[0] + ' → ' + (l.dest || '').split(',')[0] + ' · view</span>' }),
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, [
+            el('div', { class: 'hoverable', onclick: _rest, style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#1a1a1a', background: meta.color } }, ['Add rest stop']),
+            el('div', { class: 'hoverable', onclick: _ack, style: { padding: '8px 13px', borderRadius: '999px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)' } }, ['Acknowledge'])
+          ])
+        ])
+      ]);
+    }
     function _simRow() {
       const types = [['missed', 'Missed stop'], ['deviation', 'Deviation'], ['fuel', 'Low fuel'], ['hos', 'HOS risk']];
       return el('div', { style: { padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,.06)' } }, [
@@ -10519,15 +10745,18 @@ export function initApp() {
     }
     function _alertsPanel() {
       const alerts = _orAlertsGet(routeId);
+      const lateLanes = _orLateLanes(routeId);
+      const hosLanes = _orHosRiskLanes(routeId);
+      const total = alerts.length + lateLanes.length + hosLanes.length;
       const head = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
         el('div', { class: 'hoverable', onclick: () => setState({ orAlertsOpen: false }), style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#e6e6e6', background: '#292929', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' }),
         el('div', { style: { flex: '1' } }, [
           el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Feasibility alerts']),
-          el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '1px' } }, [alerts.length ? alerts.length + ' issue' + (alerts.length > 1 ? 's' : '') + ' affecting the plan' : 'Plan is on track'])
+          el('div', { style: { font: '600 10.5px ' + F, color: '#666666', marginTop: '1px' } }, [total ? total + ' issue' + (total > 1 ? 's' : '') + ' affecting the plan' : 'Plan is on track'])
         ])
       ]);
-      const bodyKids = alerts.length
-        ? alerts.map(a => _alertCard(a))
+      const bodyKids = total
+        ? hosLanes.map(x => _hosCard(x)).concat(lateLanes.map(x => _lateCard(x))).concat(alerts.map(a => _alertCard(a)))
         : [el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '40px 20px', textAlign: 'center' } }, [
             el('div', { style: { width: '48px', height: '48px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'rgba(46,153,117,.12)', color: '#47b26b' }, html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' }),
             el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['No feasibility issues']),
@@ -10638,11 +10867,12 @@ export function initApp() {
       const _lact = _orActualFor(routeId, state.orLane);
       if (_lact) {
         const _lrec = _orReconciled(routeId, state.orLane, _lact);
+        const _lpc = !!_lact.pc;
         const _leg = (col, dash, label) => '<div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:0;border-top:3px ' + (dash ? 'dashed' : 'solid') + ' ' + col + '"></span><span style="font:700 11px ' + F + ';color:#e6e6e6">' + label + '</span></div>';
         mapPanel.appendChild(el('div', { style: { position: 'absolute', right: '14px', bottom: '30px', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
-          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _lrec ? '#47b26b' : '#cc666f', marginBottom: '2px' } }, [_lrec ? 'Plan matches driver ✓' : 'Driver off-plan']),
+          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _lpc ? '#8066cc' : (_lrec ? '#47b26b' : '#cc666f'), marginBottom: '2px' } }, [_lpc ? 'Personal Conveyance' : (_lrec ? 'Plan matches driver ✓' : 'Driver off-plan')]),
           el('div', { html: _leg('#6688cc', true, 'Planned') }),
-          el('div', { html: _leg('#cc666f', true, 'Driver actual') }),
+          _lpc ? el('div', { html: _leg('#8066cc', true, 'PC segment') }) : el('div', { html: _leg('#cc666f', true, 'Driver actual') }),
           el('div', { html: _leg('#2e9975', false, 'On-plan') })
         ]));
       }
@@ -10678,18 +10908,22 @@ export function initApp() {
     // HOS card — live clocks when a lane is selected (stays visible in lane view), else the assign prompt.
     let hosCard;
     if (laneMode) {
-      const _h = ((r.driver || 'x').length * 7) % 5;
-      const _hos = [
-        { v: (6 - _h) + 'h ' + (10 + _h * 6) + 'm', label: 'Drive left', col: '#47b26b' },
-        { v: (8 - _h) + 'h ' + (5 + _h * 4) + 'm', label: 'Shift left', col: '#6688cc' },
-        { v: (47 - _h * 2) + 'h', label: 'Cycle left', col: '#e6e6e6' },
-        { v: 'in ' + (2 + _h) + 'h ' + (_h * 10) + 'm', label: 'Break due', col: '#b28835' }
+      const _hs = _orHos(routeId, state.orLane);
+      const _driveCol = !_hs ? '#47b26b' : (_hs.driveLeftH < 1 ? '#cc666f' : _hs.driveLeftH < 2.5 ? '#b28835' : '#47b26b');
+      const _breakCol = !_hs ? '#b28835' : (_hs.breakInH <= 0 ? '#cc666f' : _hs.breakInH < 1 ? '#b28835' : '#b28835');
+      const _hos = _hs ? [
+        { v: _hClock(_hs.driveLeftH), label: 'Drive left', col: _driveCol },
+        { v: _hClock(_hs.shiftLeftH), label: 'Shift left', col: '#6688cc' },
+        { v: Math.round(_hs.cycleLeftH) + 'h', label: 'Cycle left', col: '#e6e6e6' },
+        { v: _hs.breakInH <= 0 ? 'Overdue' : ('in ' + _hClock(_hs.breakInH)), label: 'Break due', col: _breakCol }
+      ] : [
+        { v: '—', label: 'Drive left', col: '#47b26b' }, { v: '—', label: 'Shift left', col: '#6688cc' }, { v: '—', label: 'Cycle left', col: '#e6e6e6' }, { v: '—', label: 'Break due', col: '#b28835' }
       ];
-      hosCard = el('div', { style: { padding: '13px 16px', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', background: '#242424' } }, [
+      hosCard = el('div', { style: { padding: '13px 16px', border: '1px solid ' + ((_hs && _hs.risk) ? 'rgba(204,102,111,.4)' : 'rgba(255,255,255,.08)'), borderRadius: '12px', background: '#242424' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '12px' } }, [
           el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
           el('div', { style: { flex: '1', font: '800 13px ' + F, color: '#e6e6e6' } }, ['Hours of Service']),
-          el('div', { style: { font: '700 10.5px ' + F, color: '#47b26b' } }, ['Live · ' + (r.driver || 'Driver')])
+          (_hs && _hs.risk) ? el('div', { style: { font: '800 9px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#cc666f', background: 'rgba(204,102,111,.16)', padding: '3px 8px', borderRadius: '999px' } }, ['At risk']) : el('div', { style: { font: '700 10.5px ' + F, color: '#47b26b' } }, ['Live · ' + (r.driver || 'Driver')])
         ]),
         el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px' } }, _hos.map(m => el('div', {}, [
           el('div', { style: { font: '900 15px ' + F, color: m.col, whiteSpace: 'nowrap' } }, [m.v]),
@@ -10808,6 +11042,15 @@ export function initApp() {
           if (truckFrac > 0 && truckFrac < 1) {
             L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           }
+          // Personal Conveyance segment: the plan bends onto the driver path through a PC
+          // via → draw that portion distinctly (purple dashed) as the justified PC detour.
+          let _hasPC = false;
+          _sorted.forEach((s, i) => {
+            if (!s.pc) return;
+            _hasPC = true;
+            const p0 = pathPts[i], p1 = pathPts[i + 1], p2 = pathPts[i + 2];
+            L.polyline([p0, p1, p2], { color: '#8066cc', weight: 5, opacity: .95, dashArray: '2 8', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(s.pcMiles || s.detourMi || 0) + ' mi (off-duty)', { sticky: true });
+          });
           // unreconciled deviation → overlay the driver's actual detour as an annotation
           // anchored on the routed line (planned dashed + red actual + off-plan pin)
           if (_act && !_recon) {
@@ -10821,7 +11064,7 @@ export function initApp() {
           const _dragging = state.orEdit && state.orEditTool === 'drag';
           if (_vStops && !_dragging) _sorted.forEach((s, i) => {
             const ll = _sLLs[i];
-            const svc = s.via ? { icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', color: '#6688cc' } : (_OR_SVC[s.type] || _OR_SVC.fuel);
+            const svc = s.pc ? { icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>', color: '#8066cc' } : (s.via ? { icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', color: '#6688cc' } : (_OR_SVC[s.type] || _OR_SVC.fuel));
             const _sstat = (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane] && _orStopStatus[routeId][state.orLane][s.id]) || null;
             const skipped = !s.via && _sstat === 'Skipped';   // route waypoints are never "skipped"
             const isPassed = !s.via && !skipped && truckMi >= 0 && s.distanceMi <= truckMi;   // nor "passed"
