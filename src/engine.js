@@ -10536,64 +10536,42 @@ export function initApp() {
         const more = missedStops.length - 1;
         const _return = () => { _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Asked driver to return for ' + nm, revertible: false }); _orToast = 'Return request sent to driver'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
         const _drop = () => { _orPushUndo(routeId, key, 'Missed stop removed from plan'); missedStops.forEach(s => { _orRemoveStop(routeId, key, s.id); if (_orStopStatus[routeId] && _orStopStatus[routeId][key]) delete _orStopStatus[routeId][key][s.id]; }); setState({}); };
-        missedBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
-          el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
-          el('div', { style: { flex: '1', minWidth: '0' } }, [
-            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Driver missed a planned stop' + (more > 0 ? ' (+' + more + ' more)' : '')]),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#cc666f', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [nm + ' · ' + svcLabel + ' not serviced · at ' + m0.distanceMi.toLocaleString('en-US') + ' mi'])
+        missedBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '10px' } }, [
+            el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0', marginTop: '1px' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Driver missed a planned stop' + (more > 0 ? ' (+' + more + ' more)' : '')]),
+              el('div', { style: { font: '600 10.5px ' + F, color: '#cc666f', marginTop: '2px', lineHeight: '1.35', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, [nm + ' · ' + svcLabel + ' not serviced · at ' + m0.distanceMi.toLocaleString('en-US') + ' mi'])
+            ])
           ]),
-          el('div', { class: 'hoverable', title: 'Send a return-to-route request to the driver', onclick: _return, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#cc666f', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>Ask to return</span>' }),
-          el('div', { class: 'hoverable', title: 'Accept the miss and remove it from the plan', onclick: _drop, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' } }, ['Remove'])
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' } }, [
+            el('div', { class: 'hoverable', title: 'Send a return-to-route request to the driver', onclick: _return, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#cc666f', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>Ask to return</span>' }),
+            el('div', { class: 'hoverable', title: 'Accept the miss and remove it from the plan', onclick: _drop, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b3b3b3', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' } }, ['Remove'])
+          ])
         ]);
       }
 
-      // Running-late banner (Phase 1): live ETA vs the delivery window → notify driver /
-      // reschedule the appointment (inline editor) / acknowledge.
+      // Running-late banner (Phase 1): live ETA vs the delivery window → notify driver
+      // (toast + closes the alert) / reschedule (opens the appointment modal) / close.
       let lateBanner = null;
       const _li = _orLateInfo(routeId, key, row.load);
-      const _editingAppt = state.orApptEdit === key;
-      if ((_li.late && !_li.acked) || _editingAppt) {
-        const _notify = () => { _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Notified driver: running ' + _li.byMin + ' min late (ETA ' + _li.liveEta + ')', revertible: false }); _orToast = 'Driver notified of the delay'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
-        const _ack = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][key] = _li.byMin; setState({}); };
-        const _saveAppt = () => {
-          const dt = (document.getElementById('appt-date') || {}).value || _li.winDate;
-          const st = (document.getElementById('appt-start') || {}).value || '';
-          const en = (document.getElementById('appt-end') || {}).value || '';
-          const endMin = _orMin(en); if (endMin == null) return;
-          if (!_orApptOverride[routeId]) _orApptOverride[routeId] = {};
-          _orApptOverride[routeId][key] = { date: dt, time: (st ? st + ' - ' : '') + en, endMin: endMin };
-          if (_orLateAck[routeId]) delete _orLateAck[routeId][key];   // fresh window → re-evaluate
-          _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Appointment rescheduled to ' + dt + ' · ' + ((st ? st + ' - ' : '') + en), revertible: false });
-          const _fits = _li.liveMin <= endMin;
-          _orToast = _fits ? ('Appointment rescheduled · ' + en + ' — now on time') : ('Appointment rescheduled · still ' + (_li.liveMin - endMin) + ' min late');
-          _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4500);
-          setState({ orApptEdit: null });
-        };
-        const _inp = (id, val, w) => el('input', { id: id, value: val, style: { width: w, boxSizing: 'border-box', height: '30px', padding: '0 9px', borderRadius: '7px', background: '#141414', border: '1px solid rgba(255,255,255,.14)', color: '#e6e6e6', font: '700 11.5px ' + F, outline: 'none' } });
-        const _parts = (_li.winStr || '').split(' - ');
-        const bannerRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px' } }, [
-          el('div', { style: { color: '#b28835', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' }),
+      if (_li.late && !_li.acked) {
+        // notify the driver AND silence the alert (same ack path → re-alerts only if it worsens)
+        const _notify = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][key] = _li.byMin; _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Notified driver: running ' + _li.byMin + ' min late (ETA ' + _li.liveEta + ')', revertible: false }); _orToast = 'Driver notified · alert closed'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
+        const _close = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][key] = _li.byMin; setState({}); };
+        const bannerRow = el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '10px' } }, [
+          el('div', { style: { color: '#b28835', display: 'flex', flexShrink: '0', marginTop: '1px' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' }),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
             el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_li.rescheduled && !_li.late ? 'Appointment rescheduled' : ('Running late · ' + _li.byMin + ' min past window')]),
-            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Live ETA ' + _li.liveEta + ' · delivery ' + (_li.winDate || '') + ' ' + (_li.winStr || '')])
-          ]),
-          _li.late ? el('div', { class: 'hoverable', title: 'Notify the driver they are running late', onclick: _notify, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#b28835', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Notify driver</span>' }) : null,
-          el('div', { class: 'hoverable', onclick: () => setState({ orApptEdit: _editingAppt ? null : key }), style: { font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', padding: '4px 9px', borderRadius: '7px', border: '1px solid rgba(178,136,53,.4)', whiteSpace: 'nowrap', flexShrink: '0' } }, [_editingAppt ? 'Close' : 'Reschedule']),
-          (_li.late && !_editingAppt) ? el('div', { class: 'hoverable', title: 'Acknowledge the delay', onclick: _ack, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' } }, ['Acknowledge']) : null
+            el('div', { style: { font: '600 10.5px ' + F, color: '#b28835', marginTop: '2px', lineHeight: '1.35', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Live ETA ' + _li.liveEta + ' · delivery ' + (_li.winDate || '') + ' ' + (_li.winStr || '')])
+          ])
         ]);
-        const kids = [bannerRow];
-        if (_editingAppt) {
-          kids.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(178,136,53,.25)' } }, [
-            el('span', { style: { font: '700 10px ' + F, color: '#808080', flexShrink: '0' } }, ['New appointment']),
-            _inp('appt-date', _li.winDate || '', '96px'),
-            _inp('appt-start', _parts[0] || '', '62px'),
-            el('span', { style: { color: '#666666' } }, ['–']),
-            _inp('appt-end', _parts[1] || _parts[0] || '', '62px'),
-            el('div', { style: { flex: '1' } }),
-            el('div', { class: 'hoverable', onclick: _saveAppt, style: { font: '800 11px ' + F, color: '#0d1a13', background: '#2e9975', cursor: 'pointer', padding: '6px 13px', borderRadius: '8px', flexShrink: '0' } }, ['Save'])
-          ]));
-        }
-        lateBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.10)', border: '1px solid rgba(178,136,53,.4)' } }, kids);
+        const actionsRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' } }, [
+          el('div', { class: 'hoverable', title: 'Notify the driver they are running late and close this alert', onclick: _notify, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#b28835', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Notify driver</span>' }),
+          el('div', { class: 'hoverable', title: 'Adjust the load pickup / drop-off appointment times', onclick: () => setState({ orApptEdit: key }), style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(178,136,53,.4)', whiteSpace: 'nowrap' } }, ['Reschedule']),
+          el('div', { class: 'hoverable', title: 'Close this alert', onclick: _close, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b3b3b3', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' } }, ['Close'])
+        ]);
+        lateBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.10)', border: '1px solid rgba(178,136,53,.4)' } }, [bannerRow, actionsRow]);
       }
 
       // HOS-risk banner (Phase 3): live drive hours run out before the break/delivery →
@@ -10610,14 +10588,16 @@ export function initApp() {
           ? '30-min break overdue · ' + _hClock(_hb.driveLeftH) + ' drive left'
           : 'Drive ' + _hClock(_hb.driveLeftH) + ' left · ' + _hClock(_hb.remDriveH) + ' to go · short by ' + _hClock(_hb.shortByH);
         hosBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px' } }, [
-            el('div', { style: { color: HC, display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' }),
+          el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '10px' } }, [
+            el('div', { style: { color: HC, display: 'flex', flexShrink: '0', marginTop: '1px' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' }),
             el('div', { style: { flex: '1', minWidth: '0' } }, [
               el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_htitle]),
-              el('div', { style: { font: '600 10.5px ' + F, color: HC, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [_hsub])
-            ]),
-            el('div', { class: 'hoverable', title: 'Insert a rest stop that resets the HOS clock', onclick: _hrest, style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, color: '#1a0e0f', background: HC, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Add rest stop</span>' }),
-            el('div', { class: 'hoverable', title: 'Acknowledge the HOS risk', onclick: _hack, style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.1)', flexShrink: '0' } }, ['Acknowledge'])
+              el('div', { style: { font: '600 10.5px ' + F, color: HC, marginTop: '2px', lineHeight: '1.35' } }, [_hsub])
+            ])
+          ]),
+          el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' } }, [
+            el('div', { class: 'hoverable', title: 'Insert a rest stop that resets the HOS clock', onclick: _hrest, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#1a0e0f', background: HC, cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Add rest stop</span>' }),
+            el('div', { class: 'hoverable', title: 'Close this alert', onclick: _hack, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b3b3b3', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' } }, ['Close'])
           ])
         ]);
       }
@@ -11214,7 +11194,83 @@ export function initApp() {
         ])
       ]);
     }
-    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, logPanel]);
+    // ── Reschedule modal: edit the appointment windows for every pickup / drop-off of the load ──
+    let apptModal = null;
+    if (state.orApptEdit && !_orLoading && _orSegReg[routeId] && _orSegReg[routeId][state.orApptEdit]
+        && loadsOf(routeId)[_orSegReg[routeId][state.orApptEdit].loadIdx]) {
+      const key = state.orApptEdit;
+      const seg = _orSegReg[routeId][key];
+      const l = loadsOf(routeId)[seg.loadIdx];
+      const close = () => setState({ orApptEdit: null });
+      const midStops = _orStopsGet(routeId, key)
+        .filter(s => s.type === 'pickup' || s.type === 'dropoff')
+        .sort((a, b) => (a.distanceMi || 0) - (b.distanceMi || 0));
+      const points = [];
+      points.push({ t: 'pickup', place: l.origin, date: l.pickup, time: l.pickupTime, apply: (d, tm) => { l.pickup = d; l.pickupTime = tm; } });
+      midStops.forEach(s => points.push({ t: s.type, place: s.name || s.address || (s.type === 'pickup' ? 'Pickup' : 'Drop-off'), date: s.apptDate || l.pickup, time: s.apptTime || '08:00 - 12:00', apply: (d, tm) => { s.apptDate = d; s.apptTime = tm; } }));
+      points.push({ t: 'dropoff', place: l.dest, date: l.delivery, time: l.deliveryTime, apply: (d, tm) => { l.delivery = d; l.deliveryTime = tm; } });
+
+      const _inp = (id, val) => el('input', { id: id, value: val || '', style: { width: '100%', boxSizing: 'border-box', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#101010', border: '1px solid rgba(255,255,255,.14)', color: '#e6e6e6', font: '600 13px ' + F, outline: 'none' } });
+      const _lbl = (t) => el('div', { style: { font: '700 10px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080', margin: '0 0 6px' } }, [t]);
+
+      const _save = () => {
+        const payload = points.map((p, i) => ({ p: p, date: (document.getElementById('am-' + i + '-date') || {}).value || p.date, start: (document.getElementById('am-' + i + '-start') || {}).value || '', end: (document.getElementById('am-' + i + '-end') || {}).value || '' }));
+        _orRunBusy({ title: 'Saving appointment changes…', sub: 'Updating pickup and drop-off windows for this load.', color: '#6688cc' }, function () {
+          payload.forEach(x => x.p.apply(x.date, (x.start ? x.start + ' - ' : '') + x.end));
+          const dp = payload[payload.length - 1];
+          const endMin = _orMin(dp.end || dp.p.time);
+          if (!_orApptOverride[routeId]) _orApptOverride[routeId] = {};
+          if (endMin != null) _orApptOverride[routeId][key] = { date: dp.date, time: (dp.start ? dp.start + ' - ' : '') + dp.end, endMin: endMin };
+          if (_orLateAck[routeId]) delete _orLateAck[routeId][key];
+          _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Rescheduled load appointments (' + points.length + ' stop' + (points.length > 1 ? 's' : '') + ')', revertible: false });
+          const li2 = _orLateInfo(routeId, key, l);
+          _orToast = li2 && li2.late ? ('Appointments saved · still ' + li2.byMin + ' min late') : 'Appointments saved · now on time';
+          _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4500);
+        }, { orApptEdit: null });
+      };
+
+      const card = (p, i) => {
+        const sv = _OR_SVC[p.t] || _OR_SVC.pickup;
+        const parts = (p.time || '').split(' - ');
+        return el('div', { style: { borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.09)', padding: '14px', borderLeft: '3px solid ' + sv.color } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '13px' } }, [
+            el('div', { style: { width: '26px', height: '26px', borderRadius: '7px', display: 'grid', placeItems: 'center', background: sv.bg, color: sv.color, flexShrink: '0' }, html: sv.icon }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [sv.label + ' ' + String(i + 1).padStart(2, '0')]),
+              el('div', { style: { font: '600 11px ' + F, color: '#808080', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [p.place || ''])
+            ])
+          ]),
+          el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '10px' } }, [
+            el('div', {}, [_lbl('Appointment date'), _inp('am-' + i + '-date', p.date)]),
+            el('div', {}, [_lbl('Time window'), el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, [
+              _inp('am-' + i + '-start', parts[0] || ''),
+              el('span', { style: { color: '#666666', flexShrink: '0' } }, ['–']),
+              _inp('am-' + i + '-end', parts[1] || parts[0] || '')
+            ])])
+          ])
+        ]);
+      };
+
+      apptModal = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '1600', background: 'rgba(10,10,10,.62)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', backdropFilter: 'blur(2px)' } }, [
+        el('div', { onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); }, style: { width: '560px', maxWidth: '96%', maxHeight: '100%', display: 'flex', flexDirection: 'column', background: '#161616', borderRadius: '16px', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 30px 80px rgba(0,0,0,.6)', overflow: 'hidden' } }, [
+          el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '11px', padding: '17px 18px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
+            el('div', { style: { color: '#b3b3b3', display: 'flex' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>' }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['Reschedule appointments']),
+              el('div', { style: { font: '600 11px ' + F, color: '#808080', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(l.origin || '') + ' → ' + (l.dest || '') + ' · load ' + ('L' + (10000000 + (seg.loadIdx || 0))).slice(-4)])
+            ]),
+            el('div', { class: 'hoverable', onclick: close, style: { width: '32px', height: '32px', borderRadius: '9px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', background: '#242424', border: '1px solid rgba(255,255,255,.1)', font: '400 19px ' + F, flexShrink: '0' } }, ['×'])
+          ]),
+          el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '11px' } }, points.map((p, i) => card(p, i))),
+          el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', padding: '14px 18px', borderTop: '1px solid rgba(255,255,255,.08)' } }, [
+            el('div', { class: 'hoverable', onclick: close, style: { font: '800 12px ' + F, color: '#6688cc', cursor: 'pointer', padding: '9px 16px', borderRadius: '9px' } }, ['Cancel']),
+            el('div', { class: 'hoverable', onclick: _save, style: { font: '800 12px ' + F, color: '#0d1a13', background: '#2e9975', cursor: 'pointer', padding: '9px 18px', borderRadius: '9px' } }, ['Save changes'])
+          ])
+        ])
+      ]);
+    }
+
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, logPanel, apptModal]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
