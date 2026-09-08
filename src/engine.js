@@ -8811,6 +8811,13 @@ export function initApp() {
     const loads = loadsOf(routeId);
     return Object.keys(reg).filter(k => reg[k].isLoad).map(k => ({ key: k, laneIdx: reg[k].loadIdx, load: loads[reg[k].loadIdx], hos: _orHos(routeId, k) })).filter(x => x.hos && x.hos.risk && !x.hos.acked);
   }
+  // HOS belongs to the DRIVER (one live clock), driven by their current position =
+  // the in-progress load lane. The same value is shown in every view for coherence.
+  function _orDriverHos(routeId) {
+    const reg = _orSegReg[routeId]; if (!reg) return null;
+    const key = Object.keys(reg).find(k => reg[k].isLoad && _orHos(routeId, k));
+    return key ? { key: key, hos: _orHos(routeId, key) } : null;
+  }
   function _orAlertsGet(routeId) { if (!_orAlerts[routeId]) _orAlerts[routeId] = []; return _orAlerts[routeId]; }
   function _orAlertCount(routeId) { return _orAlertsGet(routeId).length + _orLateLanes(routeId).length + _orHosRiskLanes(routeId).length; }
   function _orAlertsCrit(routeId) { return _orAlertsGet(routeId).some(a => a.sev === 'crit') || _orHosRiskLanes(routeId).length > 0; }
@@ -9567,14 +9574,22 @@ export function initApp() {
         opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → justify it, follow it as a PC segment, exclude the miles from HOS', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orMarkPC(routeId, key); }, {})),
         opt('#808080', 'Keep plan', 'Keep the current plan — nothing changes, the deviation stays flagged', () => _orKeepDeviation(routeId, key))
       ];
-      const _menuH = 258;
-      const flipUp = (rect.bottom + 6 + _menuH) > window.innerHeight;
-      const top = flipUp ? Math.max(8, rect.top - _menuH - 6) : (rect.bottom + 6);
-      const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: top + 'px', left: Math.max(8, rect.left) + 'px', width: '264px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px' } }, [
+      const menuW = 264;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
+      const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: '-9999px', left: left + 'px', width: menuW + 'px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px', boxSizing: 'border-box' } }, [
         el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Resolve deviation']),
         ...items
       ]);
       document.body.appendChild(menu);
+      // position using the REAL height: below if it fits, else above, else clamp + scroll
+      const M = 8, gap = 6, vh = window.innerHeight;
+      const mh = menu.offsetHeight;
+      const below = vh - rect.bottom - gap, above = rect.top - gap;
+      let top;
+      if (mh + M <= below) top = rect.bottom + gap;
+      else if (mh + M <= above) top = rect.top - mh - gap;
+      else { menu.style.maxHeight = (vh - 2 * M) + 'px'; menu.style.overflowY = 'auto'; top = Math.max(M, Math.min(rect.bottom + gap, vh - M - Math.min(mh, vh - 2 * M))); }
+      menu.style.top = top + 'px';
       setTimeout(() => { const off = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
     }
     const _EX_WARN = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
@@ -10781,26 +10796,26 @@ export function initApp() {
     // (add-stop picker/candidate list now live in the modal's left panel; the map
     //  still draws clickable candidate markers for the active service type)
 
-    // HOS card
-    // HOS card — live clocks when a lane is selected (stays visible in lane view), else the assign prompt.
+    // HOS card — HOS is the DRIVER's single live clock (from the in-progress lane), so it
+    // shows the SAME values in the route overview and in any lane view. If there's no
+    // in-progress lane (no live HOS), fall back to the assign prompt.
     let hosCard;
-    if (laneMode) {
-      const _hs = _orHos(routeId, state.orLane);
-      const _driveCol = !_hs ? '#47b26b' : (_hs.driveLeftH < 1 ? '#cc666f' : _hs.driveLeftH < 2.5 ? '#b28835' : '#47b26b');
-      const _breakCol = !_hs ? '#b28835' : (_hs.breakInH <= 0 ? '#cc666f' : _hs.breakInH < 1 ? '#b28835' : '#b28835');
-      const _hos = _hs ? [
+    const _dh = _orDriverHos(routeId);
+    const _hs = _dh && _dh.hos;
+    if (_hs) {
+      const _driveCol = _hs.driveLeftH < 1 ? '#cc666f' : _hs.driveLeftH < 2.5 ? '#b28835' : '#47b26b';
+      const _breakCol = _hs.breakInH <= 0 ? '#cc666f' : '#b28835';
+      const _hos = [
         { v: _hClock(_hs.driveLeftH), label: 'Drive left', col: _driveCol },
         { v: _hClock(_hs.shiftLeftH), label: 'Shift left', col: '#6688cc' },
         { v: Math.round(_hs.cycleLeftH) + 'h', label: 'Cycle left', col: '#e6e6e6' },
         { v: _hs.breakInH <= 0 ? 'Overdue' : ('in ' + _hClock(_hs.breakInH)), label: 'Break due', col: _breakCol }
-      ] : [
-        { v: '—', label: 'Drive left', col: '#47b26b' }, { v: '—', label: 'Shift left', col: '#6688cc' }, { v: '—', label: 'Cycle left', col: '#e6e6e6' }, { v: '—', label: 'Break due', col: '#b28835' }
       ];
-      hosCard = el('div', { style: { padding: '13px 16px', border: '1px solid ' + ((_hs && _hs.risk) ? 'rgba(204,102,111,.4)' : 'rgba(255,255,255,.08)'), borderRadius: '12px', background: '#242424' } }, [
+      hosCard = el('div', { style: { padding: '13px 16px', border: '1px solid ' + (_hs.risk ? 'rgba(204,102,111,.4)' : 'rgba(255,255,255,.08)'), borderRadius: '12px', background: '#242424' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '12px' } }, [
           el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }),
           el('div', { style: { flex: '1', font: '800 13px ' + F, color: '#e6e6e6' } }, ['Hours of Service']),
-          (_hs && _hs.risk) ? el('div', { style: { font: '800 9px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#cc666f', background: 'rgba(204,102,111,.16)', padding: '3px 8px', borderRadius: '999px' } }, ['At risk']) : el('div', { style: { font: '700 10.5px ' + F, color: '#47b26b' } }, ['Live · ' + (r.driver || 'Driver')])
+          _hs.risk ? el('div', { style: { font: '800 9px ' + F, letterSpacing: '.05em', textTransform: 'uppercase', color: '#cc666f', background: 'rgba(204,102,111,.16)', padding: '3px 8px', borderRadius: '999px' } }, ['At risk']) : el('div', { style: { font: '700 10.5px ' + F, color: '#47b26b' } }, ['Live · ' + (r.driver || 'Driver')])
         ]),
         el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px' } }, _hos.map(m => el('div', {}, [
           el('div', { style: { font: '900 15px ' + F, color: m.col, whiteSpace: 'nowrap' } }, [m.v]),
