@@ -8818,6 +8818,76 @@ export function initApp() {
     const key = Object.keys(reg).find(k => reg[k].isLoad && _orHos(routeId, k));
     return key ? { key: key, hos: _orHos(routeId, key) } : null;
   }
+  // ── Manual lane closing: pick the real stop that ended an in-progress lane ──
+  // Build a "real stop" candidate from a fraction along the lane (+ its lat/lng).
+  function _orClosePoint(routeId, key, frac, lat, lng) {
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; if (!seg) return null;
+    const miles = seg.miles;
+    const l = loadsOf(routeId)[seg.loadIdx] || {};
+    const dm = _orMin((l.pickupTime || '').split(' - ')[0]); const depMin = dm != null ? dm : 360;
+    const distanceMi = Math.round(miles * frac);
+    const arr = depMin + Math.round(distanceMi / 52 * 60);
+    const h = key.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+    const addr = _OR_ADDR[(h + Math.round(frac * 13)) % _OR_ADDR.length];
+    return { frac: +frac.toFixed(4), distanceMi: distanceMi, lat: lat, lng: lng, arrivedAt: _orHHMM(arr), address: addr, city: (addr.split(',').slice(1).join(',').trim()) || seg.dest, milesToDest: Math.max(0, miles - distanceMi) };
+  }
+  // Detected pauses on the executed route the truck may have used to close the lane.
+  function _orCloseCandidates(routeId, key) {
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; if (!seg || !seg.isLoad) return [];
+    const a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest]; if (!a || !b) return [];
+    return [0.86, 0.94, 0.99].map((f, i) => {
+      const ll = _orOffset(a, b, f, ((i % 2) ? 1 : -1) * 0.011);
+      return _orClosePoint(routeId, key, f, ll[0], ll[1]);
+    });
+  }
+  // Lane-status dropdown: In-transit ⇄ Completed. Completing an in-progress lane with no
+  // auto-detected closing stop enters the map "pick real stop" mode instead of finishing.
+  function _orLaneStatusMenu(anchorEl, routeId, key, current) {
+    const F = '"General Sans", Nunito, system-ui';
+    const ex = document.getElementById('or-lane-menu'); if (ex) ex.remove();
+    const rect = anchorEl.getBoundingClientRect();
+    const _pick = (s) => {
+      const m = document.getElementById('or-lane-menu'); if (m) m.remove();
+      if (s === current) return;
+      if (s === 'Completed') {
+        const cands = _orCloseCandidates(routeId, key);
+        setState({ orLane: key, orCloseLane: key, orCloseSel: cands.length ? cands[cands.length - 1] : null, orAddType: null, orReplace: null, orEdit: false, orViewOpen: false });
+      } else {
+        if (_orLaneExec[routeId]) delete _orLaneExec[routeId][key];
+        if (_orRealStop[routeId]) delete _orRealStop[routeId][key];
+        _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Lane reopened · back to in-transit', revertible: false });
+        setState({ orCloseLane: null, orCloseSel: null });
+      }
+    };
+    const ck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    const opt = (s, label, dot) => el('div', { class: 'hoverable', onclick: () => _pick(s), style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', font: '700 12px ' + F, color: s === current ? '#e6e6e6' : '#b3b3b3' } }, [
+      el('span', { style: { width: '8px', height: '8px', borderRadius: '50%', background: dot, flexShrink: '0' } }),
+      el('span', { style: { flex: '1' } }, [label]),
+      s === current ? el('span', { style: { color: '#6688cc', display: 'flex' }, html: ck }) : null
+    ]);
+    const menu = el('div', { id: 'or-lane-menu', style: { position: 'fixed', zIndex: '9999', top: '-9999px', left: Math.max(8, Math.min(rect.left, window.innerWidth - 208)) + 'px', width: '200px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px', boxSizing: 'border-box' } }, [
+      el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Lane status']),
+      opt('In progress', 'In-transit', '#6688cc'),
+      opt('Completed', 'Completed', '#47b26b')
+    ]);
+    document.body.appendChild(menu);
+    const M = 8, gap = 6, vh = window.innerHeight, mh = menu.offsetHeight;
+    menu.style.top = ((rect.bottom + gap + mh + M <= vh) ? (rect.bottom + gap) : Math.max(M, rect.top - mh - gap)) + 'px';
+    setTimeout(() => { const off = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
+  }
+  // Confirm: record the chosen point as the lane's real stop and finalize it Completed.
+  function _orCloseConfirm(routeId, key, sel) {
+    if (!sel) return;
+    _orRunBusy({ title: 'Closing lane…', sub: 'Recording the real stop and finalizing this lane.', color: '#2e9975' }, function () {
+      if (!_orRealStop[routeId]) _orRealStop[routeId] = {};
+      _orRealStop[routeId][key] = sel;
+      if (!_orLaneExec[routeId]) _orLaneExec[routeId] = {};
+      _orLaneExec[routeId][key] = 'Completed';
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Lane closed manually · real stop at ' + (sel.city || sel.address || (sel.distanceMi + ' mi')) + ' · arrived ' + sel.arrivedAt, revertible: false });
+      _orToast = 'Lane completed · real stop recorded';
+      _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4500);
+    }, { orCloseLane: null, orCloseSel: null });
+  }
   function _orAlertsGet(routeId) { if (!_orAlerts[routeId]) _orAlerts[routeId] = []; return _orAlerts[routeId]; }
   function _orAlertCount(routeId) { return _orAlertsGet(routeId).length + _orLateLanes(routeId).length + _orHosRiskLanes(routeId).length; }
   function _orAlertsCrit(routeId) { return _orAlertsGet(routeId).some(a => a.sev === 'crit') || _orHosRiskLanes(routeId).length > 0; }
@@ -8945,7 +9015,9 @@ export function initApp() {
       const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
       // the deviation also captures that the driver fueled off-route → the dispatcher
       // can correct the plan to the driver's path and re-optimize fuel around it.
-      _orActual[routeId][key] = { f0: 0.30, f1: 0.66, side: (h % 2 ? 1 : -1), mag: 0.20, detourMi: 22 + (h % 5) * 7,
+      // short deadhead legs get a proportionally small detour (a 60-mi DH can't be +40 mi off).
+      const detourMi = seg.isLoad ? (22 + (h % 5) * 7) : (3 + (h % 4) * 2);
+      _orActual[routeId][key] = { f0: 0.30, f1: 0.66, side: (h % 2 ? 1 : -1), mag: seg.isLoad ? 0.20 : 0.12, detourMi: detourMi,
         fuelStop: { brand: _OR_BRANDS[h % _OR_BRANDS.length], pricePerGal: +(3.49 + (h % 7) * 0.05).toFixed(3), gallons: 90 + (h % 5) * 10, rating: +(3.8 + (h % 3) * 0.4).toFixed(1) } };
     }
     return _orActual[routeId][key];
@@ -8959,6 +9031,10 @@ export function initApp() {
   const _orProgress = {};   // _orProgress[routeId][segKey] = miles driven (real, from the app)
   const _orStopStatus = {}; // _orStopStatus[routeId][segKey][nodeKey] = status override (dispatcher OR driver/system)
   const _orStopStatusManual = {}; // same shape → true only when the DISPATCHER set it by hand (drives the "manual" tag)
+  // Manual lane completion: when the app didn't auto-detect the stop that closes a lane,
+  // the dispatcher marks it Completed and picks the real stop point on the executed path.
+  const _orLaneExec = {};   // _orLaneExec[routeId][segKey] = 'Completed' (manual lane-status override)
+  const _orRealStop = {};   // _orRealStop[routeId][segKey] = { frac, distanceMi, lat, lng, arrivedAt, city, address } (the point that closed the lane)
   function _orExecMi(routeId, key, seg) {
     if (_orProgress[routeId] && _orProgress[routeId][key] != null) return _orProgress[routeId][key];
     return seg.truckMi;
@@ -9328,11 +9404,29 @@ export function initApp() {
     _orSegReg[routeId] = {};
     (function () {
       let dhN = 0;
-      cd.rows.forEach(row => {
+      cd.rows.forEach((row, idx) => {
         const isLoad = row.kind === 'load';
         const key = isLoad ? ('L' + row.loadIdx) : ('DH' + (dhN++));
         row.segKey = key;
-        const miles = isLoad ? row.load.miles : Math.max(8, Math.round(_orGeoMiles(row.origin, row.dest) || 42));
+        // Deadheads are real short repositioning lanes (~50–100 mi) into the next load's
+        // pickup hub — they share the hub name but have their own start→end + distance.
+        let miles, oLL, dLL;
+        if (isLoad) {
+          miles = row.load.miles;
+        } else {
+          const h = (row.origin + row.dest + key).split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+          miles = 50 + (h % 51);   // 50–100 mi
+          const hub = _OR_COORD[row.dest];
+          if (hub) {
+            const nextLoad = cd.rows[idx + 1];
+            const nd = (nextLoad && nextLoad.kind === 'load') ? _OR_COORD[nextLoad.dest] : null;
+            let uy = 0.55, ux = -0.85;   // fallback heading if the next load's dest is unknown
+            if (nd) { const dy = hub[0] - nd[0], dx = hub[1] - nd[1]; const L = Math.hypot(dy, dx) || 1; uy = dy / L; ux = dx / L; }
+            const delta = 0.55 + (h % 4) * 0.12;   // short spur just off the hub
+            oLL = [hub[0] + uy * delta, hub[1] + ux * delta];
+            dLL = hub;
+          }
+        }
         let truckMi;
         if (isLoad) {
           if (row.exec === 'Completed' || (sim.started && row.loadIdx < sim.activeLaneIdx)) truckMi = miles + 1;
@@ -9341,7 +9435,7 @@ export function initApp() {
         } else {
           truckMi = row.exec === 'Completed' ? miles + 1 : (row.exec === 'In progress' ? miles * 0.5 : -1);
         }
-        _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0 };
+        _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0, oLL: oLL, dLL: dLL };
       });
     })();
     _orSeedPlan(routeId);   // pre-assign a realistic plan (load stops, fuel, a missed pickup)
@@ -9437,13 +9531,14 @@ export function initApp() {
       ]);
     }
     function _etaChip(row) {
-      if (row.kind !== 'load') return el('div', {});
+      if (row.kind !== 'load' && row.kind !== 'dh') return el('div', {});
+      const _segM = (_orSegReg[routeId][row.segKey] || {}).miles || (row.load ? row.load.miles : 0);
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
       // Completed = real elapsed drive time (actual); in-progress = live tracking; else estimate.
       const tag = done ? { t: 'actual', c: '#47b26b', dot: false } : active ? { t: 'live', c: '#47b26b', dot: true } : { t: 'est.', c: '#808080', dot: false };
       return el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '6px 10px', borderRadius: '9px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)', whiteSpace: 'nowrap' } }, [
-        el('span', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, [drive(row.load.miles)]),
+        el('span', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, [drive(_segM)]),
         el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '700 10px ' + F, color: tag.c } }, [
           tag.dot ? el('span', { style: { width: '5px', height: '5px', borderRadius: '50%', background: '#2e9975', animation: '_efDotPulse 1.4s ease-in-out infinite' } }) : null,
           tag.t
@@ -9451,7 +9546,7 @@ export function initApp() {
         active ? el('span', { style: { display: 'flex', color: '#666666' }, html: IC.sync }) : null
       ]);
     }
-    function _statusDrop(exec) {
+    function _statusDrop(exec, onClick) {
       const M = {
         'Completed':   { label: 'Completed',  ic: IC.check, fg: '#47b26b', bg: 'rgba(46,153,117,.12)', bd: '1px solid transparent' },
         'In progress': { label: 'In-transit', ic: IC.truck, fg: '#6688cc', bg: 'rgba(102,136,204,.12)', bd: '1px solid transparent' },
@@ -9459,7 +9554,7 @@ export function initApp() {
         'Upcoming':    { label: 'Upcoming',   ic: IC.clock, fg: '#808080', bg: 'transparent',           bd: '1px solid rgba(255,255,255,.1)' }
       };
       const m = M[exec] || M.Booked;
-      return el('div', { class: 'hoverable', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '9px', background: m.bg, border: m.bd, color: m.fg, font: '800 11.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
+      return el('div', { class: 'hoverable', onclick: onClick ? ((e) => { if (e && e.stopPropagation) e.stopPropagation(); onClick(e); }) : undefined, title: onClick ? 'Change lane status' : undefined, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '9px', background: m.bg, border: m.bd, color: m.fg, font: '800 11.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
     }
     // ─────────── On Road execution tracking (real data from the mobile app) ───────────
     // A lane's live snapshot: real miles driven, departure, delay, ELD sync, HOS/speed.
@@ -9467,12 +9562,15 @@ export function initApp() {
       const miles = seg.miles;
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
-      const milesDriven = done ? miles : (active ? Math.max(0, Math.round(seg.truckMi >= 0 ? seg.truckMi : miles * 0.5)) : 0);
+      // a manually-closed lane records its REAL stop (miles + arrival) instead of the full plan
+      const rs = done ? (_orRealStop[routeId] && _orRealStop[routeId][row.segKey]) : null;
+      const milesDriven = rs ? rs.distanceMi : (done ? miles : (active ? Math.max(0, Math.round(seg.truckMi >= 0 ? seg.truckMi : miles * 0.5)) : 0));
       const pct = miles ? Math.max(0, Math.min(100, Math.round(milesDriven / miles * 100))) : 0;
       const _depDate = (row.load && row.load.pickup) ? prettyDate(row.load.pickup) : null;
       const _depTime = (row.load && row.load.pickupTime) ? ((row.load.pickupTime.split(' - ')[0]) || '') : '';
       const departedAt = ((done || active) && _depDate) ? (_depDate + (_depTime ? ' · ' + _depTime : '')) : '—';
-      const eta = (row.load && row.load.eta && row.load.eta !== '--') ? row.load.eta : '—';
+      const _baseEta = (row.load && row.load.eta && row.load.eta !== '--') ? row.load.eta : ((row.eta && row.eta !== '--') ? row.eta : '—');
+      const eta = rs ? rs.arrivedAt : _baseEta;
       const late = !!row.isLate;
       const delayTxt = (row.delay && row.delay !== '--') ? row.delay : (done || active ? 'On time' : '—');
       const h = (seg.origin + seg.dest).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -9480,7 +9578,7 @@ export function initApp() {
       const driveLeftH = active ? (2 + (h % 5)) : 0;
       const driveLeftM = active ? (h % 6) * 10 : 0;
       const lastSync = active ? 'Just now' : (done ? 'Trip ended' : '—');
-      return { miles, done, active, started: done || active, milesDriven, pct, departedAt, eta, late, delayTxt, speed, driveLeftH, driveLeftM, lastSync };
+      return { miles, done, active, started: done || active, milesDriven, pct, departedAt, eta, late, delayTxt, speed, driveLeftH, driveLeftM, lastSync, realStop: rs || null };
     }
     function _orAdherence(routeId, key) {
       const dact = _orActualFor(routeId, key);
@@ -9624,7 +9722,7 @@ export function initApp() {
       // (Update on the map handles ELD re-sync; speed dropped to reduce density).
       const grid = el('div', { style: { display: 'flex', alignItems: 'center', gap: '28px', flexWrap: 'wrap' } }, [
         cell(IC.truck, x.departedAt, 'Departed', '#47b26b'),
-        cell(IC.clock, x.active ? x.eta : '—', x.active ? x.delayTxt : 'ETA', x.late ? '#cc666f' : '#6688cc')
+        cell(IC.clock, (x.active || x.realStop) ? x.eta : '—', x.active ? x.delayTxt : (x.realStop ? 'Arrived (real stop)' : 'ETA'), x.late ? '#cc666f' : (x.realStop ? '#47b26b' : '#6688cc'))
       ]);
       const prog = el('div', { style: { marginTop: '12px' } }, [
         el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%'])]),
@@ -9757,7 +9855,7 @@ export function initApp() {
       const _validNodes = _orStopsGet(routeId, key).map(s => s.id).concat(['__pickup', '__dropoff']);
       const skipped = ss ? Object.keys(ss).filter(k => ss[k] === 'Skipped' && _validNodes.indexOf(k) >= 0).length : 0;
       const alerts = _orAlertsGet(routeId).filter(a => (a.segKey || 'L' + a.laneIdx) === key);
-      const li = _orLateInfo(routeId, key, row.load);
+      const li = _orLateInfo(routeId, key, row.load || { eta: row.eta, deliveryTime: row.pickupTime, delivery: row.pickup });
       const late = li.late && !li.acked;
       const hos = _orHos(routeId, key);
       const hosRisk = !!(hos && hos.risk && !hos.acked);
@@ -9794,7 +9892,7 @@ export function initApp() {
         ]),
         _laneIssues(row),
         _etaChip(row),
-        _statusDrop(row.exec),
+        _statusDrop(row.exec, (e) => _orLaneStatusMenu(e.currentTarget, routeId, row.segKey, row.exec)),
         el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _toggle(); }, title: isSel ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSel ? '#6688cc' : '#666666', transform: isSel ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
       if (isSel) segItems.push(_laneInlinePanel(row));
@@ -10416,15 +10514,26 @@ export function initApp() {
       // load card
       const _ldM = (v, label) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [label])]);
       const equip = ((typeof d !== 'undefined' && d && d.equipment) ? d.equipment : 'Van');
-      const loadCard = el('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)' } }, [
-        el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
-        _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
-        _ldM(isLoad ? money(income) : '$0.00', 'Current income'),
-        _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Estimated miles'),
-        el('div', { style: { flex: '1' } }),
-        el('div', { style: { minWidth: '36px', height: '36px', padding: '0 8px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)]),
-        el('div', { class: 'hoverable', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>' })
-      ]);
+      const _dhIc = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
+      const loadCard = isLoad
+        ? el('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)' } }, [
+            el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
+            _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
+            _ldM(money(income), 'Current income'),
+            _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Estimated miles'),
+            el('div', { style: { flex: '1' } }),
+            el('div', { style: { minWidth: '36px', height: '36px', padding: '0 8px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)]),
+            el('div', { class: 'hoverable', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>' })
+          ])
+        : el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px dashed rgba(255,255,255,.14)' } }, [
+            el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _dhIc }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Deadhead · no load']),
+              el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Repositioning to pick up the next load · ' + (seg.dest || '')])
+            ]),
+            _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Est. miles'),
+            el('div', { style: { minWidth: '36px', height: '36px', padding: '0 8px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)])
+          ]);
 
       // plan-vs-actual deviation banner (recorded plan should match the driver)
       const _dact = _orActualFor(routeId, key);
@@ -10569,7 +10678,7 @@ export function initApp() {
       // Running-late banner (Phase 1): live ETA vs the delivery window → notify driver
       // (toast + closes the alert) / reschedule (opens the appointment modal) / close.
       let lateBanner = null;
-      const _li = _orLateInfo(routeId, key, row.load);
+      const _li = _orLateInfo(routeId, key, row.load || { eta: row.eta, deliveryTime: row.pickupTime, delivery: row.pickup });
       if (_li.late && !_li.acked) {
         // notify the driver AND silence the alert (same ack path → re-alerts only if it worsens)
         const _notify = () => { if (!_orLateAck[routeId]) _orLateAck[routeId] = {}; _orLateAck[routeId][key] = _li.byMin; _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Notified driver: running ' + _li.byMin + ' min late (ETA ' + _li.liveEta + ')', revertible: false }); _orToast = 'Driver notified · alert closed'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
@@ -10583,7 +10692,7 @@ export function initApp() {
         ]);
         const actionsRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' } }, [
           el('div', { class: 'hoverable', title: 'Notify the driver they are running late and close this alert', onclick: _notify, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#b28835', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Notify driver</span>' }),
-          el('div', { class: 'hoverable', title: 'Adjust the load pickup / drop-off appointment times', onclick: () => setState({ orApptEdit: key }), style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(178,136,53,.4)', whiteSpace: 'nowrap' } }, ['Reschedule']),
+          isLoad ? el('div', { class: 'hoverable', title: 'Adjust the load pickup / drop-off appointment times', onclick: () => setState({ orApptEdit: key }), style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b28835', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(178,136,53,.4)', whiteSpace: 'nowrap' } }, ['Reschedule']) : null,
           el('div', { class: 'hoverable', title: 'Close this alert', onclick: _close, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b3b3b3', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' } }, ['Close'])
         ]);
         lateBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(178,136,53,.10)', border: '1px solid rgba(178,136,53,.4)' } }, [bannerRow, actionsRow]);
@@ -10681,15 +10790,40 @@ export function initApp() {
 
     // ─────────────────────── RIGHT: map + cards ───────────────────────────
     const addMode = laneMode && !!state.orAddType;   // adding a stop → map grows to pick
+    const closeMode = laneMode && state.orCloseLane === state.orLane;   // picking the real stop that closes the lane
     const mapPanel = el('div', { style: { position: 'relative', height: laneMode ? 'calc(100vh - 360px)' : '360px', minHeight: laneMode ? '400px' : '0', flexShrink: '0', borderRadius: '12px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } });
     // empty slot; the persistent map div (_orMapEl) is re-parented into it after render
     const mapEl = el('div', { id: 'ef-onroad-mapslot', style: { position: 'absolute', inset: '0' } });
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
-    if (laneMode && state.orEdit) {
+    if (closeMode) {
+      // ─────────── pick the real stop that closed the lane ───────────
+      const sel = state.orCloseSel;
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', right: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(46,153,117,.35)', backdropFilter: 'blur(6px)' } }, [
+        el('div', { style: { color: '#47b26b', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' }),
+        el('div', { style: { flex: '1', minWidth: '0' } }, [
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Where did the lane end?']),
+          el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '1px' } }, ['Pick a detected stop on the executed route, or click anywhere on the line.'])
+        ])
+      ]));
+      // bottom confirmation bar
+      const _fmtDist = (s) => s.milesToDest <= 3 ? 'at the destination' : (s.milesToDest + ' mi from destination');
+      const info = sel
+        ? el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(sel.city || sel.address || ('Mile ' + sel.distanceMi))]),
+            el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Arrived ' + sel.arrivedAt + ' · ' + sel.distanceMi + ' mi driven · ' + _fmtDist(sel)])
+          ])
+        : el('div', { style: { flex: '1', font: '700 12px ' + F, color: '#808080' } }, ['Select a point on the map to close the lane']);
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', right: '14px', bottom: '16px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(8px)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, [
+        el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: 'rgba(46,153,117,.16)', color: '#47b26b' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' }),
+        info,
+        el('div', { class: 'hoverable', onclick: () => setState({ orCloseLane: null, orCloseSel: null }), style: { flexShrink: '0', height: '34px', padding: '0 14px', display: 'flex', alignItems: 'center', borderRadius: '9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' } }, ['Cancel']),
+        el('div', { class: sel ? 'hoverable' : '', onclick: sel ? (() => _orCloseConfirm(routeId, state.orLane, sel)) : undefined, style: { flexShrink: '0', height: '34px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9px', background: sel ? '#2e9975' : 'rgba(46,153,117,.25)', border: '1px solid ' + (sel ? '#2e9975' : 'transparent'), color: sel ? '#0d1a13' : '#5c7d70', font: '800 12px ' + F, cursor: sel ? 'pointer' : 'default' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Confirm &amp; complete lane</span>' })
+      ]));
+    } else if (laneMode && state.orEdit) {
       // ─────────── manual route-edit overlay (toolbar + add form) ───────────
       const _eseg = _orSegReg[routeId][state.orLane];
-      const a = _eseg && _OR_COORD[_eseg.origin], b = _eseg && _OR_COORD[_eseg.dest];
+      const a = _eseg && (_eseg.oLL || _OR_COORD[_eseg.origin]), b = _eseg && (_eseg.dLL || _OR_COORD[_eseg.dest]);
       const tool = state.orEditTool || 'drag';
       const eadd = state.orEditAdd || null;
       const _toolBtn = (label, icon, active, on) => el('div', { class: 'hoverable', onclick: on, style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: active ? 'rgba(102,136,204,.28)' : 'rgba(20,20,20,.85)', border: '1px solid ' + (active ? 'rgba(102,136,204,.55)' : 'rgba(255,255,255,.1)'), backdropFilter: 'blur(6px)', color: active ? '#8fb0ff' : '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' }, html: icon + '<span>' + label + '</span>' });
@@ -10888,7 +11022,7 @@ export function initApp() {
       if (laneMode) {
         // ── lane-focused view: single lane polyline + its stops (+ candidates) ──
         const seg = _orSegReg[routeId][state.orLane];
-        const a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest];
+        const a = seg.oLL || _OR_COORD[seg.origin], b = seg.dLL || _OR_COORD[seg.dest];
         if (a && b) {
           const laneMiles = seg.miles;
           const truckMi = seg.truckMi;
@@ -11013,6 +11147,35 @@ export function initApp() {
             map.getContainer().style.cursor = _clickMode ? 'crosshair' : '';
             if (_clickMode) map.once('click', function (ev) { setState({ orEditAdd: { mode: 'click', lat: ev.latlng.lat, lng: ev.latlng.lng, address: ev.latlng.lat.toFixed(4) + ', ' + ev.latlng.lng.toFixed(4) } }); });
           } else { try { map.dragging.enable(); map.getContainer().style.cursor = ''; } catch (e) {} }
+          // ── close-lane mode: detected stops on the executed route + click-to-pick ──
+          if (map._orCloseClick) { try { map.off('click', map._orCloseClick); } catch (e) {} map._orCloseClick = null; }
+          if (state.orCloseLane === state.orLane) {
+            const _cands = _orCloseCandidates(routeId, state.orLane);
+            const _sel = state.orCloseSel;
+            const _isSel = (c) => _sel && Math.abs(_sel.frac - c.frac) < 0.0015;
+            _cands.forEach((c, i) => {
+              const on = _isSel(c);
+              const html = on
+                ? '<div style="display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:rgba(46,153,117,.28)"><div style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#2e9975;border:2.5px solid #141414;color:#0d1a13;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div></div>'
+                : '<div style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#b28835;border:2.5px solid #141414;color:#141414;font:900 12px ' + F + ';box-shadow:0 2px 8px rgba(0,0,0,.5)">' + (i + 1) + '</div>';
+              const sz = on ? 38 : 26;
+              const m = L.marker([c.lat, c.lng], { icon: L.divIcon({ className: '', html: html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), zIndexOffset: on ? 1500 : 1300 }).addTo(layers);
+              m.bindTooltip('Detected stop · ' + (c.city || ('mile ' + c.distanceMi)) + ' · arrived ' + c.arrivedAt, { direction: 'top' });
+              m.on('click', function (ev) { if (ev && ev.originalEvent) L.DomEvent.stopPropagation(ev); setState({ orCloseSel: c }); });
+            });
+            // a free-picked point (not one of the detected stops) → distinct green marker
+            if (_sel && !_cands.some(_isSel)) {
+              L.marker([_sel.lat, _sel.lng], { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:rgba(46,153,117,.28)"><div style="width:16px;height:16px;border-radius:50%;background:#2e9975;border:2.5px solid #141414"></div></div>', iconSize: [34, 34], iconAnchor: [17, 17] }), zIndexOffset: 1500 }).addTo(layers).bindTooltip('Real stop · ' + _sel.distanceMi + ' mi', { direction: 'top' });
+            }
+            map.getContainer().style.cursor = 'crosshair';
+            map._orCloseClick = function (ev) { const pr = _orProject(a, b, [ev.latlng.lat, ev.latlng.lng]); const snap = _orOffset(a, b, pr.frac, 0); setState({ orCloseSel: _orClosePoint(routeId, state.orLane, pr.frac, snap[0], snap[1]) }); };
+            map.on('click', map._orCloseClick);
+          }
+          // real stop that closed a manually-completed lane → distinct green marker
+          const _rsp = (state.orCloseLane !== state.orLane) && _orRealStop[routeId] && _orRealStop[routeId][state.orLane];
+          if (_rsp) {
+            L.marker([_rsp.lat, _rsp.lng], { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#2e9975;border:2.5px solid #141414;color:#0d1a13;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 800 }).addTo(layers).bindTooltip('Real stop · ' + (_rsp.city || ('mile ' + _rsp.distanceMi)) + ' · arrived ' + _rsp.arrivedAt + ' · ' + _rsp.distanceMi + ' mi', { direction: 'top' });
+          }
           // candidate markers while browsing a service type (hidden while options load / editing)
           if (addType && addType !== '__pick' && !state.orAddLoading && !state.orEdit) {
             const existing = _orStopsGet(routeId, state.orLane).map(s => s.id);
@@ -11312,6 +11475,8 @@ export function initApp() {
         kind: 'dh', num: 'DH', origin: prevDest, dest: l.origin,
         originDate: 'Est. ' + prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery),
         destDate: 'Est. ' + prettyDate(l.pickup), exec: dhExec, loadIdx: null,
+        // the deadhead's deadline is arriving before the NEXT load's pickup window opens/closes
+        pickup: l.pickup, pickupTime: l.pickupTime, eta: (l.pickupTime || '--').split(' - ')[0] || '--',
         _oRaw: prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery), _dRaw: prettyDate(l.pickup)
       });
       loadNum++;
@@ -11373,6 +11538,19 @@ export function initApp() {
         if (row.kind !== 'dh') return;
         const nxt = rows[i + 1];
         if (nxt) row.exec = (nxt.exec === 'Completed' || nxt.exec === 'In progress') ? 'Completed' : 'Upcoming';
+      });
+    }
+    // ── Manual lane-completion override: a lane the dispatcher closed by hand (picking
+    //    the real stop) reads Completed everywhere, with real actuals from _orRealStop. ──
+    if (_orLaneExec[routeId]) {
+      rows.forEach(row => {
+        if (row.kind !== 'load') return;
+        if (_orLaneExec[routeId]['L' + row.loadIdx] === 'Completed' && row.exec === 'In progress') {
+          row.exec = 'Completed';
+          const rs = _orRealStop[routeId] && _orRealStop[routeId]['L' + row.loadIdx];
+          row.pct = rs && row.load.miles ? Math.round(rs.distanceMi / row.load.miles * 100) : 100;
+          row.milesDriven = rs ? rs.distanceMi : row.load.miles;
+        }
       });
     }
     // ── Coherent date/time labels: what already happened is REAL (no "Est."),
