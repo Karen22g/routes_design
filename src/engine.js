@@ -10980,7 +10980,7 @@ export function initApp() {
         { v: _hClock(_hs.driveLeftH), label: 'Drive left', col: _driveCol },
         { v: _hClock(_hs.shiftLeftH), label: 'Shift left', col: '#6688cc' },
         { v: Math.round(_hs.cycleLeftH) + 'h', label: 'Cycle left', col: '#e6e6e6' },
-        { v: _hs.breakInH <= 0 ? 'Overdue' : ('in ' + _hClock(_hs.breakInH)), label: 'Break due', col: _breakCol }
+        { v: _hClock(_hs.breakInH), label: 'Break due', col: _breakCol }
       ];
       hosCard = el('div', { style: { padding: '13px 16px', border: '1px solid ' + (_hs.risk ? 'rgba(204,102,111,.4)' : 'rgba(255,255,255,.08)'), borderRadius: '12px', background: '#242424' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '12px' } }, [
