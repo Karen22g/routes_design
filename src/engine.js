@@ -8832,13 +8832,23 @@ export function initApp() {
     return { frac: +frac.toFixed(4), distanceMi: distanceMi, lat: lat, lng: lng, arrivedAt: _orHHMM(arr), address: addr, city: (addr.split(',').slice(1).join(',').trim()) || seg.dest, milesToDest: Math.max(0, miles - distanceMi) };
   }
   // Detected pauses on the executed route the truck may have used to close the lane.
-  function _orCloseCandidates(routeId, key) {
+  function _orCloseCandidates(routeId, key, aroundFrac) {
     const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; if (!seg || !seg.isLoad) return [];
     const a = _OR_COORD[seg.origin], b = _OR_COORD[seg.dest]; if (!a || !b) return [];
-    return [0.86, 0.94, 0.99].map((f, i) => {
+    // for a specific stop, offer detected pauses around its planned position; otherwise near the destination
+    const fracs = (aroundFrac != null)
+      ? [Math.max(0.03, +(aroundFrac - 0.04).toFixed(3)), +Math.max(0.03, Math.min(0.97, aroundFrac)).toFixed(3), Math.min(0.97, +(aroundFrac + 0.04).toFixed(3))]
+      : [0.86, 0.94, 0.99];
+    return fracs.map((f, i) => {
       const ll = _orOffset(a, b, f, ((i % 2) ? 1 : -1) * 0.011);
       return _orClosePoint(routeId, key, f, ll[0], ll[1]);
     });
+  }
+  // frac of a stop along its lane (for centering the real-stop picker on a missed stop)
+  function _orStopFrac(routeId, key, stopId) {
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; if (!seg) return null;
+    const st = _orStopsGet(routeId, key).find(s => s.id === stopId); if (!st) return null;
+    return st.frac != null ? st.frac : (seg.miles ? st.distanceMi / seg.miles : 0.5);
   }
   // Lane-status dropdown: In-transit ⇄ Completed. Completing an in-progress lane with no
   // auto-detected closing stop enters the map "pick real stop" mode instead of finishing.
@@ -8851,7 +8861,7 @@ export function initApp() {
       if (s === current) return;
       if (s === 'Completed') {
         const cands = _orCloseCandidates(routeId, key);
-        setState({ orLane: key, orCloseLane: key, orCloseSel: cands.length ? cands[cands.length - 1] : null, orAddType: null, orReplace: null, orEdit: false, orViewOpen: false });
+        setState({ orLane: key, orCloseLane: key, orCloseStop: null, orCloseSel: cands.length ? cands[cands.length - 1] : null, orAddType: null, orReplace: null, orEdit: false, orViewOpen: false });
       } else {
         if (_orLaneExec[routeId]) delete _orLaneExec[routeId][key];
         if (_orRealStop[routeId]) delete _orRealStop[routeId][key];
@@ -8886,7 +8896,21 @@ export function initApp() {
       _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Lane closed manually · real stop at ' + (sel.city || sel.address || (sel.distanceMi + ' mi')) + ' · arrived ' + sel.arrivedAt, revertible: false });
       _orToast = 'Lane completed · real stop recorded';
       _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4500);
-    }, { orCloseLane: null, orCloseSel: null });
+    }, { orCloseLane: null, orCloseSel: null, orCloseStop: null });
+  }
+  // Confirm: a missed stop was actually serviced — assign its real location (the picked point)
+  // and mark it Completed (clears the skipped/missed status). Same picker as closing a lane.
+  function _orCloseStopConfirm(routeId, key, stopId, sel) {
+    if (!sel) return;
+    _orRunBusy({ title: 'Marking stop completed…', sub: 'Recording the real stop location and updating the plan.', color: '#2e9975' }, function () {
+      const st = _orStopsGet(routeId, key).find(s => s.id === stopId);
+      if (st) { st.lat = sel.lat; st.lng = sel.lng; st.frac = sel.frac; st.distanceMi = sel.distanceMi; st.realStop = { arrivedAt: sel.arrivedAt, city: sel.city, address: sel.address }; }
+      if (_orStopStatus[routeId] && _orStopStatus[routeId][key]) _orStopStatus[routeId][key][stopId] = 'Completed';
+      if (_orStopStatusManual[routeId] && _orStopStatusManual[routeId][key]) delete _orStopStatusManual[routeId][key][stopId];
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Marked stop completed · real stop at ' + (sel.city || sel.address || (sel.distanceMi + ' mi')) + ' · arrived ' + sel.arrivedAt, revertible: false });
+      _orToast = 'Stop marked completed · real stop recorded';
+      _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4500);
+    }, { orCloseLane: null, orCloseSel: null, orCloseStop: null });
   }
   function _orAlertsGet(routeId) { if (!_orAlerts[routeId]) _orAlerts[routeId] = []; return _orAlerts[routeId]; }
   function _orAlertCount(routeId) { return _orAlertsGet(routeId).length + _orLateLanes(routeId).length + _orHosRiskLanes(routeId).length; }
@@ -9646,7 +9670,7 @@ export function initApp() {
     function _orCancelEdit(routeId, key) {
       if (_orEditSnap) _orRestore(routeId, key, _orEditSnap);
       _orEditSnap = null;
-      setState({ orEdit: false, orEditTool: null, orEditAdd: null });
+      setState({ orEdit: false, orEditTool: null, orEditAdd: null, orReplace: null });
     }
     function _orSaveEdit(routeId, key) {
       const snap = _orEditSnap; _orEditSnap = null;
@@ -10659,6 +10683,10 @@ export function initApp() {
         const more = missedStops.length - 1;
         const _return = () => { _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Asked driver to return for ' + nm, revertible: false }); _orToast = 'Return request sent to driver'; _orUndo = null; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000); setState({}); };
         const _drop = () => { _orPushUndo(routeId, key, 'Missed stop removed from plan'); missedStops.forEach(s => { _orRemoveStop(routeId, key, s.id); if (_orStopStatus[routeId] && _orStopStatus[routeId][key]) delete _orStopStatus[routeId][key][s.id]; }); setState({}); };
+        // mark completed → assign the real stop on the map (same picker as closing a lane)
+        const _markDone = () => { const af = _orStopFrac(routeId, key, m0.id); const cands = _orCloseCandidates(routeId, key, af); setState({ orLane: key, orCloseLane: key, orCloseStop: m0.id, orCloseSel: cands.length ? cands[1] : null, orAddType: null, orReplace: null, orEdit: false, orViewOpen: false }); };
+        // replace → place a new address / coordinate on the map for this stop
+        const _replace = () => setState({ orLane: key, orEdit: true, orEditTool: 'add', orEditAdd: { mode: 'address' }, orReplace: m0.id, orAddType: null, orCandSel: null, orViewOpen: false });
         missedBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
           el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '10px' } }, [
             el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0', marginTop: '1px' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
@@ -10668,8 +10696,10 @@ export function initApp() {
             ])
           ]),
           el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' } }, [
-            el('div', { class: 'hoverable', title: 'Send a return-to-route request to the driver', onclick: _return, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#cc666f', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>Ask to return</span>' }),
-            el('div', { class: 'hoverable', title: 'Accept the miss and remove it from the plan', onclick: _drop, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#b3b3b3', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' } }, ['Remove'])
+            el('div', { class: 'hoverable', title: 'The driver actually serviced it — assign the real stop on the map', onclick: _markDone, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#2e9975', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Mark completed</span>' }),
+            el('div', { class: 'hoverable', title: 'Send a return-to-route request to the driver', onclick: _return, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>Ask to return</span>' }),
+            el('div', { class: 'hoverable', title: 'Replace this stop with another address or a point on the map', onclick: _replace, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#e6e6e6', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 8a9 9 0 1 0 3-5.7"/></svg><span>Replace stop</span>' }),
+            el('div', { class: 'hoverable', title: 'Accept the miss and remove it from the plan', onclick: _drop, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#808080', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.1)', whiteSpace: 'nowrap' } }, ['Remove'])
           ])
         ]);
       }
@@ -10796,12 +10826,13 @@ export function initApp() {
     mapPanel.appendChild(mapEl);
     const _mapCtl = (inner, extra) => el('div', { class: 'hoverable', style: Object.assign({ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: inner.indexOf('span') >= 0 ? '0 12px' : '0', width: inner.indexOf('span') >= 0 ? 'auto' : '34px', justifyContent: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, extra || {}), html: inner });
     if (closeMode) {
-      // ─────────── pick the real stop that closed the lane ───────────
+      // ─────────── pick the real stop (closes the lane, or services a missed stop) ───────────
       const sel = state.orCloseSel;
+      const _forStop = !!state.orCloseStop;
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', right: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(46,153,117,.35)', backdropFilter: 'blur(6px)' } }, [
         el('div', { style: { color: '#47b26b', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' }),
         el('div', { style: { flex: '1', minWidth: '0' } }, [
-          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Where did the lane end?']),
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_forStop ? 'Where did the driver service this stop?' : 'Where did the lane end?']),
           el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '1px' } }, ['Pick a detected stop on the executed route, or click anywhere on the line.'])
         ])
       ]));
@@ -10812,12 +10843,12 @@ export function initApp() {
             el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(sel.city || sel.address || ('Mile ' + sel.distanceMi))]),
             el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, ['Arrived ' + sel.arrivedAt + ' · ' + sel.distanceMi + ' mi driven · ' + _fmtDist(sel)])
           ])
-        : el('div', { style: { flex: '1', font: '700 12px ' + F, color: '#808080' } }, ['Select a point on the map to close the lane']);
+        : el('div', { style: { flex: '1', font: '700 12px ' + F, color: '#808080' } }, [_forStop ? 'Select where the driver serviced this stop' : 'Select a point on the map to close the lane']);
       mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', right: '14px', bottom: '16px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(8px)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, [
         el('div', { style: { width: '30px', height: '30px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: 'rgba(46,153,117,.16)', color: '#47b26b' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' }),
         info,
-        el('div', { class: 'hoverable', onclick: () => setState({ orCloseLane: null, orCloseSel: null }), style: { flexShrink: '0', height: '34px', padding: '0 14px', display: 'flex', alignItems: 'center', borderRadius: '9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' } }, ['Cancel']),
-        el('div', { class: sel ? 'hoverable' : '', onclick: sel ? (() => _orCloseConfirm(routeId, state.orLane, sel)) : undefined, style: { flexShrink: '0', height: '34px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9px', background: sel ? '#2e9975' : 'rgba(46,153,117,.25)', border: '1px solid ' + (sel ? '#2e9975' : 'transparent'), color: sel ? '#0d1a13' : '#5c7d70', font: '800 12px ' + F, cursor: sel ? 'pointer' : 'default' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Confirm &amp; complete lane</span>' })
+        el('div', { class: 'hoverable', onclick: () => setState({ orCloseLane: null, orCloseSel: null, orCloseStop: null }), style: { flexShrink: '0', height: '34px', padding: '0 14px', display: 'flex', alignItems: 'center', borderRadius: '9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' } }, ['Cancel']),
+        el('div', { class: sel ? 'hoverable' : '', onclick: sel ? (() => (_forStop ? _orCloseStopConfirm(routeId, state.orLane, state.orCloseStop, sel) : _orCloseConfirm(routeId, state.orLane, sel))) : undefined, style: { flexShrink: '0', height: '34px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9px', background: sel ? '#2e9975' : 'rgba(46,153,117,.25)', border: '1px solid ' + (sel ? '#2e9975' : 'transparent'), color: sel ? '#0d1a13' : '#5c7d70', font: '800 12px ' + F, cursor: sel ? 'pointer' : 'default' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>' + (_forStop ? 'Confirm &amp; mark completed' : 'Confirm &amp; complete lane') + '</span>' })
       ]));
     } else if (laneMode && state.orEdit) {
       // ─────────── manual route-edit overlay (toolbar + add form) ───────────
@@ -10851,14 +10882,21 @@ export function initApp() {
           else if (mode === 'coords') body.push(el('div', { style: { display: 'flex', gap: '7px' } }, [_inp('ed-lat', 'Lat', '90px'), _inp('ed-lng', 'Lng', '90px'), el('div', { class: 'hoverable', onclick: () => { const la = parseFloat((document.getElementById('ed-lat') || {}).value), lo = parseFloat((document.getElementById('ed-lng') || {}).value); if (isNaN(la) || isNaN(lo)) return; setState({ orEditAdd: { mode: 'coords', lat: la, lng: lo, address: la.toFixed(4) + ', ' + lo.toFixed(4) } }); }, style: { flex: '1', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', background: '#6688cc', color: '#141414', font: '800 12px ' + F, cursor: 'pointer' } }, ['Place'])]));
           else body.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: '#141414', border: '1px dashed rgba(255,255,255,.18)', font: '600 11.5px ' + F, color: '#808080' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Click anywhere on the map to drop the stop</span>' }));
         } else {
-          // location chosen → pick a type + optional name, then add
-          const selType = eadd.type || 'fuel';
+          const _oldRepl = state.orReplace ? _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace) : null;
           body.push(el('div', { style: { font: '600 10px ' + F, color: '#666666', marginBottom: '7px' }, html: '<span style="color:#7fd4c1">✓</span> ' + (eadd.address || (eadd.lat.toFixed(3) + ', ' + eadd.lng.toFixed(3))) }));
-          body.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px' } }, Object.keys(_OR_SVC).filter(t => !_OR_SVC[t].load).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: Object.assign({}, eadd, { type: t }) }), style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0', padding: '5px 9px', borderRadius: '999px', cursor: 'pointer', border: '1px solid ' + (selType === t ? _OR_SVC[t].color : 'rgba(255,255,255,.12)'), background: selType === t ? _OR_SVC[t].bg : 'transparent', color: selType === t ? _OR_SVC[t].color : '#b3b3b3', font: '800 10px ' + F }, html: _OR_SVC[t].icon.replace(/width="15" height="15"/, 'width="12" height="12"') + '<span>' + _OR_SVC[t].label + '</span>' }))));
-          body.push(el('div', { style: { display: 'flex', gap: '7px', marginTop: '2px' } }, [
-            _inp('ed-name', 'Name (optional)'),
-            el('div', { class: 'hoverable', onclick: () => { const nm = (document.getElementById('ed-name') || {}).value || _OR_SVC[selType].label; _orRunBusy({ title: 'Adding stop…', sub: 'Placing the stop and updating the route.', color: '#6688cc' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: selType, name: nm, brand: selType === 'fuel' ? nm : undefined, pricePerGal: selType === 'fuel' ? 3.79 : undefined, rating: 4.2, address: eadd.address } }); _orAddCandidate(routeId, state.orLane, c, { manual: true }); }, { orEditAdd: null }); }, style: { flexShrink: '0', padding: '0 14px', height: '34px', display: 'flex', alignItems: 'center', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' } }, ['Add stop'])
-          ]));
+          if (_oldRepl) {
+            // replacing a specific stop → keep its type/name, just move it to the new location
+            body.push(el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginBottom: '9px', lineHeight: '1.4' } }, ['Replaces ' + (_oldRepl.name || (_OR_SVC[_oldRepl.type] || {}).label || 'the stop') + ' with this location.']));
+            body.push(el('div', { class: 'hoverable', onclick: () => { _orRunBusy({ title: 'Replacing stop…', sub: 'Moving the stop to the new location.', color: '#2e9975' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: _oldRepl.type, name: _oldRepl.name, load: _oldRepl.load, address: eadd.address } }); _orStopsGet(routeId, state.orLane).push(c); _orRemoveStop(routeId, state.orLane, _oldRepl.id); if (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane]) delete _orStopStatus[routeId][state.orLane][_oldRepl.id]; if (_orStopStatusManual[routeId] && _orStopStatusManual[routeId][state.orLane]) delete _orStopStatusManual[routeId][state.orLane][_oldRepl.id]; _orLogChange(routeId, state.orLane, { actor: 'Dispatcher', kind: 'edit', text: 'Replaced ' + (_oldRepl.name || 'stop') + ' → ' + (eadd.address || 'new location'), revertible: false }); }, { orEditAdd: null, orReplace: null, orEdit: false, orEditTool: null }); }, style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '36px', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Replace stop here</span>' }));
+          } else {
+            // location chosen → pick a type + optional name, then add
+            const selType = eadd.type || 'fuel';
+            body.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px' } }, Object.keys(_OR_SVC).filter(t => !_OR_SVC[t].load).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: Object.assign({}, eadd, { type: t }) }), style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0', padding: '5px 9px', borderRadius: '999px', cursor: 'pointer', border: '1px solid ' + (selType === t ? _OR_SVC[t].color : 'rgba(255,255,255,.12)'), background: selType === t ? _OR_SVC[t].bg : 'transparent', color: selType === t ? _OR_SVC[t].color : '#b3b3b3', font: '800 10px ' + F }, html: _OR_SVC[t].icon.replace(/width="15" height="15"/, 'width="12" height="12"') + '<span>' + _OR_SVC[t].label + '</span>' }))));
+            body.push(el('div', { style: { display: 'flex', gap: '7px', marginTop: '2px' } }, [
+              _inp('ed-name', 'Name (optional)'),
+              el('div', { class: 'hoverable', onclick: () => { const nm = (document.getElementById('ed-name') || {}).value || _OR_SVC[selType].label; _orRunBusy({ title: 'Adding stop…', sub: 'Placing the stop and updating the route.', color: '#6688cc' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: selType, name: nm, brand: selType === 'fuel' ? nm : undefined, pricePerGal: selType === 'fuel' ? 3.79 : undefined, rating: 4.2, address: eadd.address } }); _orAddCandidate(routeId, state.orLane, c, { manual: true }); }, { orEditAdd: null }); }, style: { flexShrink: '0', padding: '0 14px', height: '34px', display: 'flex', alignItems: 'center', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' } }, ['Add stop'])
+            ]));
+          }
         }
         mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '18px', zIndex: '1300', width: '360px', maxWidth: 'calc(100% - 28px)', padding: '12px', borderRadius: '12px', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(8px)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, body));
       }
@@ -11168,7 +11206,7 @@ export function initApp() {
           // ── close-lane mode: detected stops on the executed route + click-to-pick ──
           if (map._orCloseClick) { try { map.off('click', map._orCloseClick); } catch (e) {} map._orCloseClick = null; }
           if (state.orCloseLane === state.orLane) {
-            const _cands = _orCloseCandidates(routeId, state.orLane);
+            const _cands = _orCloseCandidates(routeId, state.orLane, state.orCloseStop ? _orStopFrac(routeId, state.orLane, state.orCloseStop) : undefined);
             const _sel = state.orCloseSel;
             const _isSel = (c) => _sel && Math.abs(_sel.frac - c.frac) < 0.0015;
             _cands.forEach((c, i) => {
