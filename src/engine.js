@@ -11050,6 +11050,15 @@ export function initApp() {
           };
           const _act = _orActualFor(routeId, state.orLane);
           const _recon = _act ? _orReconciled(routeId, state.orLane, _act) : true;
+          // driver-actual corridor: the truck detours off the plan (via the apex) inside the
+          // deviation window, so the traveled line + truck follow the RED actual there — not
+          // the straight planned line. Keeps the map coherent with the legend.
+          const _hasDev = !!(_act && !_recon);
+          const _f0 = _hasDev ? _act.f0 : 1, _f1 = _hasDev ? _act.f1 : 1;
+          const _apex = _hasDev ? _orOffset(a, b, (_f0 + _f1) / 2, _act.side * _act.mag) : null;
+          const _pf0 = _hasDev ? _pathAt(pathPts, _f0).pt : null, _pf1 = _hasDev ? _pathAt(pathPts, _f1).pt : null;
+          const _sampleBetween = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(_pathAt(pathPts, fa + (fb - fa) * i / n).pt); return o; };
+          const _actualAt = (f) => { if (_hasDev && f > _f0 && f < _f1) { const ds = (f - _f0) / (_f1 - _f0); return _pathAt([_pf0, _apex, _pf1], ds).pt; } return _pathAt(pathPts, f).pt; };
           // View-menu layer toggles
           const _vHub = !!state.orVHub, _vStops = state.orVStops !== false, _vPlan = state.orVPlan !== false;
           // Hub area: ~50 mi radius rings around the lane's origin & destination hubs
@@ -11063,9 +11072,16 @@ export function initApp() {
           if (_vPlan) L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
-          // traveled (green) portion follows the routed path up to the truck
+          // traveled (green) portion — on-plan segments only; the deviation window is shown
+          // by the red "Driver actual" detour (below), so green skips it for coherence.
           if (truckFrac > 0 && truckFrac < 1) {
-            L.polyline(_pathAt(pathPts, truckFrac).prefix, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+            const _gs = { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
+            if (_hasDev && truckFrac > _f0) {
+              if (_f0 > 0.005) L.polyline(_sampleBetween(0, _f0, 8), _gs).addTo(layers);            // before the detour
+              if (truckFrac > _f1) L.polyline(_sampleBetween(_f1, truckFrac, 8), _gs).addTo(layers); // after rejoining the plan
+            } else {
+              L.polyline(_pathAt(pathPts, truckFrac).prefix, _gs).addTo(layers);
+            }
           }
           // Personal Conveyance segment: the plan bends onto the driver path through a PC
           // via → draw that portion distinctly (purple dashed) as the justified PC detour.
@@ -11076,14 +11092,17 @@ export function initApp() {
             const p0 = pathPts[i], p1 = pathPts[i + 1], p2 = pathPts[i + 2];
             L.polyline([p0, p1, p2], { color: '#8066cc', weight: 5, opacity: .95, dashArray: '2 8', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(s.pcMiles || s.detourMi || 0) + ' mi (off-duty)', { sticky: true });
           });
-          // unreconciled deviation → overlay the driver's actual detour as an annotation
-          // anchored on the routed line (planned dashed + red actual + off-plan pin)
-          if (_act && !_recon) {
-            const pf0 = _pathAt(pathPts, _act.f0).pt, pf1 = _pathAt(pathPts, _act.f1).pt;
-            const apex = _orOffset(a, b, (_act.f0 + _act.f1) / 2, _act.side * _act.mag);
-            L.polyline([pf0, pf1], { color: '#6688cc', weight: 3.5, opacity: .9, dashArray: '2 9', lineCap: 'round' }).addTo(layers).bindTooltip('Planned route', { sticky: true });
-            L.polyline([pf0, apex, pf1], { color: '#cc666f', weight: 4, opacity: .95, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual route', { sticky: true });
-            L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
+          // unreconciled deviation → the driver's actual detour (red). The planned line is
+          // already drawn straight (blue dashed) so plan-vs-actual diverge visibly; the red is
+          // solid where already driven (truck past it) and dashed for the rest of the corridor.
+          if (_hasDev) {
+            const detour = [_pf0, _apex, _pf1];
+            L.polyline(detour, { color: '#cc666f', weight: 4, opacity: .9, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual route', { sticky: true });
+            if (truckFrac > _f0) {
+              const ds = Math.min(1, (Math.min(truckFrac, _f1) - _f0) / (_f1 - _f0));
+              if (ds > 0.01) L.polyline(_pathAt(detour, ds).prefix, { color: '#cc666f', weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual (driven)', { sticky: true });
+            }
+            L.marker(_apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
           }
           // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
           const _dragging = state.orEdit && state.orEditTool === 'drag';
@@ -11214,9 +11233,9 @@ export function initApp() {
               _mkMarker(c, String(_browse.route.length + i + 1), ll, true);
             });
           }
-          // truck at its live position on this lane
+          // truck at its live position on this lane (on the red actual while inside a detour)
           if (truckFrac > 0 && truckFrac < 1) {
-            const tll = _pathAt(pathPts, truckFrac).pt;
+            const tll = _actualAt(truckFrac);
             L.marker(tll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:40px;height:40px"><div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:14px;height:14px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(layers);
           }
           // feasibility alert cues on this lane
