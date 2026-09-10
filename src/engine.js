@@ -9883,15 +9883,14 @@ export function initApp() {
       const active = row.exec === 'In progress';
       const isSel = row.segKey === state.orLane;   // lane selected → inline panel + lane-focused right panel
       const _toggle = () => setState({ orLane: isSel ? null : row.segKey, orAddType: null, orReplace: null, orStopOpen: null });
-      segItems.push(el('div', { class: 'row-hoverable', onclick: _toggle, style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto auto 30px', alignItems: 'center', gap: '13px', padding: '12px 14px', borderRadius: '12px', background: isSel ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isSel || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isSel ? '.5' : '1', cursor: 'pointer' } }, [
+      segItems.push(el('div', { class: 'row-hoverable', onclick: _toggle, style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '11px', padding: '12px 14px', borderRadius: '12px', background: isSel ? 'rgba(102,136,204,.08)' : (active ? 'rgba(102,136,204,.05)' : 'transparent'), border: (isSel || active) ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: done && !isSel ? '.5' : '1', cursor: 'pointer' } }, [
         _badge(row),
-        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 20px 1fr', alignItems: 'center', gap: '10px', minWidth: '0' } }, [
+        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 18px 1fr', alignItems: 'center', gap: '8px', minWidth: '0' } }, [
           _endpoint(row.origin, row.originDate, null, false),
           el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
           _endpoint(row.dest, row.destDate, active ? 'ETA' : (done ? 'Arrived' : null), false)
         ]),
         _laneIssues(row),
-        _etaChip(row),
         _statusDrop(row.exec, (e) => _orLaneStatusMenu(e.currentTarget, routeId, row.segKey, row.exec)),
         el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _toggle(); }, title: isSel ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSel ? '#6688cc' : '#666666', transform: isSel ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
