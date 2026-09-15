@@ -539,6 +539,7 @@ export function initApp() {
     const s = state;
     if (s.openRoute) {
       root.appendChild(renderDetail(s.openRoute));
+      if (s.openLoad) root.appendChild(renderDrawer(s.openLoad));
     } else {
       root.appendChild(renderList());
       if (s.openLoad) root.appendChild(renderDrawer(s.openLoad));
@@ -2775,10 +2776,10 @@ export function initApp() {
     const c = STATUS[l.status] || STATUS['Unbooked'];
     const s = state;
 
-    const overlay = el('div', { onclick: () => setState({ openLoad: null }), style: { position: 'absolute', inset: '0', background: 'rgba(10,10,10,.55)', zIndex: '5' } });
+    const overlay = el('div', { onclick: () => setState({ openLoad: null }), style: { position: 'absolute', inset: '0', background: 'rgba(10,10,10,.55)', zIndex: '2000' } });
 
     const tabsRow = el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '4px', padding: '14px 18px 0', overflowX: 'auto' } });
-    ['Load', 'Stops', 'Payment', 'Customer', 'Docs', 'Dispatch'].forEach(t => {
+    ['Load', 'Stops', 'Payment', 'Customer', 'Docs', 'Dispatcher notes'].forEach(t => {
       const active = t === (s.drawerTab || 'Load');
       tabsRow.appendChild(el('div', {
         onclick: () => setState({ drawerTab: t }),
@@ -2786,32 +2787,125 @@ export function initApp() {
       }, [t]));
     });
 
-    function field(label, valueNode) {
-      return el('div', { style: { display: 'grid', gridTemplateColumns: '130px 1fr', padding: '11px 14px', background: '#242424' } }, [
-        el('div', { style: { color: '#808080', fontSize: '11.5px', fontWeight: '700' } }, [label]),
+    function field(label, valueNode, tracked) {
+      return el('div', { style: { display: 'grid', gridTemplateColumns: '130px 1fr', padding: '11px 14px', background: '#242424', alignItems: 'center' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', color: '#808080', fontSize: '11.5px', fontWeight: '700' } }, [
+          el('span', {}, [label]),
+          tracked ? el('span', { title: 'Tracked field — history available', style: { display: 'grid', placeItems: 'center', width: '13px', height: '13px', borderRadius: '50%', border: '1px solid rgba(46,153,117,.5)', color: '#47b26b', fontSize: '8px', fontWeight: '900', flexShrink: '0' } }, ['↺']) : null
+        ]),
         el('div', {}, [valueNode])
       ]);
     }
+    function grp(rows) { return el('div', { style: { display: 'flex', flexDirection: 'column', gap: '1px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.07)', borderRadius: '10px', overflow: 'hidden' } }, rows.filter(Boolean)); }
+    function subhead(t) { return el('div', { style: { fontSize: '11px', fontWeight: '800', letterSpacing: '.04em', textTransform: 'uppercase', color: '#6688cc', padding: '14px 2px 8px' } }, [t]); }
+    function txt(v, mono, col) { return el('div', { style: { fontSize: '12px', fontWeight: '700', color: col || '#f5f5f5', fontFamily: mono ? "'JetBrains Mono', monospace" : 'inherit' } }, [v]); }
+    const DASH = () => el('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5c5c5c' } }, ['—']);
 
-    const fields = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '1px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.07)', borderRadius: '10px', overflow: 'hidden' } }, [
-      field('Status', pill(l.status, c[0], c[1])),
-      field('Route', el('div', { onclick: () => setState({ openLoad: null, view: 'routes', openRoute: r.id, detailTab: 'plan', controlMode: 'route', controlLane: null }), style: { fontSize: '12px', fontWeight: '700', color: '#6688cc', cursor: 'pointer' } }, [r.name + ' →'])),
-      field('Trailer', el('div', { style: { fontSize: '12px', fontWeight: '700' } }, [r.trailer + ' · ' + l.equipment])),
-      field('Driver / unit', el('div', { style: { fontSize: '12px', fontWeight: '700' } }, [r.driver + ' · ' + r.unit])),
-      field('Truck', el('div', { style: { fontSize: '12px', fontWeight: '700', fontFamily: "'JetBrains Mono', monospace" } }, [l.truck])),
-      field('Customer', el('div', { style: { fontSize: '12px', fontWeight: '700' } }, [l.customer])),
-      field('Stops', el('div', { style: { fontSize: '12px', fontWeight: '700' } }, [String(l.stops)])),
-      field('Pickup window', el('div', { style: { fontSize: '12px', fontWeight: '700', fontFamily: "'JetBrains Mono', monospace" } }, [l.pickupTime])),
-      field('Delivery window', el('div', { style: { fontSize: '12px', fontWeight: '700', fontFamily: "'JetBrains Mono', monospace" } }, [l.deliveryTime])),
-      field('ETA', el('div', { style: { fontSize: '12px', fontWeight: '700', fontFamily: "'JetBrains Mono', monospace" } }, [l.eta]))
-    ]);
+    const reefer = (l.equipmentType || '').toLowerCase().indexOf('reef') >= 0;
+    const rpm = l.miles ? (l.income / l.miles) : 0;
+    const _onTimeClr = l.onTime === 'On time' ? STATUS['Delivered'] : (String(l.onTime).indexOf('Late') === 0 ? STATUS['Offer'] : STATUS['Unbooked']);
+    const tab = s.drawerTab || 'Load';
 
-    const panel = el('div', { class: 'ef-scroll', style: { position: 'absolute', top: '0', right: '0', bottom: '0', width: '400px', zIndex: '6', background: '#1f1f1f', borderLeft: '1px solid rgba(255,255,255,.1)', overflowY: 'auto' } }, [
+    function stopRow(idx, kind, city, when, badge, badgeClr) {
+      const isPick = kind === 'Pick up';
+      return el('div', { style: { display: 'grid', gridTemplateColumns: '30px 1fr auto', alignItems: 'center', gap: '11px', padding: '11px 12px', background: '#242424' } }, [
+        el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', flexShrink: '0', background: isPick ? 'rgba(46,153,117,.14)' : 'rgba(102,136,204,.14)', color: isPick ? '#47b26b' : '#6688cc' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>' }),
+        el('div', { style: { minWidth: '0' } }, [
+          el('div', { style: { fontSize: '12.5px', fontWeight: '800' } }, [kind + ' 0' + idx]),
+          el('div', { style: { marginTop: '2px', fontSize: '11px', fontWeight: '600', color: '#808080', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [city + (when ? ' · ' + when : '')])
+        ]),
+        badge ? pill(badge, badgeClr[0], badgeClr[1]) : null
+      ]);
+    }
+    function docRow(name) {
+      return el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '11px', padding: '13px 14px', borderRadius: '10px', background: '#242424', border: '1px solid rgba(255,255,255,.06)', cursor: 'pointer' } }, [
+        el('div', { style: { color: '#808080', display: 'flex' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>' }),
+        el('div', { style: { flex: '1', fontSize: '12.5px', fontWeight: '700' } }, [name]),
+        el('div', { style: { color: '#666666', display: 'flex' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' })
+      ]);
+    }
+
+    let body;
+    if (tab === 'Load') {
+      body = el('div', {}, [
+        grp([
+          field('Status', pill(l.status, c[0], c[1]), true),
+          field('Trailer', txt(l.equipmentType + ' · ' + l.equipment)),
+          field('Reference ID', DASH()),
+          field('Load ID', txt(l.id, true, '#b3b3b3')),
+          field('Commodity', DASH()),
+          field('Pieces / Pallets', DASH()),
+          field('Temperature', reefer ? txt('34 °F (Reefer)') : DASH()),
+          field('Stackable', DASH()),
+          field('Special instructions', DASH())
+        ]),
+        subhead('Assignment'),
+        grp([
+          field('Route', el('div', { onclick: () => setState({ openLoad: null, view: 'routes', openRoute: r.id, detailTab: 'plan', controlMode: 'route', controlLane: null }), style: { fontSize: '12px', fontWeight: '700', color: '#6688cc', cursor: 'pointer' } }, [r.name + ' →'])),
+          field('Driver / unit', txt(r.driver + ' · ' + r.unit)),
+          field('Truck', txt(l.truck, true, '#b3b3b3'))
+        ])
+      ]);
+    } else if (tab === 'Stops') {
+      body = el('div', {}, [
+        subhead('Stops (' + l.stops + ')'),
+        grp([
+          stopRow(1, 'Pick up', l.origin, l.pickupTime, l.onTime !== '--' ? l.onTime : null, _onTimeClr),
+          stopRow(1, 'Drop off', l.dest, l.deliveryTime, l.eta !== '--' ? ('ETA ' + l.eta) : null, STATUS['In Transit'])
+        ])
+      ]);
+    } else if (tab === 'Payment') {
+      body = el('div', {}, [
+        subhead('Payment'),
+        grp([
+          field('Linehaul', txt(money(l.income) + '  ·  $' + rpm.toFixed(2) + '/mi')),
+          field('Accessorials', DASH())
+        ]),
+        el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', padding: '14px', borderRadius: '10px', background: 'rgba(46,153,117,.08)', border: '1px solid rgba(46,153,117,.22)' } }, [
+          el('div', {}, [
+            el('div', { style: { fontSize: '12px', fontWeight: '700', color: '#808080' } }, ['Total pay']),
+            el('div', { style: { fontSize: '10.5px', fontWeight: '600', color: '#666666', marginTop: '2px' } }, ['Linehaul + Accessorials'])
+          ]),
+          el('div', { style: { fontSize: '20px', fontWeight: '900', color: '#47b26b' } }, [money(l.income)])
+        ])
+      ]);
+    } else if (tab === 'Customer') {
+      body = el('div', {}, [
+        subhead('Customer'),
+        grp([
+          field('Name', txt(l.customer === '--' ? '—' : l.customer, false, l.customer === '--' ? '#5c5c5c' : '#f5f5f5')),
+          field('Mail', DASH()),
+          field('Phone', DASH()),
+          field('MC number', DASH()),
+          field('DOT', DASH()),
+          field('Days to pay', DASH())
+        ])
+      ]);
+    } else if (tab === 'Docs') {
+      body = el('div', {}, [
+        subhead('Documents'),
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+          ['Rate confirmation', 'Bill of Lading', 'Photo', 'Invoice', 'Proof of payment'].map(docRow)
+        ),
+        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', marginTop: '10px', padding: '11px', borderRadius: '10px', border: '1px dashed rgba(255,255,255,.18)', color: '#808080', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add document</span>' })
+      ]);
+    } else { // Dispatch
+      body = el('div', {}, [
+        subhead('Dispatcher notes'),
+        el('div', { style: { padding: '20px 14px', borderRadius: '10px', background: '#242424', border: '1px solid rgba(255,255,255,.06)', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#808080' } }, ['No notes for this load yet.'])
+      ]);
+    }
+
+    const panel = el('div', { class: 'ef-scroll', style: { position: 'absolute', top: '0', right: '0', bottom: '0', width: '400px', zIndex: '2001', background: '#1f1f1f', borderLeft: '1px solid rgba(255,255,255,.1)', overflowY: 'auto' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
         iconEl('ship', { color: '#2e9975' }),
         el('div', { style: { flex: '1', fontSize: '15px', fontWeight: '800' } }, ['Load details']),
         el('div', { style: { fontSize: '12px', fontWeight: '700', color: '#666666', fontFamily: "'JetBrains Mono', monospace" } }, [l.id]),
         el('div', { class: 'hoverable', onclick: () => setState({ openLoad: null }), style: { display: 'grid', placeItems: 'center', width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer', color: '#b3b3b3' } }, ['✕'])
+      ]),
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', margin: '12px 18px 0', padding: '9px 12px', borderRadius: '9px', background: 'rgba(46,153,117,.07)', border: '1px solid rgba(46,153,117,.18)', fontSize: '10.5px', fontWeight: '600', color: '#808080' } }, [
+        el('span', { style: { display: 'grid', placeItems: 'center', width: '15px', height: '15px', borderRadius: '50%', border: '1px solid rgba(46,153,117,.5)', color: '#47b26b', fontSize: '9px', fontWeight: '900', flexShrink: '0' } }, ['↺']),
+        el('span', {}, ['Fields with this icon are tracked — click to view & restore history'])
       ]),
       el('div', { style: { padding: '14px 18px 0' } }, [
         el('div', { style: { position: 'relative', height: '150px', borderRadius: '10px', overflow: 'hidden', background: '#292929', border: '1px solid rgba(255,255,255,.08)' } }, [
@@ -2841,7 +2935,7 @@ export function initApp() {
         ])
       ]),
       tabsRow,
-      el('div', { style: { padding: '14px 18px 24px' } }, [fields])
+      el('div', { style: { padding: '4px 18px 28px' } }, [body])
     ]);
 
     const wrap = el('div', {}, [overlay, panel]);
@@ -10538,15 +10632,16 @@ export function initApp() {
       const _ldM = (v, label) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [label])]);
       const equip = ((typeof d !== 'undefined' && d && d.equipment) ? d.equipment : 'Van');
       const _dhIc = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
+      const _ldObj = loadsOf(routeId)[seg.loadIdx];
       const loadCard = isLoad
-        ? el('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)' } }, [
+        ? el('div', { class: 'hoverable', title: 'Open full load details', onclick: _ldObj ? (() => setState({ openLoad: _ldObj.id, drawerTab: 'Load' })) : undefined, style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)', cursor: _ldObj ? 'pointer' : 'default' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
             _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
             _ldM(money(income), 'Current income'),
             _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Estimated miles'),
             el('div', { style: { flex: '1' } }),
             el('div', { style: { minWidth: '36px', height: '36px', padding: '0 8px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)]),
-            el('div', { class: 'hoverable', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>' })
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', color: '#6688cc', font: '800 11px ' + F, flexShrink: '0' }, html: '<span>Details</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
           ])
         : el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px dashed rgba(255,255,255,.14)' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _dhIc }),
