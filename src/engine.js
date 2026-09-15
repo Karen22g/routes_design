@@ -10634,14 +10634,14 @@ export function initApp() {
       const _dhIc = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
       const _ldObj = loadsOf(routeId)[seg.loadIdx];
       const loadCard = isLoad
-        ? el('div', { class: 'hoverable', title: 'Open full load details', onclick: _ldObj ? (() => setState({ openLoad: _ldObj.id, drawerTab: 'Load' })) : undefined, style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)', cursor: _ldObj ? 'pointer' : 'default' } }, [
+        ? el('div', { class: 'hoverable', title: 'Open full load details', onclick: _ldObj ? (() => setState({ openLoad: _ldObj.id, drawerTab: 'Load' })) : undefined, style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)', cursor: _ldObj ? 'pointer' : 'default' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
             _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
             _ldM(money(income), 'Current income'),
             _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Estimated miles'),
-            el('div', { style: { flex: '1' } }),
-            el('div', { style: { minWidth: '36px', height: '36px', padding: '0 8px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)]),
-            el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', color: '#6688cc', font: '800 11px ' + F, flexShrink: '0' }, html: '<span>Details</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
+            el('div', { style: { flex: '1', minWidth: '4px' } }),
+            el('div', { style: { minWidth: '34px', height: '34px', padding: '0 7px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)]),
+            el('div', { title: 'Open full load details', style: { width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(102,136,204,.12)', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
           ])
         : el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px dashed rgba(255,255,255,.14)' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _dhIc }),
