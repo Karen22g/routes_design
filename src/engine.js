@@ -540,6 +540,7 @@ export function initApp() {
     if (s.openRoute) {
       root.appendChild(renderDetail(s.openRoute));
       if (s.openLoad) root.appendChild(renderDrawer(s.openLoad));
+      if (s.orChat) root.appendChild(renderChatDrawer(s.openRoute));
     } else {
       root.appendChild(renderList());
       if (s.openLoad) root.appendChild(renderDrawer(s.openLoad));
@@ -2882,11 +2883,36 @@ export function initApp() {
         ])
       ]);
     } else if (tab === 'Docs') {
+      const _docReq = _orDocReq(_orLoadStage(l.status));
+      const _docSt = _orDocsGet(l.id, l.status);
+      const _docMissN = _orDocsMissing(l.id, l.status).length;
+      const _drv = (r.driver && r.driver !== 'Unassigned') ? r.driver.split(' ')[0] : 'driver';
+      function docReqRow(def) {
+        const stt = _docSt[def.type] || 'missing';
+        const up = stt === 'uploaded', rej = stt === 'rejected';
+        const clr = up ? STATUS['Delivered'] : (rej ? STATUS['Offer'] : STATUS['Canceled']);
+        const iconClr = up ? '#47b26b' : (rej ? '#b28835' : '#cc666f');
+        return el('div', { style: { padding: '12px 14px', borderRadius: '10px', background: '#242424', border: '1px solid rgba(255,255,255,.06)' } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px' } }, [
+            el('div', { style: { color: iconClr, display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>' }),
+            el('div', { style: { flex: '1', fontSize: '12.5px', fontWeight: '700' } }, [def.label]),
+            pill(up ? 'Uploaded' : (rej ? 'Rejected' : 'Missing'), clr[0], clr[1])
+          ]),
+          !up ? el('div', { style: { display: 'flex', gap: '7px', marginTop: '10px' } }, [
+            el('div', { class: 'hoverable', onclick: () => { _orDocsGet(l.id, l.status)[def.type] = 'uploaded'; setState({}); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '34px', borderRadius: '8px', background: 'rgba(46,153,117,.14)', color: '#47b26b', border: '1px solid rgba(46,153,117,.3)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Attach</span>' }),
+            el('div', { class: 'hoverable', onclick: () => { _orChatSend(l.route, 'dispatcher', 'Hi ' + _drv + ' — please upload the ' + def.label + ' for load ' + l.id + ' when you get a moment.'); setState({ openLoad: null, orChat: true }); }, style: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '34px', borderRadius: '8px', background: 'rgba(102,136,204,.1)', color: '#6688cc', border: '1px solid rgba(102,136,204,.28)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Request from driver</span>' })
+          ]) : null
+        ]);
+      }
       body = el('div', {}, [
-        subhead('Documents'),
-        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-          ['Rate confirmation', 'Bill of Lading', 'Photo', 'Invoice', 'Proof of payment'].map(docRow)
-        ),
+        _docMissN ? el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(204,102,111,.1)', border: '1px solid rgba(204,102,111,.3)', fontSize: '11.5px', fontWeight: '800', color: '#cc666f' } }, [
+          el('span', { style: { display: 'flex' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
+          el('span', {}, [_docMissN + ' required document' + (_docMissN > 1 ? 's are' : ' is') + ' missing'])
+        ]) : null,
+        subhead('Required'),
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, _docReq.map(docReqRow)),
+        subhead('Other documents'),
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, ['Photo', 'Proof of payment'].map(docRow)),
         el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', marginTop: '10px', padding: '11px', borderRadius: '10px', border: '1px dashed rgba(255,255,255,.18)', color: '#808080', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add document</span>' })
       ]);
     } else { // Dispatch
@@ -2940,6 +2966,70 @@ export function initApp() {
 
     const wrap = el('div', {}, [overlay, panel]);
     return wrap;
+  }
+
+  // ---- Driver ⇄ Dispatcher chat drawer (right side, over the route detail) ----
+  function renderChatDrawer(routeId) {
+    const F = '"General Sans", Nunito, system-ui';
+    const r = routeOf(routeId);
+    const chat = _orChatGet(routeId);
+    const drv = (r.driver && r.driver !== 'Unassigned') ? r.driver : 'Driver';
+    const close = () => setState({ orChat: false });
+
+    function sendCurrent() {
+      const inp = document.getElementById('or-chat-input');
+      const v = inp && inp.value.trim();
+      if (!v) return;
+      _orChatSend(routeId, 'dispatcher', v);
+      setState({ orChat: true });
+    }
+
+    const overlay = el('div', { onclick: close, style: { position: 'absolute', inset: '0', background: 'rgba(10,10,10,.55)', zIndex: '2000' } });
+
+    const bubbles = chat.msgs.map(m => {
+      if (m.from === 'system') {
+        return el('div', { style: { display: 'flex', justifyContent: 'center', margin: '4px 0' } }, [
+          el('div', { style: { maxWidth: '85%', textAlign: 'center', font: '600 10.5px ' + F, color: '#808080', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '9px', padding: '7px 11px' } }, [m.text])
+        ]);
+      }
+      const mine = m.from === 'dispatcher';
+      const bubble = el('div', { style: { maxWidth: '78%', display: 'flex', flexDirection: 'column', gap: '3px', alignItems: mine ? 'flex-end' : 'flex-start' } }, [
+        el('div', { style: { padding: '9px 12px', borderRadius: mine ? '13px 13px 4px 13px' : '13px 13px 13px 4px', background: mine ? '#2e9975' : '#242424', color: mine ? '#0d1a13' : '#e6e6e6', font: '600 12.5px ' + F, lineHeight: '1.45', border: mine ? 'none' : '1px solid rgba(255,255,255,.07)', whiteSpace: 'pre-wrap' } }, [m.text]),
+        el('div', { style: { font: '600 9.5px ' + F, color: '#666666', padding: '0 3px' } }, [(mine ? 'You' : drv.split(' ')[0]) + ' · ' + m.time + (mine ? ' · Sent' : '')])
+      ]);
+      return el('div', { style: { display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' } }, [bubble]);
+    });
+
+    const msgArea = el('div', { id: 'or-chat-scroll', class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: '10px' } }, bubbles);
+
+    const _qa = (label, text) => el('div', { class: 'hoverable', onclick: () => { _orChatSend(routeId, 'dispatcher', text); setState({ orChat: true }); }, style: { flexShrink: '0', font: '800 11px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.28)', borderRadius: '999px', padding: '7px 12px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [label]);
+    const quickRow = el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '7px', padding: '8px 16px', overflowX: 'auto', borderTop: '1px solid rgba(255,255,255,.06)' } }, [
+      _qa('📄 Request POD', 'Hi ' + drv.split(' ')[0] + ' — please upload the signed POD for this delivery when you get a moment.'),
+      _qa('🛠 Remind DVIR', 'Reminder: complete your pre-trip DVIR before departing so we stay compliant.'),
+      _qa('📍 Share ETA', 'Customer is asking for an updated ETA — can you confirm your arrival time?')
+    ]);
+
+    const inputRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px 16px' } }, [
+      el('input', { id: 'or-chat-input', placeholder: 'Message ' + drv.split(' ')[0] + '…', autocomplete: 'off', onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); sendCurrent(); } }, style: { flex: '1', minWidth: '0', height: '40px', padding: '0 14px', borderRadius: '11px', background: '#242424', border: '1px solid rgba(255,255,255,.1)', color: '#e6e6e6', font: '600 12.5px ' + F, outline: 'none' } }),
+      el('div', { class: 'hoverable', onclick: sendCurrent, style: { width: '40px', height: '40px', borderRadius: '11px', background: '#2e9975', color: '#0d1a13', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>' })
+    ]);
+
+    const panel = el('div', { style: { position: 'absolute', top: '0', right: '0', bottom: '0', width: '400px', zIndex: '2001', background: '#1f1f1f', borderLeft: '1px solid rgba(255,255,255,.1)', display: 'flex', flexDirection: 'column' } }, [
+      el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,.07)' } }, [
+        avatar(drv, 34),
+        el('div', { style: { flex: '1', minWidth: '0' } }, [
+          el('div', { style: { font: '800 14px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [drv]),
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', font: '600 10.5px ' + F, color: '#47b26b', marginTop: '1px' } }, [el('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: '#47b26b', display: 'inline-block' } }), el('span', {}, ['Driver · ' + r.name])])
+        ]),
+        el('div', { class: 'hoverable', onclick: close, style: { display: 'grid', placeItems: 'center', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', color: '#b3b3b3' } }, ['✕'])
+      ]),
+      msgArea,
+      quickRow,
+      inputRow
+    ]);
+
+    setTimeout(function () { const m = document.getElementById('or-chat-scroll'); if (m) m.scrollTop = m.scrollHeight; const i = document.getElementById('or-chat-input'); if (i) i.focus(); }, 0);
+    return el('div', {}, [overlay, panel]);
   }
 
   // ---- Route plan detail view ----
@@ -8755,6 +8845,69 @@ export function initApp() {
   const _orCandCache = {};  // key routeId|laneIdx|type -> [candidate]
   const _orAlerts = {};     // routeId -> [alert]  (feasibility alerts during execution)
   const _orSegReg = {};     // routeId -> segKey -> { miles, origin, dest, truckMi, isLoad, loadIdx, income }  (loads AND deadheads)
+  // ── Driver ⇄ Dispatcher chat (per route). The single channel used to "notify the
+  //    driver" from the missing-docs and DVIR alerts. Seeded lazily on first read. ──
+  const _orChat = {};       // routeId -> { msgs:[{from:'driver'|'dispatcher'|'system', text, time, kind}], unread:Int }
+  function _orChatGet(routeId) {
+    if (!_orChat[routeId]) {
+      _orChat[routeId] = {
+        unread: 2,
+        msgs: [
+          { from: 'driver', text: 'Departed the San Antonio pickup, rolling now.', time: '07:02' },
+          { from: 'dispatcher', text: 'Copy. Watch the ETA into Little Rock — the appointment is tight.', time: '07:05' },
+          { from: 'driver', text: 'Took the alt route around traffic, added a few miles.', time: '09:41' },
+          { from: 'driver', text: 'Where do you want me to fuel?', time: '09:42' }
+        ]
+      };
+    }
+    return _orChat[routeId];
+  }
+  function _orChatSend(routeId, from, text, kind) {
+    const c = _orChatGet(routeId);
+    c.msgs.push({ from: from, text: text, time: _hhmm(), kind: kind || null });
+    if (from === 'driver') c.unread += 1;
+  }
+
+  // ── Load documents (per load). Which docs are REQUIRED depends on the milestone
+  //    reached (booked → in-transit → delivered); a required doc that isn't uploaded
+  //    is "missing" and raises the alert on the load info + a chat request action. ──
+  const _orDocs = {};       // loadId -> { rate|bol|pod|invoice : 'uploaded'|'missing'|'rejected' }
+  const _OR_DOC_DEFS = [
+    { type: 'rate',    label: 'Rate confirmation', when: 'always' },
+    { type: 'bol',     label: 'Bill of Lading',    when: 'started' },   // once the pickup is done
+    { type: 'pod',     label: 'Proof of delivery', when: 'delivered' }, // once delivered
+    { type: 'invoice', label: 'Invoice',           when: 'delivered' }
+  ];
+  function _orLoadStage(status) {
+    if (status === 'Delivered' || status === 'Invoiced' || status === 'Paid') return 'delivered';
+    if (status === 'In Transit') return 'started';
+    return 'booked';
+  }
+  function _orDocReq(stage) {
+    const started = stage === 'started' || stage === 'delivered';
+    const delivered = stage === 'delivered';
+    return _OR_DOC_DEFS.filter(d => d.when === 'always' || (d.when === 'started' && started) || (d.when === 'delivered' && delivered));
+  }
+  function _orDocsGet(loadId, status) {
+    if (!_orDocs[loadId]) {
+      const delivered = _orLoadStage(status) === 'delivered';
+      _orDocs[loadId] = { rate: 'uploaded', bol: delivered ? 'uploaded' : 'missing', pod: 'missing', invoice: 'missing' };
+    }
+    return _orDocs[loadId];
+  }
+  function _orDocsMissing(loadId, status) {
+    const st = _orDocsGet(loadId, status);
+    return _orDocReq(_orLoadStage(status)).filter(d => (st[d.type] || 'missing') !== 'uploaded');
+  }
+
+  // ── DVIR (driver vehicle inspection). The inspection itself lives in the driver
+  //    app; here we only surface the reminder that it's pending/overdue and let the
+  //    dispatcher nudge the driver (via chat). ──
+  const _orDvir = {};       // routeId -> { preTrip:'pending'|'overdue'|'done', dismissed:bool, reminded:bool }
+  function _orDvirGet(routeId) {
+    if (!_orDvir[routeId]) _orDvir[routeId] = { preTrip: 'overdue', dismissed: false, reminded: false };
+    return _orDvir[routeId];
+  }
   let _orLoading = false;   // loading overlay flag (fuel optimizer, plan updates, sync)
   let _orLoadingLabel = null; // { title, sub, color } for the loading overlay
   // Run a plan mutation behind a brief loading overlay (data + polyline "recompute").
@@ -9610,9 +9763,12 @@ export function initApp() {
       el('span', { style: { font: '700 12px ' + F, color: '#b3b3b3', whiteSpace: 'nowrap' } }, [_noUnit ? '--' : r.unit])
     ]);
     const settingsBtn = el('div', { class: 'hoverable', style: { width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: IC.sliders });
+    const _chatUnread = _orChatGet(routeId).unread;
+    const _chatIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    const chatBtn = el('div', { class: 'hoverable', title: 'Chat with the driver', onclick: () => { _orChatGet(routeId).unread = 0; setState({ orChat: true }); }, style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: _chatIcon + (_chatUnread > 0 ? '<span style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#cc666f;color:#fff;font:800 9px ' + F + ';display:flex;align-items:center;justify-content:center;border:2px solid #141414">' + _chatUnread + '</span>' : '') });
     // Alerts live only at the lane level (row chips + in-lane banners) — no plan-wide bell/badge.
     const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [
-      backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, settingsBtn
+      backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, chatBtn, settingsBtn
     ]);
 
     // ─────────────────────────────── TAB BAR ──────────────────────────────
@@ -9993,6 +10149,29 @@ export function initApp() {
       return el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0' } }, out);
     }
     const segItems = [];
+    // DVIR reminder (driver/unit level) — inspection is done in the driver app; here
+    // we only alert that it's pending and let the dispatcher notify the driver.
+    const _dv = _orDvirGet(routeId);
+    if ((_dv.preTrip === 'pending' || _dv.preTrip === 'overdue') && !_dv.dismissed) {
+      const _dOver = _dv.preTrip === 'overdue';
+      const _dClr = _dOver ? '#cc666f' : '#b28835';
+      const _dBg = _dOver ? 'rgba(204,102,111,.10)' : 'rgba(178,136,53,.10)';
+      const _dBd = _dOver ? 'rgba(204,102,111,.34)' : 'rgba(178,136,53,.34)';
+      const _rName = ((r.driver && r.driver !== 'Unassigned') ? r.driver.split(' ')[0] : 'the driver');
+      segItems.push(el('div', { style: { flexShrink: '0', margin: '2px 8px 4px', padding: '12px 13px', borderRadius: '12px', background: _dBg, border: '1px solid ' + _dBd } }, [
+        el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '11px' } }, [
+          el('div', { style: { color: _dClr, display: 'flex', flexShrink: '0', marginTop: '1px' }, html: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 14 2 2 4-4"/></svg>' }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Pre-trip DVIR ' + (_dOver ? 'overdue' : 'pending')]),
+            el('div', { style: { font: '600 10.5px ' + F, color: _dClr, marginTop: '1px', lineHeight: '1.4' } }, [_rName + " hasn't logged today's inspection in the app yet." + (_dv.reminded ? ' · Reminder sent' : '')])
+          ])
+        ]),
+        el('div', { style: { display: 'flex', gap: '7px', marginTop: '10px' } }, [
+          el('div', { class: 'hoverable', onclick: () => { _orChatSend(routeId, 'dispatcher', 'Reminder: please complete your pre-trip DVIR inspection in the app before departing — we need it on file to stay compliant.'); _orDvirGet(routeId).reminded = true; setState({ orChat: true }); }, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '32px', padding: '0 12px', borderRadius: '9px', font: '800 11.5px ' + F, color: _dOver ? '#1a0e0f' : '#1a140a', background: _dClr, cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Notify driver</span>' }),
+          el('div', { class: 'hoverable', onclick: () => { _orDvirGet(routeId).dismissed = true; setState({}); }, style: { display: 'inline-flex', alignItems: 'center', height: '32px', padding: '0 12px', font: '800 11.5px ' + F, color: '#b3b3b3', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' } }, ['Dismiss'])
+        ])
+      ]));
+    }
     cd.rows.forEach(row => {
       // On Road only manages operational stops for lanes already finished or in
       // progress — upcoming/not-started lanes are hidden here (managed in Plan).
@@ -10633,13 +10812,20 @@ export function initApp() {
       const equip = ((typeof d !== 'undefined' && d && d.equipment) ? d.equipment : 'Van');
       const _dhIc = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
       const _ldObj = loadsOf(routeId)[seg.loadIdx];
+      // missing-documents warning (load-level) — a single compact icon on the load
+      // card; its tooltip names what's missing and a click opens the load side panel
+      // straight on the Docs tab (where the docs can be uploaded).
+      const _docMiss = (isLoad && _ldObj) ? _orDocsMissing(_ldObj.id, _ldObj.status) : [];
+      const _docWarnTip = _docMiss.length ? (_docMiss.length + ' missing document' + (_docMiss.length > 1 ? 's' : '') + ' — ' + _docMiss.map(d => d.label).join(', ') + ' · Click to upload') : '';
+      const docWarn = _docMiss.length ? el('div', { class: 'hoverable', title: _docWarnTip, onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); setState({ openLoad: _ldObj.id, drawerTab: 'Docs' }); }, style: { position: 'relative', width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(204,102,111,.14)', color: '#cc666f', display: 'grid', placeItems: 'center', flexShrink: '0', cursor: 'pointer' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-4"/><path d="M12 11h.01"/></svg>' + (_docMiss.length > 1 ? '<span style="position:absolute;top:-4px;right:-4px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:#cc666f;color:#fff;font:800 9px ' + F + ';display:flex;align-items:center;justify-content:center;border:2px solid #1a1a1a">' + _docMiss.length + '</span>' : '') }) : null;
       const loadCard = isLoad
-        ? el('div', { class: 'hoverable', title: 'Open full load details', onclick: _ldObj ? (() => setState({ openLoad: _ldObj.id, drawerTab: 'Load' })) : undefined, style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid rgba(255,255,255,.07)', cursor: _ldObj ? 'pointer' : 'default' } }, [
+        ? el('div', { class: 'hoverable', title: 'Open full load details', onclick: _ldObj ? (() => setState({ openLoad: _ldObj.id, drawerTab: 'Load' })) : undefined, style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid ' + (_docMiss.length ? 'rgba(204,102,111,.28)' : 'rgba(255,255,255,.07)'), cursor: _ldObj ? 'pointer' : 'default' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
             _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
             _ldM(money(income), 'Current income'),
             _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Estimated miles'),
             el('div', { style: { flex: '1', minWidth: '4px' } }),
+            docWarn,
             el('div', { style: { minWidth: '34px', height: '34px', padding: '0 7px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)]),
             el('div', { title: 'Open full load details', style: { width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(102,136,204,.12)', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
           ])
@@ -11173,7 +11359,10 @@ export function initApp() {
             return _orOffset(a, b, t, side * mag);
           };
           const _sLLs = _sorted.map(_stopLL);
-          const pathPts = [a].concat(_sLLs).concat([b]);
+          // PC vias don't reshape the plan — the planned line stays straight (blue) and the
+          // PC detour is drawn separately (purple). Route the plan through non-PC stops only.
+          const _planLLs = _sorted.filter(s => !s.pc).map(_stopLL);
+          const pathPts = [a].concat(_planLLs).concat([b]);
           const _pathAt = (pts, frac) => {
             let total = 0; const segs = [];
             for (let i = 1; i < pts.length; i++) { const dl = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(dl); total += dl; }
@@ -11186,12 +11375,14 @@ export function initApp() {
           // driver-actual corridor: the truck detours off the plan (via the apex) inside the
           // deviation window, so the traveled line + truck follow the RED actual there — not
           // the straight planned line. Keeps the map coherent with the legend.
-          const _hasDev = !!(_act && !_recon);
-          const _f0 = _hasDev ? _act.f0 : 1, _f1 = _hasDev ? _act.f1 : 1;
-          const _apex = _hasDev ? _orOffset(a, b, (_f0 + _f1) / 2, _act.side * _act.mag) : null;
-          const _pf0 = _hasDev ? _pathAt(pathPts, _f0).pt : null, _pf1 = _hasDev ? _pathAt(pathPts, _f1).pt : null;
+          const _isPC = !!(_act && _act.pc && _act.f0 != null);   // deviation justified as Personal Conveyance (purple)
+          const _hasDev = !!(_act && !_recon && !_isPC);          // unreconciled deviation (red)
+          const _devGeom = !!((_hasDev || _isPC) && _act && _act.f0 != null);   // either draws a detour corridor
+          const _f0 = _devGeom ? _act.f0 : 1, _f1 = _devGeom ? _act.f1 : 1;
+          const _apex = _devGeom ? _orOffset(a, b, (_f0 + _f1) / 2, _act.side * _act.mag) : null;
+          const _pf0 = _devGeom ? _pathAt(pathPts, _f0).pt : null, _pf1 = _devGeom ? _pathAt(pathPts, _f1).pt : null;
           const _sampleBetween = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(_pathAt(pathPts, fa + (fb - fa) * i / n).pt); return o; };
-          const _actualAt = (f) => { if (_hasDev && f > _f0 && f < _f1) { const ds = (f - _f0) / (_f1 - _f0); return _pathAt([_pf0, _apex, _pf1], ds).pt; } return _pathAt(pathPts, f).pt; };
+          const _actualAt = (f) => { if (_devGeom && f > _f0 && f < _f1) { const ds = (f - _f0) / (_f1 - _f0); return _pathAt([_pf0, _apex, _pf1], ds).pt; } return _pathAt(pathPts, f).pt; };
           // View-menu layer toggles
           const _vHub = !!state.orVHub, _vStops = state.orVStops !== false, _vPlan = state.orVPlan !== false;
           // Hub area: ~50 mi radius rings around the lane's origin & destination hubs
@@ -11202,29 +11393,45 @@ export function initApp() {
           }
           // base planned polyline — routed through the added stops (waypoints); hidden by
           // the "Planned route" toggle so only the driver's traveled/actual path shows
-          if (_vPlan) L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+          // Base planned polyline (straight). For PC the remaining plan is redrawn anchored
+          // at the driver's point (below) so it connects to the truck — skip it here then.
+          if (_vPlan && (!_isPC || done)) L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
           // traveled (green) portion — on-plan segments only; the deviation window is shown
           // by the red "Driver actual" detour (below), so green skips it for coherence.
           if (truckFrac > 0 && truckFrac < 1) {
             const _gs = { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
-            if (_hasDev && truckFrac > _f0) {
+            if (_devGeom && truckFrac > _f0) {
               if (_f0 > 0.005) L.polyline(_sampleBetween(0, _f0, 8), _gs).addTo(layers);            // before the detour
               if (truckFrac > _f1) L.polyline(_sampleBetween(_f1, truckFrac, 8), _gs).addTo(layers); // after rejoining the plan
             } else {
               L.polyline(_pathAt(pathPts, truckFrac).prefix, _gs).addTo(layers);
             }
           }
-          // Personal Conveyance segment: the plan bends onto the driver path through a PC
-          // via → draw that portion distinctly (purple dashed) as the justified PC detour.
-          let _hasPC = false;
-          _sorted.forEach((s, i) => {
-            if (!s.pc) return;
-            _hasPC = true;
-            const p0 = pathPts[i], p1 = pathPts[i + 1], p2 = pathPts[i + 2];
-            L.polyline([p0, p1, p2], { color: '#8066cc', weight: 5, opacity: .95, dashArray: '2 8', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(s.pcMiles || s.detourMi || 0) + ' mi (off-duty)', { sticky: true });
-          });
+          // Personal Conveyance segment: the justified off-duty detour, drawn purple over the
+          // deviation window only. The plan stays straight/blue; executed part stays green;
+          // remaining plan stays blue. Solid purple where already driven, dashed ahead.
+          if (_isPC) {
+            const _pcPath = [_pf0, _apex, _pf1];
+            // purple covers only the DRIVEN portion of the PC detour — from the driver's
+            // current position onward the route is the (blue) remaining plan, untouched.
+            const _pcDriven = Math.min(truckFrac < 0 ? _f1 : truckFrac, _f1);
+            if (_pcDriven > _f0) {
+              const ds = (_pcDriven - _f0) / (_f1 - _f0);
+              L.polyline(_pathAt(_pcPath, ds).prefix, { color: '#8066cc', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(_act.pcMiles || _act.detourMi || 0) + ' mi (off-duty)', { sticky: true });
+            }
+            // remaining plan (blue), anchored at the driver's current point so the truck
+            // connects to the planned polyline from there onward.
+            if (_vPlan && !done) {
+              const _from = truckFrac < 0 ? 0 : truckFrac;
+              const _rem = [_actualAt(_from)].concat(_sampleBetween(_from, 1, 20));
+              L.polyline(_rem, { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+            }
+            // mark the PC apex only once the detour is fully behind the truck; while the
+            // driver is still on the PC segment the live truck marker shows their position.
+            if (truckFrac < 0 || truckFrac >= _f1) L.marker(_apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#8066cc;border:2.5px solid #141414;color:#f5f5f5;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(_act.pcMiles || _act.detourMi || 0) + ' mi (off-duty)', { direction: 'top' });
+          }
           // unreconciled deviation → the driver's actual detour (red). The planned line is
           // already drawn straight (blue dashed) so plan-vs-actual diverge visibly; the red is
           // solid where already driven (truck past it) and dashed for the rest of the corridor.
@@ -11240,6 +11447,7 @@ export function initApp() {
           // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
           const _dragging = state.orEdit && state.orEditTool === 'drag';
           if (_vStops && !_dragging) _sorted.forEach((s, i) => {
+            if (s.pc) return;   // PC detour is drawn as its own purple corridor + marker above
             const ll = _sLLs[i];
             const svc = s.pc ? { icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>', color: '#8066cc' } : (s.via ? { icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg>', color: '#6688cc' } : (_OR_SVC[s.type] || _OR_SVC.fuel));
             const _sstat = (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane] && _orStopStatus[routeId][state.orLane][s.id]) || null;
