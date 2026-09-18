@@ -8920,6 +8920,7 @@ export function initApp() {
   // Undo (changes go live to the driver immediately → every edit is revertible)
   let _orUndo = null;       // { routeId, laneIdx, stops, fuel, label }
   let _orEditSnap = null;   // pre-edit snapshot for the manual route-edit session (Save/Cancel)
+  let _orEditDevId = null;  // deviation being resolved via manual edit (marked corrected on Save)
   let _orToast = null;      // toast label string
   let _orToastTimer = null;
   function _orSnap(routeId, laneIdx) {
@@ -8927,7 +8928,7 @@ export function initApp() {
       stops: JSON.parse(JSON.stringify(_orStopsGet(routeId, laneIdx))),
       fuel: (_orFuel[routeId] && _orFuel[routeId][laneIdx]) ? Object.assign({}, _orFuel[routeId][laneIdx]) : null,
       alerts: _orAlerts[routeId] ? JSON.parse(JSON.stringify(_orAlerts[routeId])) : [],
-      actual: (_orActual[routeId] && _orActual[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orActual[routeId][laneIdx])) : null,
+      actual: (_orDev[routeId] && _orDev[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orDev[routeId][laneIdx])) : null,
       status: (_orStopStatus[routeId] && _orStopStatus[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orStopStatus[routeId][laneIdx])) : null,
       statusManual: (_orStopStatusManual[routeId] && _orStopStatusManual[routeId][laneIdx]) ? JSON.parse(JSON.stringify(_orStopStatusManual[routeId][laneIdx])) : null
     };
@@ -8938,8 +8939,8 @@ export function initApp() {
     if (!_orFuel[routeId]) _orFuel[routeId] = {};
     if (snap.fuel) _orFuel[routeId][laneIdx] = Object.assign({}, snap.fuel); else if (_orFuel[routeId]) delete _orFuel[routeId][laneIdx];
     _orAlerts[routeId] = snap.alerts ? JSON.parse(JSON.stringify(snap.alerts)) : [];
-    if (!_orActual[routeId]) _orActual[routeId] = {};
-    if (snap.actual) _orActual[routeId][laneIdx] = JSON.parse(JSON.stringify(snap.actual));
+    if (!_orDev[routeId]) _orDev[routeId] = {};
+    if (snap.actual) _orDev[routeId][laneIdx] = JSON.parse(JSON.stringify(snap.actual));
     if (!_orStopStatus[routeId]) _orStopStatus[routeId] = {};
     _orStopStatus[routeId][laneIdx] = snap.status ? JSON.parse(JSON.stringify(snap.status)) : {};
     if (!_orStopStatusManual[routeId]) _orStopStatusManual[routeId] = {};
@@ -9039,7 +9040,7 @@ export function initApp() {
     if (!seg || !seg.isLoad || seg.truckMi < 0 || seg.truckMi > seg.miles) return null;
     const AVG = 55, miles = seg.miles, driven = Math.max(0, Math.min(miles, seg.truckMi)), remMi = Math.max(0, miles - driven);
     const stops = _orStopsGet(routeId, key);
-    const pcMi = stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0);
+    const pcMi = stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0) + _orDevPCmiles(routeId, key);
     const hasReset = stops.some(s => s.hosBreak);
     const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
     const usedH = (0.8 + (h % 4) * 0.4) + Math.max(0, driven - pcMi) / AVG;   // prior duty + this lane's drive (PC excluded)
@@ -9275,28 +9276,47 @@ export function initApp() {
     const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * k) * Math.cos(b[0] * k) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
-  // Plan-vs-actual (synthesized): the driver's real deviation off the planned polyline.
-  // Only departed lanes have "actual" telemetry. Deterministic per segment.
-  const _orActual = {};
-  function _orActualFor(routeId, key) {
+  // Plan-vs-actual (synthesized): the driver's real deviations off the planned polyline.
+  // A lane can have MULTIPLE independent deviations; each is resolved on its own —
+  // justified with a reason (like the dashboard), marked Personal Conveyance, adjusted
+  // manually, or kept. Deterministic per segment. Only departed lanes have telemetry.
+  const _orDev = {};   // routeId -> key -> [ deviation ]  (state: 'open'|'corrected'|'pc'|'kept')
+  const _OR_DEV_REASONS = [
+    { key: 'load',      label: 'Load instructions', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>' },
+    { key: 'breakdown', label: 'Truck breakdown',   icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16V5a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v11h12z"/><path d="M14 9h4l4 4v3h-8"/><circle cx="6.5" cy="18.5" r="1.8"/><circle cx="17.5" cy="18.5" r="1.8"/></svg>' },
+    { key: 'incident',  label: 'Road incident',     icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' },
+    { key: 'closed',    label: 'Road closed',       icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>' },
+    { key: 'other',     label: 'Other',             icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>' }
+  ];
+  const _orDevReason = (k) => _OR_DEV_REASONS.find(r => r.key === k) || null;
+  const _OR_DEV_EXCESS = (d) => Math.round((d.detourMi || 0) * 3.5);   // synthetic $ excess for a detour
+  function _orDeviationsFor(routeId, key) {
     const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
-    if (!seg || seg.truckMi < 0) return null;                 // not started → no actual yet
-    if (!_orActual[routeId]) _orActual[routeId] = {};
-    if (!(key in _orActual[routeId])) {
+    if (!seg || seg.truckMi < 0) return [];                    // not started → no actual yet
+    if (!_orDev[routeId]) _orDev[routeId] = {};
+    if (!(key in _orDev[routeId])) {
       const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-      // the deviation also captures that the driver fueled off-route → the dispatcher
-      // can correct the plan to the driver's path and re-optimize fuel around it.
-      // short deadhead legs get a proportionally small detour (a 60-mi DH can't be +40 mi off).
-      const detourMi = seg.isLoad ? (22 + (h % 5) * 7) : (3 + (h % 4) * 2);
-      _orActual[routeId][key] = { f0: 0.30, f1: 0.66, side: (h % 2 ? 1 : -1), mag: seg.isLoad ? 0.20 : 0.12, detourMi: detourMi,
-        fuelStop: { brand: _OR_BRANDS[h % _OR_BRANDS.length], pricePerGal: +(3.49 + (h % 7) * 0.05).toFixed(3), gallons: 90 + (h % 5) * 10, rating: +(3.8 + (h % 3) * 0.4).toFixed(1) } };
+      const mk = (i, f0, f1, side) => ({ id: key + '_dv' + i, n: i, f0: f0, f1: f1, side: side, mag: seg.isLoad ? 0.18 : 0.11, detourMi: seg.isLoad ? (13 + ((h + i * 7) % 5) * 6) : (3 + ((h + i) % 4) * 2), state: 'open', reason: null,
+        fuelStop: { brand: _OR_BRANDS[(h + i) % _OR_BRANDS.length], pricePerGal: +(3.49 + ((h + i) % 7) * 0.05).toFixed(3), gallons: 90 + ((h + i) % 5) * 10, rating: +(3.8 + ((h + i) % 3) * 0.4).toFixed(1) } });
+      // loads get two independent deviations; deadheads one — all placed so they read clearly on the map
+      _orDev[routeId][key] = seg.isLoad
+        ? [mk(1, 0.16, 0.30, (h % 2 ? 1 : -1)), mk(2, 0.46, 0.60, (h % 2 ? -1 : 1))]
+        : [mk(1, 0.34, 0.56, (h % 2 ? 1 : -1))];
     }
-    return _orActual[routeId][key];
+    return _orDev[routeId][key];
   }
-  // Reconciled = the plan now has a stop inside the deviation window (dispatcher matched what the driver did).
-  function _orReconciled(routeId, key, act) {
-    const miles = _orSegMiles(routeId, key);
-    return _orStopsGet(routeId, key).some(s => { const f = s.frac != null ? s.frac : (miles ? s.distanceMi / miles : .5); return f >= act.f0 - 0.12 && f <= act.f1 + 0.12; });
+  const _orDevOpen = (routeId, key) => _orDeviationsFor(routeId, key).filter(d => d.state === 'open');
+  const _orDevPCmiles = (routeId, key) => _orDeviationsFor(routeId, key).filter(d => d.state === 'pc').reduce((s, d) => s + (d.detourMi || 0), 0);
+  // Back-compat shim: the "primary" deviation = first still-open, else the first.
+  function _orActualFor(routeId, key) {
+    const devs = _orDeviationsFor(routeId, key);
+    if (!devs.length) return null;
+    return devs.find(d => d.state === 'open') || devs[0];
+  }
+  // Reconciled = no deviations still open (all justified / PC / kept / adjusted).
+  function _orReconciled(routeId, key) {
+    const devs = _orDeviationsFor(routeId, key);
+    return !devs.some(d => d.state === 'open');
   }
   // Live-telemetry stores: truck progress override (advanced by "Update") + manual stop-status overrides.
   const _orProgress = {};   // _orProgress[routeId][segKey] = miles driven (real, from the app)
@@ -9342,8 +9362,10 @@ export function initApp() {
     const roll = Math.floor(Math.random() * 3);
     if (roll === 1) { _orLogChange(routeId, key, { actor: 'Driver', kind: 'route', text: 'Marked pickup complete', revertible: false }); return; }
     const det = 8 + Math.floor(Math.random() * 5) * 5;
-    if (!_orActual[routeId]) _orActual[routeId] = {};
-    _orActual[routeId][key] = { f0: frac, f1: Math.min(0.96, frac + 0.12), side: (Math.random() < 0.5 ? 1 : -1), mag: 0.2, detourMi: det, dismissed: false };
+    // "Update" from the driver app can surface a NEW independent deviation on the lane.
+    const devs = _orDeviationsFor(routeId, key);
+    const n = devs.length + 1;
+    devs.push({ id: key + '_dv' + n + '_' + Math.floor(Math.random() * 9999), n: n, f0: frac, f1: Math.min(0.96, frac + 0.12), side: (Math.random() < 0.5 ? 1 : -1), mag: 0.2, detourMi: det, state: 'open', reason: null, fuelStop: { brand: _OR_BRANDS[Math.floor(Math.random() * _OR_BRANDS.length)], pricePerGal: +(3.49 + Math.random() * 0.4).toFixed(3), gallons: 90 + Math.floor(Math.random() * 50), rating: +(3.8 + Math.random()).toFixed(1) } });
     _orLogChange(routeId, key, { actor: 'Driver', kind: roll === 0 ? 'route' : 'add', text: roll === 0 ? ('Went off the planned route (~' + det + ' mi)') : ('Made an unplanned stop (~' + det + ' mi detour)'), revertible: false });
   }
   // Manual stop-status override (dispatcher sets a stop's status by hand).
@@ -9855,66 +9877,55 @@ export function initApp() {
       return { miles, done, active, started: done || active, milesDriven, pct, departedAt, eta, late, delayTxt, speed, driveLeftH, driveLeftM, lastSync, realStop: rs || null };
     }
     function _orAdherence(routeId, key) {
-      const dact = _orActualFor(routeId, key);
-      if (!dact) return { state: 'on', detourMi: 0, dact: null };
-      if (dact.pc) return { state: 'pc', detourMi: dact.detourMi, dact: dact };   // justified as Personal Conveyance
-      if (_orReconciled(routeId, key, dact)) return { state: 'on', detourMi: dact.detourMi, dact: dact };
-      if (dact.dismissed) return { state: 'accepted', detourMi: dact.detourMi, dact: dact };
-      return { state: 'off', detourMi: dact.detourMi, dact: dact };
+      const devs = _orDeviationsFor(routeId, key);
+      if (!devs.length) return { state: 'on', detourMi: 0, open: 0, total: 0, devs: [] };
+      const open = devs.filter(d => d.state === 'open');
+      const openMi = open.reduce((s, d) => s + (d.detourMi || 0), 0);
+      // adherence score: share of deviations resolved (justified/PC/kept/adjusted)
+      const adhPct = Math.round(100 - (open.length / (devs.length + 1)) * (open.length ? (25 + openMi / 4) : 0));
+      if (open.length) return { state: 'off', detourMi: openMi, open: open.length, total: devs.length, adhPct: adhPct, devs: devs };
+      if (devs.some(d => d.state === 'pc')) return { state: 'pc', detourMi: _orDevPCmiles(routeId, key), open: 0, total: devs.length, devs: devs };
+      return { state: 'on', detourMi: 0, open: 0, total: devs.length, devs: devs };
     }
-    // 1-click adherence actions
-    function _orCorrectToDriver(routeId, key) {
-      const dact = _orActualFor(routeId, key); if (!dact) return;
+    // ── Per-deviation resolution (each deviation on a lane is managed independently) ──
+    function _orFindDev(routeId, key, devId) { return _orDeviationsFor(routeId, key).find(d => d.id === devId) || _orActualFor(routeId, key); }
+    // Correct plan automatically → justify the deviation with a reason (dashboard flow).
+    // Records the driver's off-route fuel stop and turns the detour green (justified).
+    function _orDevCorrect(routeId, key, devId, reasonKey) {
+      const d = _orFindDev(routeId, key, devId); if (!d) return;
       const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
       const a = seg && _OR_COORD[seg.origin], b = seg && _OR_COORD[seg.dest];
       const miles = _orSegMiles(routeId, key);
-      const mid = (dact.f0 + dact.f1) / 2;
-      _orPushUndo(routeId, key, 'Plan corrected to driver route');
-      // 1) overlay the driver's actual path: drop a via at the deviation apex so the
-      //    planned polyline bends onto the red trace.
-      if (a && b) {
-        const apex = _orOffset(a, b, mid, dact.side * dact.mag);
-        _orStopsGet(routeId, key).push(_orMakePoint(routeId, key, apex, { id: 'via' + Math.floor(Math.random() * 999999), a: a, b: b, extra: { via: true, name: 'Route point', added: true, adjusted: true } }));
-      }
-      // 2) record the driver's off-route fuel stop (or a generic recorded stop), placed
-      //    ON the red trace.
-      const fFrac = dact.f0 + (dact.f1 - dact.f0) * 0.62;
-      const fLL = (a && b) ? _orOffset(a, b, fFrac, dact.side * dact.mag * 0.92) : null;
-      if (dact.fuelStop) {
-        _orAddCandidate(routeId, key, { id: 'drvfuel' + Math.floor(Math.random() * 99999), type: 'fuel', brand: dact.fuelStop.brand, pricePerGal: dact.fuelStop.pricePerGal, distanceMi: Math.round(miles * fFrac), frac: fFrac, rating: dact.fuelStop.rating, detourMi: dact.detourMi, address: 'Recorded from driver GPS · off-plan', lat: fLL ? fLL[0] : undefined, lng: fLL ? fLL[1] : undefined }, { adjusted: true, driverMade: true, gallons: dact.fuelStop.gallons });
-        _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Corrected plan to driver route · recorded ' + dact.fuelStop.brand + ' fuel stop', revertible: true });
-      } else {
-        _orAddCandidate(routeId, key, { id: 'drv' + Math.floor(Math.random() * 99999), type: 'rest', name: 'Recorded driver stop', distanceMi: Math.round(miles * fFrac), frac: fFrac, rating: 0, detourMi: dact.detourMi, address: 'Recorded from driver GPS', lat: fLL ? fLL[0] : undefined, lng: fLL ? fLL[1] : undefined }, { adjusted: true });
-      }
+      const rz = _orDevReason(reasonKey);
+      _orPushUndo(routeId, key, 'Detour ' + d.n + ' justified');
+      d.state = 'corrected'; d.reason = reasonKey;
+      // record the driver's off-route fuel stop (placed on the actual trace) as evidence
+      const fFrac = d.f0 + (d.f1 - d.f0) * 0.62;
+      const fLL = (a && b) ? _orOffset(a, b, fFrac, d.side * d.mag * 0.92) : null;
+      if (d.fuelStop) _orAddCandidate(routeId, key, { id: 'drvfuel' + Math.floor(Math.random() * 99999), type: 'fuel', brand: d.fuelStop.brand, pricePerGal: d.fuelStop.pricePerGal, distanceMi: Math.round(miles * fFrac), frac: fFrac, rating: d.fuelStop.rating, detourMi: d.detourMi, address: 'Recorded from driver GPS · off-plan', lat: fLL ? fLL[0] : undefined, lng: fLL ? fLL[1] : undefined }, { adjusted: true, driverMade: true, gallons: d.fuelStop.gallons });
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Detour ' + d.n + ' justified — ' + (rz ? rz.label : 'reason') + ' · +' + Math.round(d.detourMi) + ' mi (plan corrected to driver route)', revertible: true });
     }
-    function _orKeepPlan(routeId, key) { const d = _orActualFor(routeId, key); if (d) { _orPushUndo(routeId, key, 'Deviation accepted · plan kept'); d.dismissed = true; } }
-    // Personal Conveyance: the deviation happened off-duty (PC) → justified. Adjust the
-    // plan onto the driver's path as a distinct PC segment; the extra miles are PC
-    // (excluded from deviation scoring and from HOS drive time).
-    function _orMarkPC(routeId, key) {
-      const dact = _orActualFor(routeId, key); if (!dact) return;
-      const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
-      const a = seg && _OR_COORD[seg.origin], b = seg && _OR_COORD[seg.dest];
-      const mid = (dact.f0 + dact.f1) / 2;
-      _orPushUndo(routeId, key, 'Deviation justified as Personal Conveyance');
-      dact.pc = true; dact.pcMiles = dact.detourMi;
-      if (a && b) {
-        const apex = _orOffset(a, b, mid, dact.side * dact.mag);
-        _orStopsGet(routeId, key).push(_orMakePoint(routeId, key, apex, { id: 'pc' + Math.floor(Math.random() * 999999), a: a, b: b, extra: { via: true, pc: true, name: 'Personal Conveyance', pcMiles: dact.detourMi, added: true } }));
-      }
-      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Justified deviation as Personal Conveyance · +' + Math.round(dact.detourMi) + ' mi PC (off-duty, excluded from HOS)', revertible: true });
+    // Personal Conveyance: the detour was off-duty → justified; its miles are excluded
+    // from HOS. The segment renders purple.
+    function _orDevPC(routeId, key, devId) {
+      const d = _orFindDev(routeId, key, devId); if (!d) return;
+      _orPushUndo(routeId, key, 'Detour ' + d.n + ' marked Personal Conveyance');
+      d.state = 'pc'; d.reason = 'pc';
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Detour ' + d.n + ' justified as Personal Conveyance · +' + Math.round(d.detourMi) + ' mi PC (off-duty, excluded from HOS)', revertible: true });
     }
-    // Option 3: keep the plan untouched — no metric change, deviation stays flagged (red).
-    function _orKeepDeviation(routeId, key) {
-      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Deviation reviewed · plan kept (still flagged)', revertible: false });
-      _orToast = 'Plan kept · deviation still flagged'; _orUndo = null;
-      if (_orToastTimer) clearTimeout(_orToastTimer);
-      _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 4000);
+    // Keep plan — the detour stays flagged but is acknowledged (drops out of the to-do count).
+    function _orDevKeep(routeId, key, devId) {
+      const d = _orFindDev(routeId, key, devId); if (!d) return;
+      _orPushUndo(routeId, key, 'Detour ' + d.n + ' kept');
+      d.state = 'kept'; d.reason = null;
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Detour ' + d.n + ' reviewed · plan kept', revertible: true });
       setState({});
     }
-    // Option 2: manual route edit — snapshot for Save/Cancel, then enter edit mode.
-    function _orEnterEdit(routeId, key) {
+    // Option 2: manual route edit — snapshot for Save/Cancel, then enter edit mode. Marks
+    // the deviation corrected on save.
+    function _orEnterEdit(routeId, key, devId) {
       _orEditSnap = _orSnap(routeId, key);
+      _orEditDevId = devId || null;
       setState({ orLane: key, orEdit: true, orEditTool: 'drag', orEditAdd: null, orAddType: null, orReplace: null, orCandSel: null });
     }
     function _orCancelEdit(routeId, key) {
@@ -9924,36 +9935,19 @@ export function initApp() {
     }
     function _orSaveEdit(routeId, key) {
       const snap = _orEditSnap; _orEditSnap = null;
+      const devId = _orEditDevId; _orEditDevId = null;
       _orRunBusy({ title: 'Updating plan…', sub: 'Re-routing and recalculating the plan.', color: '#6688cc' }, function () {
+        if (devId) { const d = _orFindDev(routeId, key, devId); if (d && d.state === 'open') { d.state = 'corrected'; d.reason = 'other'; } }
         if (snap) { _orUndo = Object.assign({ routeId: routeId, laneIdx: key, label: 'Route adjusted manually' }, snap); _orToast = 'Route adjusted manually'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; _orUndo = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 5000); _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Adjusted plan manually', revertible: true, snap: snap }); }
       }, { orEdit: false, orEditTool: null, orEditAdd: null }, 900);
     }
-    // Deviation-resolution popover (opened from the red "Off-plan" chip).
-    function _orDeviationMenu(anchorEl, routeId, key) {
+    // Shared floating popover: builds, positions (below/above/clamped) and auto-closes.
+    function _orFloatMenu(anchorEl, headerNodes, children, menuW) {
       const ex = document.getElementById('or-dev-menu'); if (ex) ex.remove();
       const rect = anchorEl.getBoundingClientRect();
-      const opt = (dot, title, sub, onClick, primary) => el('div', { class: 'hoverable', onclick: () => { const m = document.getElementById('or-dev-menu'); if (m) m.remove(); onClick(); }, style: { display: 'grid', gridTemplateColumns: '9px 1fr', gap: '9px', alignItems: 'start', padding: '9px 10px', borderRadius: '8px', cursor: 'pointer' } }, [
-        el('span', { style: { width: '9px', height: '9px', borderRadius: '50%', background: dot, marginTop: '3px' } }),
-        el('div', {}, [
-          el('div', { style: { font: '800 12px ' + F, color: primary ? '#47b26b' : '#e6e6e6' } }, [title]),
-          el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px', lineHeight: '1.35' } }, [sub])
-        ])
-      ]);
-      const _dvf = (_orActualFor(routeId, key) || {}).fuelStop;
-      const items = [
-        opt('#47b26b', 'Correct plan automatically', _dvf ? ('Follow the driver’s route · overlays the plan and records their ' + _dvf.brand + ' fuel stop') : 'Overlay the plan onto the driver’s actual route', () => _orRunBusy({ title: 'Correcting plan…', sub: 'Matching the plan to the driver’s route and updating the map.', color: '#6688cc' }, function () { _orCorrectToDriver(routeId, key); }, {}), true),
-        opt('#6688cc', 'Adjust manually', 'Move the route or add a stop on the map — drag, address or coordinates', () => _orEnterEdit(routeId, key)),
-        opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → justify it, follow it as a PC segment, exclude the miles from HOS', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orMarkPC(routeId, key); }, {})),
-        opt('#808080', 'Keep plan', 'Keep the current plan — nothing changes, the deviation stays flagged', () => _orKeepDeviation(routeId, key))
-      ];
-      const menuW = 264;
       const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
-      const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: '-9999px', left: left + 'px', width: menuW + 'px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px', boxSizing: 'border-box' } }, [
-        el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Resolve deviation']),
-        ...items
-      ]);
+      const menu = el('div', { id: 'or-dev-menu', style: { position: 'fixed', zIndex: '9999', top: '-9999px', left: left + 'px', width: menuW + 'px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px', boxSizing: 'border-box' } }, headerNodes.concat(children));
       document.body.appendChild(menu);
-      // position using the REAL height: below if it fits, else above, else clamp + scroll
       const M = 8, gap = 6, vh = window.innerHeight;
       const mh = menu.offsetHeight;
       const below = vh - rect.bottom - gap, above = rect.top - gap;
@@ -9963,13 +9957,46 @@ export function initApp() {
       else { menu.style.maxHeight = (vh - 2 * M) + 'px'; menu.style.overflowY = 'auto'; top = Math.max(M, Math.min(rect.bottom + gap, vh - M - Math.min(mh, vh - 2 * M))); }
       menu.style.top = top + 'px';
       setTimeout(() => { const off = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
+      return menu;
+    }
+    // Reason picker (dashboard flow): pick why the driver deviated → justifies the detour.
+    function _orReasonMenu(anchorEl, routeId, key, devId) {
+      const d = _orFindDev(routeId, key, devId);
+      const excess = d ? _OR_DEV_EXCESS(d) : 0;
+      const header = [
+        el('div', { style: { padding: '7px 10px 3px' } }, [
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Justify detour' + (d ? ' ' + d.n : '')]),
+          el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '3px', lineHeight: '1.4' } }, ['Pick the reason for this deviation · $' + excess + ' excess. A category is required; you can add a note afterwards from the plan log.'])
+        ])
+      ];
+      const rows = _OR_DEV_REASONS.map(r => el('div', { class: 'hoverable', onclick: () => { const m = document.getElementById('or-dev-menu'); if (m) m.remove(); _orRunBusy({ title: 'Justifying detour…', sub: 'Recording the reason and correcting the plan to the driver’s route.', color: '#47b26b' }, function () { _orDevCorrect(routeId, key, devId, r.key); }, {}); }, style: { display: 'flex', alignItems: 'center', gap: '11px', padding: '10px 10px', borderRadius: '9px', cursor: 'pointer', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' }, html: '<span style="display:flex;color:#b3b3b3">' + r.icon + '</span><span style="font:800 12.5px ' + F + ';color:#e6e6e6">' + r.label + '</span>' }));
+      _orFloatMenu(anchorEl, header, [el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px' } }, rows)], 288);
+    }
+    // Deviation-resolution popover (opened from a deviation's "Resolve" control).
+    function _orDeviationMenu(anchorEl, routeId, key, devId) {
+      const opt = (dot, title, sub, onClick, primary) => el('div', { class: 'hoverable', onclick: () => { const m = document.getElementById('or-dev-menu'); if (m) m.remove(); onClick(); }, style: { display: 'grid', gridTemplateColumns: '9px 1fr', gap: '9px', alignItems: 'start', padding: '9px 10px', borderRadius: '8px', cursor: 'pointer' } }, [
+        el('span', { style: { width: '9px', height: '9px', borderRadius: '50%', background: dot, marginTop: '3px' } }),
+        el('div', {}, [
+          el('div', { style: { font: '800 12px ' + F, color: primary ? '#47b26b' : '#e6e6e6' } }, [title]),
+          el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px', lineHeight: '1.35' } }, [sub])
+        ])
+      ]);
+      const d = _orFindDev(routeId, key, devId);
+      const items = [
+        opt('#47b26b', 'Correct plan automatically', 'Justify the detour with a reason · corrects the plan onto the driver’s route (like the dashboard)', () => _orReasonMenu(anchorEl, routeId, key, devId), true),
+        opt('#6688cc', 'Adjust manually', 'Move the route or add a stop on the map — drag, address or coordinates', () => _orEnterEdit(routeId, key, devId)),
+        opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → exclude the miles from HOS; the segment renders purple', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orDevPC(routeId, key, devId); }, {})),
+        opt('#808080', 'Keep plan', 'Keep the current plan — the detour stays flagged but is acknowledged', () => _orDevKeep(routeId, key, devId))
+      ];
+      const header = [el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Resolve detour' + (d ? ' ' + d.n : '')])];
+      _orFloatMenu(anchorEl, header, items, 272);
     }
     const _EX_WARN = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
     const _EX_GAUGE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l3-3"/><path d="M4 20a8 8 0 1 1 16 0"/></svg>';
     function _orAdherenceChip(adh, onClick) {
       const M = {
         on:       { t: 'On-plan',                                  c: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: IC.check },
-        off:      { t: 'Off-plan · +' + Math.round(adh.detourMi) + ' mi', c: '#cc666f', bg: 'rgba(204,102,111,.14)', ic: _EX_WARN },
+        off:      { t: (adh.open > 1 ? adh.open + ' detours off-plan · +' : 'Off-plan · +') + Math.round(adh.detourMi) + ' mi', c: '#cc666f', bg: 'rgba(204,102,111,.14)', ic: _EX_WARN },
         accepted: { t: 'Deviation accepted',                       c: '#b28835', bg: 'rgba(178,136,53,.14)', ic: IC.check },
         pc:       { t: 'Personal Conveyance · +' + Math.round(adh.detourMi) + ' mi', c: '#8066cc', bg: 'rgba(128,102,204,.16)', ic: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' }
       };
@@ -10005,8 +10032,8 @@ export function initApp() {
       // Off-plan → the red chip is a clickable button that opens the resolve-deviation menu.
       const offPlan = adh.state === 'off';
       const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' } }, [
-        _orAdherenceChip(adh, offPlan ? ((e) => _orDeviationMenu(e.currentTarget, routeId, row.segKey)) : null),
-        offPlan ? el('span', { style: { font: '600 10px ' + F, color: '#808080' } }, ['Tap to resolve']) : null
+        _orAdherenceChip(adh, offPlan ? ((e) => { const o = _orDevOpen(routeId, row.segKey); _orDeviationMenu(e.currentTarget, routeId, row.segKey, o[0] && o[0].id); }) : null),
+        offPlan ? el('span', { style: { font: '600 10px ' + F, color: '#808080' } }, [adh.open > 1 ? 'Resolve below' : 'Tap to resolve']) : null
       ]);
       const topRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '11px' } }, [
         el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: x.active ? '#2e9975' : '#666666', animation: x.active ? '_efDotPulse 1.4s ease-in-out infinite' : 'none' } }),
@@ -10839,22 +10866,37 @@ export function initApp() {
             el('div', { style: { minWidth: '36px', height: '36px', padding: '0 8px', borderRadius: '9px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', display: 'grid', placeItems: 'center', font: '800 12px ' + F, flexShrink: '0' } }, [equip.slice(0, 2)])
           ]);
 
-      // plan-vs-actual deviation banner (recorded plan should match the driver)
-      const _dact = _orActualFor(routeId, key);
-      const _drec = _dact ? _orReconciled(routeId, key, _dact) : true;
-      let deviationBanner = null;
-      if (_dact && !_drec) deviationBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '11px', margin: '8px 16px 0', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.34)' } }, [
-        el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
-        el('div', { style: { flex: '1', minWidth: '0' } }, [
-          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Driver went off the planned route (~' + _dact.detourMi + ' mi)']),
-          el('div', { style: { font: '600 10.5px ' + F, color: '#cc666f', marginTop: '1px' } }, ['Add the stop the driver made so the plan matches what actually happened.'])
+      // Route deviations — each independently resolvable (justify with a reason like the
+      // dashboard, mark PC, adjust manually, or keep). A lane can have several.
+      const _devs = _orDeviationsFor(routeId, key);
+      const _DEV_ST = {
+        open:      { c: '#cc666f', bg: 'rgba(204,102,111,.14)', label: 'Off-plan · needs review', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' },
+        corrected: { c: '#47b26b', bg: 'rgba(46,153,117,.14)', label: 'Justified', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' },
+        pc:        { c: '#8066cc', bg: 'rgba(128,102,204,.16)', label: 'Personal Conveyance', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' },
+        kept:      { c: '#808080', bg: 'rgba(255,255,255,.06)', label: 'Kept · flagged', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>' }
+      };
+      const _devOpenN = _devs.filter(d => d.state === 'open').length;
+      const deviationsSection = _devs.length ? el('div', { style: { margin: '8px 16px 0', padding: '11px 12px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.08)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } }, [
+          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Route deviations (' + _devs.length + ')']),
+          _devOpenN ? el('span', { style: { font: '800 9.5px ' + F, color: '#cc666f', background: 'rgba(204,102,111,.14)', padding: '2px 8px', borderRadius: '999px' } }, [_devOpenN + ' to resolve']) : el('span', { style: { font: '800 9.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.14)', padding: '2px 8px', borderRadius: '999px' } }, ['All resolved'])
         ]),
-        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null }), style: { font: '800 11px ' + F, color: '#cc666f', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(204,102,111,.4)', whiteSpace: 'nowrap' } }, ['Add stop'])
-      ]);
-      else if (_dact && _drec) deviationBanner = el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', margin: '8px 16px 0', padding: '10px 13px', borderRadius: '12px', background: 'rgba(46,153,117,.10)', border: '1px solid rgba(46,153,117,.32)' } }, [
-        el('div', { style: { color: '#47b26b', display: 'flex', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' }),
-        el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ["Plan matches the driver's actual route"])
-      ]);
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px' } }, _devs.map(d => {
+          const st = _DEV_ST[d.state] || _DEV_ST.open;
+          const rz = d.reason && d.reason !== 'pc' ? _orDevReason(d.reason) : null;
+          const sub = d.state === 'corrected' ? (st.label + (rz ? ' · ' + rz.label : '')) : st.label;
+          return el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '10px', background: '#1f1f1f', border: '1px solid ' + (d.state === 'open' ? 'rgba(204,102,111,.28)' : 'rgba(255,255,255,.06)') } }, [
+            el('div', { style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', flexShrink: '0', background: st.bg, color: st.c }, html: st.ic }),
+            el('div', { style: { flex: '1', minWidth: '0' } }, [
+              el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ['Detour ' + d.n + ' · +' + Math.round(d.detourMi) + ' mi']),
+              el('div', { style: { font: '600 10px ' + F, color: st.c, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [sub])
+            ]),
+            d.state === 'open'
+              ? el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _orDeviationMenu(e.currentTarget, routeId, key, d.id); }, style: { display: 'flex', alignItems: 'center', gap: '5px', font: '800 11px ' + F, color: '#cc666f', cursor: 'pointer', padding: '6px 11px', borderRadius: '8px', border: '1px solid rgba(204,102,111,.4)', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<span>Resolve</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' })
+              : el('div', { class: 'hoverable', title: 'Reopen this deviation', onclick: () => { _orPushUndo(routeId, key, 'Detour ' + d.n + ' reopened'); d.state = 'open'; d.reason = null; setState({}); }, style: { font: '800 10.5px ' + F, color: '#808080', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,.1)', whiteSpace: 'nowrap', flexShrink: '0' } }, ['Undo'])
+          ]);
+        }))
+      ]) : null;
 
       // "Generate Optimal Fuel Plan" — blue when available; dark/disabled once the
       // current stops already ARE the optimal plan (or while adding a stop).
@@ -10938,7 +10980,7 @@ export function initApp() {
 
       // impact strip
       const addedDetour = stops.reduce((s, x) => s + (x.pc ? 0 : (x.detourMi || 0)), 0);   // PC miles are not a plan detour
-      const pcMiles = stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0);
+      const pcMiles = stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0) + _orDevPCmiles(routeId, key);
       const dwellMin = stops.reduce((s, x) => s + (x.via ? 0 : (_OR_DWELL[x.type] || 20)), 0);
       const etaMin = Math.round(addedDetour / 50 * 60) + dwellMin;
       const etaTxt = etaMin >= 60 ? Math.floor(etaMin / 60) + 'h ' + (etaMin % 60) + 'm' : etaMin + 'm';
@@ -11042,7 +11084,7 @@ export function initApp() {
       // stops list grows to ~5 stops, then scrolls internally
       const listWrap = isAdding ? listArea : el('div', { class: 'ef-scroll', style: { maxHeight: '380px', overflowY: 'auto' } }, [listArea]);
       return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
-        loadCard, _orExecStrip(row), hosBanner, lateBanner, missedBanner, secHead, listWrap, impactStrip, fuelBanner, logBtn
+        loadCard, _orExecStrip(row), deviationsSection, hosBanner, lateBanner, missedBanner, secHead, listWrap, impactStrip, fuelBanner, logBtn
       ]);
     }
 
@@ -11207,18 +11249,24 @@ export function initApp() {
           _vrow('Planned route', 'Show the optimal polyline — off shows only what the driver has done', showPlan, () => setState({ orVPlan: !showPlan }))
         ]));
       }
-      // plan-vs-actual legend (bottom-right) — only when this lane has actual telemetry
-      const _lact = _orActualFor(routeId, state.orLane);
-      if (_lact) {
-        const _lrec = _orReconciled(routeId, state.orLane, _lact);
-        const _lpc = !!_lact.pc;
+      // plan-vs-actual legend (bottom-right) — reflects the deviation states present
+      const _ldevs = _orDeviationsFor(routeId, state.orLane);
+      if (_ldevs.length) {
+        const _openN = _ldevs.filter(d => d.state === 'open').length;
+        const _hasC = _ldevs.some(d => d.state === 'corrected');
+        const _hasP = _ldevs.some(d => d.state === 'pc');
+        const _hasK = _ldevs.some(d => d.state === 'kept');
         const _leg = (col, dash, label) => '<div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:0;border-top:3px ' + (dash ? 'dashed' : 'solid') + ' ' + col + '"></span><span style="font:700 11px ' + F + ';color:#e6e6e6">' + label + '</span></div>';
+        const _hdrClr = _openN ? '#cc666f' : (_hasP ? '#8066cc' : '#47b26b');
+        const _hdrTxt = _openN ? (_openN + ' detour' + (_openN > 1 ? 's' : '') + ' off-plan') : 'All detours resolved ✓';
+        const rows = [el('div', { html: _leg('#6688cc', true, 'Planned') }), el('div', { html: _leg('#2e9975', false, 'On-plan / driven') })];
+        if (_openN) rows.push(el('div', { html: _leg('#cc666f', true, 'Driver off-plan') }));
+        if (_hasC) rows.push(el('div', { html: _leg('#47b26b', false, 'Justified detour') }));
+        if (_hasP) rows.push(el('div', { html: _leg('#8066cc', true, 'Personal Conveyance') }));
+        if (_hasK) rows.push(el('div', { html: _leg('#808080', true, 'Kept (flagged)') }));
         mapPanel.appendChild(el('div', { style: { position: 'absolute', right: '14px', bottom: '30px', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
-          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _lpc ? '#8066cc' : (_lrec ? '#47b26b' : '#cc666f'), marginBottom: '2px' } }, [_lpc ? 'Personal Conveyance' : (_lrec ? 'Plan matches driver ✓' : 'Driver off-plan')]),
-          el('div', { html: _leg('#6688cc', true, 'Planned') }),
-          _lpc ? el('div', { html: _leg('#8066cc', true, 'PC segment') }) : el('div', { html: _leg('#cc666f', true, 'Driver actual') }),
-          el('div', { html: _leg('#2e9975', false, 'On-plan') })
-        ]));
+          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _hdrClr, marginBottom: '2px' } }, [_hdrTxt])
+        ].concat(rows)));
       }
     }
     if (!addMode && !laneMode) {
@@ -11370,19 +11418,27 @@ export function initApp() {
             for (let i = 1; i < pts.length; i++) { if (segs[i - 1] > 0 && acc + segs[i - 1] >= target) { const r = (target - acc) / segs[i - 1]; const pt = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * r, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * r]; prefix.push(pt); return { pt: pt, prefix: prefix }; } acc += segs[i - 1]; prefix.push(pts[i]); }
             return { pt: pts[pts.length - 1], prefix: pts.slice() };
           };
-          const _act = _orActualFor(routeId, state.orLane);
-          const _recon = _act ? _orReconciled(routeId, state.orLane, _act) : true;
-          // driver-actual corridor: the truck detours off the plan (via the apex) inside the
-          // deviation window, so the traveled line + truck follow the RED actual there — not
-          // the straight planned line. Keeps the map coherent with the legend.
-          const _isPC = !!(_act && _act.pc && _act.f0 != null);   // deviation justified as Personal Conveyance (purple)
-          const _hasDev = !!(_act && !_recon && !_isPC);          // unreconciled deviation (red)
-          const _devGeom = !!((_hasDev || _isPC) && _act && _act.f0 != null);   // either draws a detour corridor
-          const _f0 = _devGeom ? _act.f0 : 1, _f1 = _devGeom ? _act.f1 : 1;
-          const _apex = _devGeom ? _orOffset(a, b, (_f0 + _f1) / 2, _act.side * _act.mag) : null;
-          const _pf0 = _devGeom ? _pathAt(pathPts, _f0).pt : null, _pf1 = _devGeom ? _pathAt(pathPts, _f1).pt : null;
-          const _sampleBetween = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(_pathAt(pathPts, fa + (fb - fa) * i / n).pt); return o; };
-          const _actualAt = (f) => { if (_devGeom && f > _f0 && f < _f1) { const ds = (f - _f0) / (_f1 - _f0); return _pathAt([_pf0, _apex, _pf1], ds).pt; } return _pathAt(pathPts, f).pt; };
+          // Multiple independent deviations. When a detour is JUSTIFIED ("Correct plan
+          // automatically"), the optimal plan bends THROUGH it — the plan now equals what
+          // the driver actually drove there. Open / kept / PC detours stay as branches off
+          // the plan (red open · grey kept · purple PC).
+          const _devsMap = _orDeviationsFor(routeId, state.orLane);
+          const _corr = _devsMap.filter(d => d.state === 'corrected' && d.f0 != null);
+          const _apexOf = (d) => _orOffset(a, b, (d.f0 + d.f1) / 2, d.side * d.mag);
+          // a point on the OPTIMAL plan at frac f — bent through any justified detour it falls in
+          const planAt = (f) => {
+            for (let i = 0; i < _corr.length; i++) { const d = _corr[i]; if (f > d.f0 && f < d.f1) { const ds = (f - d.f0) / (d.f1 - d.f0); return _pathAt([_pathAt(pathPts, d.f0).pt, _apexOf(d), _pathAt(pathPts, d.f1).pt], ds).pt; } }
+            return _pathAt(pathPts, f).pt;
+          };
+          const _planSample = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(planAt(fa + (fb - fa) * i / n)); return o; };
+          const _actualAt = (f) => planAt(f);   // truck sits on the (corrected) plan line
+          const _DEVCLR = { open: '#cc666f', corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
+          const _devApexIc = {
+            open: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+            corrected: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+            pc: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+            kept: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>'
+          };
           // View-menu layer toggles
           const _vHub = !!state.orVHub, _vStops = state.orVStops !== false, _vPlan = state.orVPlan !== false;
           // Hub area: ~50 mi radius rings around the lane's origin & destination hubs
@@ -11391,59 +11447,43 @@ export function initApp() {
               L.circle(c, { radius: 80467, color: i ? '#6688cc' : '#47b26b', weight: 1.5, opacity: .5, fillColor: i ? '#6688cc' : '#47b26b', fillOpacity: .08 }).addTo(layers).bindTooltip((i ? 'Destination' : 'Origin') + ' hub · ~50 mi', { direction: 'top' });
             });
           }
-          // base planned polyline — routed through the added stops (waypoints); hidden by
-          // the "Planned route" toggle so only the driver's traveled/actual path shows
-          // Base planned polyline (straight). For PC the remaining plan is redrawn anchored
-          // at the driver's point (below) so it connects to the truck — skip it here then.
-          if (_vPlan && (!_isPC || done)) L.polyline(pathPts, { color: done ? '#2e9975' : '#6688cc', weight: 4, opacity: .9, dashArray: done ? null : '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+          // optimal plan line (bends through justified detours). Green when completed;
+          // otherwise green up to the truck + blue dashed for the remaining plan.
+          const _blue = { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' };
+          const _green = { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
+          if (_vPlan) {
+            if (done) L.polyline(_planSample(0, 1, 64), { color: '#2e9975', weight: 4, opacity: .9, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+            else if (truckFrac > 0 && truckFrac < 1) L.polyline(_planSample(truckFrac, 1, 48), _blue).addTo(layers);
+            else if (truckFrac <= 0) L.polyline(_planSample(0, 1, 48), _blue).addTo(layers);
+          }
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
-          // traveled (green) portion — on-plan segments only; the deviation window is shown
-          // by the red "Driver actual" detour (below), so green skips it for coherence.
-          if (truckFrac > 0 && truckFrac < 1) {
-            const _gs = { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
-            if (_devGeom && truckFrac > _f0) {
-              if (_f0 > 0.005) L.polyline(_sampleBetween(0, _f0, 8), _gs).addTo(layers);            // before the detour
-              if (truckFrac > _f1) L.polyline(_sampleBetween(_f1, truckFrac, 8), _gs).addTo(layers); // after rejoining the plan
-            } else {
-              L.polyline(_pathAt(pathPts, truckFrac).prefix, _gs).addTo(layers);
+          // traveled (green) portion — follows the corrected plan up to the truck
+          if (!done && truckFrac > 0 && truckFrac < 1) L.polyline(_planSample(0, truckFrac, 48), _green).addTo(layers);
+          // each still-branching deviation (open / kept / PC) as its own corridor off the plan
+          _devsMap.forEach(function (d) {
+            if (d.f0 == null) return;
+            const apex = _apexOf(d);
+            const clr = _DEVCLR[d.state] || _DEVCLR.open;
+            const rz = d.reason && d.reason !== 'pc' ? _orDevReason(d.reason) : null;
+            const tip = d.state === 'corrected' ? ('Detour ' + d.n + ' — justified' + (rz ? ' · ' + rz.label : '') + ' · plan corrected to driver route (+' + Math.round(d.detourMi) + ' mi)')
+              : d.state === 'pc' ? ('Detour ' + d.n + ' — Personal Conveyance · +' + Math.round(d.detourMi) + ' mi (off-duty)')
+              : d.state === 'kept' ? ('Detour ' + d.n + ' — kept (flagged) · +' + Math.round(d.detourMi) + ' mi')
+              : ('Detour ' + d.n + ' — driver off-plan · +' + Math.round(d.detourMi) + ' mi');
+            // corrected detours are drawn AS the plan (above) — only their apex marker here
+            if (d.state !== 'corrected') {
+              const pf0 = _pathAt(pathPts, d.f0).pt, pf1 = _pathAt(pathPts, d.f1).pt;
+              const path = [pf0, apex, pf1];
+              const dash = d.state === 'pc' ? '2 8' : '7 7';
+              L.polyline(path, { color: clr, weight: 4, opacity: .9, dashArray: dash, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip(tip, { sticky: true });
+              if (truckFrac > d.f0) {
+                const ds = Math.min(1, (Math.min(truckFrac, d.f1) - d.f0) / (d.f1 - d.f0));
+                if (ds > 0.01) L.polyline(_pathAt(path, ds).prefix, { color: clr, weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip(tip, { sticky: true });
+              }
             }
-          }
-          // Personal Conveyance segment: the justified off-duty detour, drawn purple over the
-          // deviation window only. The plan stays straight/blue; executed part stays green;
-          // remaining plan stays blue. Solid purple where already driven, dashed ahead.
-          if (_isPC) {
-            const _pcPath = [_pf0, _apex, _pf1];
-            // purple covers only the DRIVEN portion of the PC detour — from the driver's
-            // current position onward the route is the (blue) remaining plan, untouched.
-            const _pcDriven = Math.min(truckFrac < 0 ? _f1 : truckFrac, _f1);
-            if (_pcDriven > _f0) {
-              const ds = (_pcDriven - _f0) / (_f1 - _f0);
-              L.polyline(_pathAt(_pcPath, ds).prefix, { color: '#8066cc', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(_act.pcMiles || _act.detourMi || 0) + ' mi (off-duty)', { sticky: true });
-            }
-            // remaining plan (blue), anchored at the driver's current point so the truck
-            // connects to the planned polyline from there onward.
-            if (_vPlan && !done) {
-              const _from = truckFrac < 0 ? 0 : truckFrac;
-              const _rem = [_actualAt(_from)].concat(_sampleBetween(_from, 1, 20));
-              L.polyline(_rem, { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
-            }
-            // mark the PC apex only once the detour is fully behind the truck; while the
-            // driver is still on the PC segment the live truck marker shows their position.
-            if (truckFrac < 0 || truckFrac >= _f1) L.marker(_apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#8066cc;border:2.5px solid #141414;color:#f5f5f5;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Personal Conveyance · +' + Math.round(_act.pcMiles || _act.detourMi || 0) + ' mi (off-duty)', { direction: 'top' });
-          }
-          // unreconciled deviation → the driver's actual detour (red). The planned line is
-          // already drawn straight (blue dashed) so plan-vs-actual diverge visibly; the red is
-          // solid where already driven (truck past it) and dashed for the rest of the corridor.
-          if (_hasDev) {
-            const detour = [_pf0, _apex, _pf1];
-            L.polyline(detour, { color: '#cc666f', weight: 4, opacity: .9, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual route', { sticky: true });
-            if (truckFrac > _f0) {
-              const ds = Math.min(1, (Math.min(truckFrac, _f1) - _f0) / (_f1 - _f0));
-              if (ds > 0.01) L.polyline(_pathAt(detour, ds).prefix, { color: '#cc666f', weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver — actual (driven)', { sticky: true });
-            }
-            L.marker(_apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#cc666f;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 }).addTo(layers).bindTooltip('Driver went off-plan (~' + _act.detourMi + ' mi)', { direction: 'top' });
-          }
+            const fg = d.state === 'pc' ? '#f5f5f5' : '#141414';
+            L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414;color:' + fg + ';box-shadow:0 2px 8px rgba(0,0,0,.5)">' + (_devApexIc[d.state] || _devApexIc.open) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 900 }).addTo(layers).bindTooltip(tip, { direction: 'top' });
+          });
           // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
           const _dragging = state.orEdit && state.orEditTool === 'drag';
           if (_vStops && !_dragging) _sorted.forEach((s, i) => {
