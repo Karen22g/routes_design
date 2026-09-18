@@ -9296,12 +9296,15 @@ export function initApp() {
     if (!_orDev[routeId]) _orDev[routeId] = {};
     if (!(key in _orDev[routeId])) {
       const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-      const mk = (i, f0, f1, side) => ({ id: key + '_dv' + i, n: i, f0: f0, f1: f1, side: side, mag: seg.isLoad ? 0.18 : 0.11, detourMi: seg.isLoad ? (13 + ((h + i * 7) % 5) * 6) : (3 + ((h + i) % 4) * 2), state: 'open', reason: null,
+      // deviations only exist within what the driver has ALREADY driven → confine every
+      // window to [0, truckFrac). Scale the base windows by the driven fraction.
+      const tf = seg.miles ? Math.max(0.1, Math.min(1, seg.truckMi / seg.miles)) : 1;
+      const mk = (i, a0, a1, side) => ({ id: key + '_dv' + i, n: i, f0: +(tf * a0).toFixed(4), f1: +(tf * a1).toFixed(4), side: side, mag: seg.isLoad ? 0.18 : 0.11, detourMi: seg.isLoad ? (13 + ((h + i * 7) % 5) * 6) : (3 + ((h + i) % 4) * 2), state: 'open', reason: null,
         fuelStop: { brand: _OR_BRANDS[(h + i) % _OR_BRANDS.length], pricePerGal: +(3.49 + ((h + i) % 7) * 0.05).toFixed(3), gallons: 90 + ((h + i) % 5) * 10, rating: +(3.8 + ((h + i) % 3) * 0.4).toFixed(1) } });
-      // loads get two independent deviations; deadheads one — all placed so they read clearly on the map
+      // loads get two independent deviations; deadheads one — all within the driven portion
       _orDev[routeId][key] = seg.isLoad
-        ? [mk(1, 0.16, 0.30, (h % 2 ? 1 : -1)), mk(2, 0.46, 0.60, (h % 2 ? -1 : 1))]
-        : [mk(1, 0.34, 0.56, (h % 2 ? 1 : -1))];
+        ? [mk(1, 0.18, 0.40, (h % 2 ? 1 : -1)), mk(2, 0.58, 0.82, (h % 2 ? -1 : 1))]
+        : [mk(1, 0.42, 0.80, (h % 2 ? 1 : -1))];
     }
     return _orDev[routeId][key];
   }
@@ -9365,7 +9368,8 @@ export function initApp() {
     // "Update" from the driver app can surface a NEW independent deviation on the lane.
     const devs = _orDeviationsFor(routeId, key);
     const n = devs.length + 1;
-    devs.push({ id: key + '_dv' + n + '_' + Math.floor(Math.random() * 9999), n: n, f0: frac, f1: Math.min(0.96, frac + 0.12), side: (Math.random() < 0.5 ? 1 : -1), mag: 0.2, detourMi: det, state: 'open', reason: null, fuelStop: { brand: _OR_BRANDS[Math.floor(Math.random() * _OR_BRANDS.length)], pricePerGal: +(3.49 + Math.random() * 0.4).toFixed(3), gallons: 90 + Math.floor(Math.random() * 50), rating: +(3.8 + Math.random()).toFixed(1) } });
+    // the detour is a PAST event → its window sits just behind the truck (ends at frac)
+    devs.push({ id: key + '_dv' + n + '_' + Math.floor(Math.random() * 9999), n: n, f0: Math.max(0.02, frac - 0.14), f1: frac, side: (Math.random() < 0.5 ? 1 : -1), mag: 0.2, detourMi: det, state: 'open', reason: null, fuelStop: { brand: _OR_BRANDS[Math.floor(Math.random() * _OR_BRANDS.length)], pricePerGal: +(3.49 + Math.random() * 0.4).toFixed(3), gallons: 90 + Math.floor(Math.random() * 50), rating: +(3.8 + Math.random()).toFixed(1) } });
     _orLogChange(routeId, key, { actor: 'Driver', kind: roll === 0 ? 'route' : 'add', text: roll === 0 ? ('Went off the planned route (~' + det + ' mi)') : ('Made an unplanned stop (~' + det + ' mi detour)'), revertible: false });
   }
   // Manual stop-status override (dispatcher sets a stop's status by hand).
