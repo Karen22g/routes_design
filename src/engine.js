@@ -11501,11 +11501,16 @@ export function initApp() {
             const _sstat = (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane] && _orStopStatus[routeId][state.orLane][s.id]) || null;
             const skipped = !s.via && _sstat === 'Skipped';   // route waypoints are never "skipped"
             const isPassed = !s.via && !skipped && truckMi >= 0 && s.distanceMi <= truckMi;   // nor "passed"
-            const col = skipped ? '#cc666f' : (isPassed ? '#2e9975' : svc.color);
-            const inner = skipped ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' : (isPassed ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : svc.icon);
+            // keep the stop's SERVICE color + icon (e.g. the amber fuel pump) even once it's
+            // passed, adding a small ✓ badge to mark it done — so fuel stops added by the
+            // optimizer stay clearly visible on a completed lane (not a bare green check).
+            const col = skipped ? '#cc666f' : svc.color;
+            const inner = skipped ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' : svc.icon;
             const svcTypes = _orStopSvcTypes(s);
+            const _doneCheck = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
             let html = pinFor(inner, col);
-            if (!isPassed && svcTypes.length > 1) { const es = _OR_SVC[svcTypes[1]] || _OR_SVC.fuel; html = pinCombo(inner, col, es.icon, es.color); }
+            if (svcTypes.length > 1) { const es = _OR_SVC[svcTypes[1]] || _OR_SVC.fuel; html = pinCombo(inner, col, es.icon, es.color); }
+            else if (isPassed && !s.via) { html = pinCombo(inner, col, _doneCheck, '#2e9975'); }
             // highlight the stop the driver made off-plan (amber ring) / the optimal stop
             // that coincides with it after re-optimization (green ring)
             let sz = 30;
