@@ -9913,13 +9913,13 @@ export function initApp() {
       d.state = 'pc'; d.reason = 'pc';
       _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Detour ' + d.n + ' justified as Personal Conveyance · +' + Math.round(d.detourMi) + ' mi PC (off-duty, excluded from HOS)', revertible: true });
     }
-    // Keep plan — the detour stays flagged but is acknowledged (drops out of the to-do count).
+    // Keep plan — acknowledge the detour: it's removed from the lane's deviation list
+    // (no longer an alert there) but stays flagged grey on the map, re-openable from it.
     function _orDevKeep(routeId, key, devId) {
       const d = _orFindDev(routeId, key, devId); if (!d) return;
       _orPushUndo(routeId, key, 'Detour ' + d.n + ' kept');
       d.state = 'kept'; d.reason = null;
-      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Detour ' + d.n + ' reviewed · plan kept', revertible: true });
-      setState({});
+      _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Detour ' + d.n + ' reviewed · plan kept (cleared from the lane, still on the map)', revertible: true });
     }
     // Option 2: manual route edit — snapshot for Save/Cancel, then enter edit mode. Marks
     // the deviation corrected on save.
@@ -9986,7 +9986,7 @@ export function initApp() {
         opt('#47b26b', 'Correct plan automatically', 'Justify the detour with a reason · corrects the plan onto the driver’s route (like the dashboard)', () => _orReasonMenu(anchorEl, routeId, key, devId), true),
         opt('#6688cc', 'Adjust manually', 'Move the route or add a stop on the map — drag, address or coordinates', () => _orEnterEdit(routeId, key, devId)),
         opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → exclude the miles from HOS; the segment renders purple', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orDevPC(routeId, key, devId); }, {})),
-        opt('#808080', 'Keep plan', 'Keep the current plan — the detour stays flagged but is acknowledged', () => _orDevKeep(routeId, key, devId))
+        opt('#808080', 'Keep plan', 'Keep the current plan — clears the detour from the lane (still flagged on the map)', () => _orRunBusy({ title: 'Keeping plan…', sub: 'Acknowledging the detour and updating the lane.', color: '#808080' }, function () { _orDevKeep(routeId, key, devId); }, {}))
       ];
       const header = [el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Resolve detour' + (d ? ' ' + d.n : '')])];
       _orFloatMenu(anchorEl, header, items, 272);
@@ -10029,11 +10029,12 @@ export function initApp() {
         el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%'])]),
         el('div', { style: { position: 'relative', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,.08)' } }, [el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: x.pct + '%', borderRadius: '3px', background: x.late ? '#b28835' : '#2e9975' } })])
       ]);
-      // Off-plan → the red chip is a clickable button that opens the resolve-deviation menu.
+      // Off-plan → informational chip only; each detour is resolved from the list below
+      // (or by clicking it on the map).
       const offPlan = adh.state === 'off';
       const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' } }, [
-        _orAdherenceChip(adh, offPlan ? ((e) => { const o = _orDevOpen(routeId, row.segKey); _orDeviationMenu(e.currentTarget, routeId, row.segKey, o[0] && o[0].id); }) : null),
-        offPlan ? el('span', { style: { font: '600 10px ' + F, color: '#808080' } }, [adh.open > 1 ? 'Resolve below' : 'Tap to resolve']) : null
+        _orAdherenceChip(adh, null),
+        offPlan ? el('span', { style: { font: '600 10px ' + F, color: '#808080' } }, ['Resolve below or on the map']) : null
       ]);
       const topRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '11px' } }, [
         el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: x.active ? '#2e9975' : '#666666', animation: x.active ? '_efDotPulse 1.4s ease-in-out infinite' : 'none' } }),
@@ -10875,13 +10876,15 @@ export function initApp() {
         pc:        { c: '#8066cc', bg: 'rgba(128,102,204,.16)', label: 'Personal Conveyance', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' },
         kept:      { c: '#808080', bg: 'rgba(255,255,255,.06)', label: 'Kept · flagged', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>' }
       };
+      // "Kept" detours are cleared from the lane list (still on the map) — show the rest.
+      const _devsShown = _devs.filter(d => d.state !== 'kept');
       const _devOpenN = _devs.filter(d => d.state === 'open').length;
-      const deviationsSection = _devs.length ? el('div', { style: { margin: '8px 16px 0', padding: '11px 12px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.08)' } }, [
+      const deviationsSection = _devsShown.length ? el('div', { style: { margin: '8px 16px 0', padding: '11px 12px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.08)' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } }, [
-          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Route deviations (' + _devs.length + ')']),
+          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Route deviations (' + _devsShown.length + ')']),
           _devOpenN ? el('span', { style: { font: '800 9.5px ' + F, color: '#cc666f', background: 'rgba(204,102,111,.14)', padding: '2px 8px', borderRadius: '999px' } }, [_devOpenN + ' to resolve']) : el('span', { style: { font: '800 9.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.14)', padding: '2px 8px', borderRadius: '999px' } }, ['All resolved'])
         ]),
-        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px' } }, _devs.map(d => {
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px' } }, _devsShown.map(d => {
           const st = _DEV_ST[d.state] || _DEV_ST.open;
           const rz = d.reason && d.reason !== 'pc' ? _orDevReason(d.reason) : null;
           const sub = d.state === 'corrected' ? (st.label + (rz ? ' · ' + rz.label : '')) : st.label;
@@ -11460,29 +11463,34 @@ export function initApp() {
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
           // traveled (green) portion — follows the corrected plan up to the truck
           if (!done && truckFrac > 0 && truckFrac < 1) L.polyline(_planSample(0, truckFrac, 48), _green).addTo(layers);
-          // each still-branching deviation (open / kept / PC) as its own corridor off the plan
+          // open the resolve menu at a map click point (positions the popover at the cursor)
+          const _openDevAt = (ev, d) => { if (ev && ev.originalEvent && L.DomEvent) L.DomEvent.stopPropagation(ev); const oe = ev && ev.originalEvent; const cx = oe ? oe.clientX : window.innerWidth / 2, cy = oe ? oe.clientY : window.innerHeight / 2; const fake = { getBoundingClientRect: () => ({ left: cx, right: cx, top: cy, bottom: cy, width: 0, height: 0 }) }; _orDeviationMenu(fake, routeId, state.orLane, d.id); };
+          // each deviation: clickable on the map to open its resolution flow. Open/kept/PC
+          // draw as a corridor branching off the plan; corrected ones are already in the plan.
           _devsMap.forEach(function (d) {
             if (d.f0 == null) return;
             const apex = _apexOf(d);
             const clr = _DEVCLR[d.state] || _DEVCLR.open;
             const rz = d.reason && d.reason !== 'pc' ? _orDevReason(d.reason) : null;
-            const tip = d.state === 'corrected' ? ('Detour ' + d.n + ' — justified' + (rz ? ' · ' + rz.label : '') + ' · plan corrected to driver route (+' + Math.round(d.detourMi) + ' mi)')
+            const tipBase = d.state === 'corrected' ? ('Detour ' + d.n + ' — justified' + (rz ? ' · ' + rz.label : '') + ' · plan corrected to driver route (+' + Math.round(d.detourMi) + ' mi)')
               : d.state === 'pc' ? ('Detour ' + d.n + ' — Personal Conveyance · +' + Math.round(d.detourMi) + ' mi (off-duty)')
               : d.state === 'kept' ? ('Detour ' + d.n + ' — kept (flagged) · +' + Math.round(d.detourMi) + ' mi')
               : ('Detour ' + d.n + ' — driver off-plan · +' + Math.round(d.detourMi) + ' mi');
+            const tip = tipBase + ' · click to manage';
             // corrected detours are drawn AS the plan (above) — only their apex marker here
             if (d.state !== 'corrected') {
               const pf0 = _pathAt(pathPts, d.f0).pt, pf1 = _pathAt(pathPts, d.f1).pt;
               const path = [pf0, apex, pf1];
               const dash = d.state === 'pc' ? '2 8' : '7 7';
-              L.polyline(path, { color: clr, weight: 4, opacity: .9, dashArray: dash, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip(tip, { sticky: true });
+              L.polyline(path, { color: clr, weight: 4, opacity: .9, dashArray: dash, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
               if (truckFrac > d.f0) {
                 const ds = Math.min(1, (Math.min(truckFrac, d.f1) - d.f0) / (d.f1 - d.f0));
-                if (ds > 0.01) L.polyline(_pathAt(path, ds).prefix, { color: clr, weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip(tip, { sticky: true });
+                if (ds > 0.01) L.polyline(_pathAt(path, ds).prefix, { color: clr, weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
               }
             }
             const fg = d.state === 'pc' ? '#f5f5f5' : '#141414';
-            L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414;color:' + fg + ';box-shadow:0 2px 8px rgba(0,0,0,.5)">' + (_devApexIc[d.state] || _devApexIc.open) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 900 }).addTo(layers).bindTooltip(tip, { direction: 'top' });
+            const m = L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414;color:' + fg + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer">' + (_devApexIc[d.state] || _devApexIc.open) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 900 }).addTo(layers).bindTooltip(tip, { direction: 'top' });
+            m.on('click', function (ev) { _openDevAt(ev, d); });
           });
           // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
           const _dragging = state.orEdit && state.orEditTool === 'drag';
