@@ -11269,7 +11269,7 @@ export function initApp() {
         const rows = [el('div', { html: _leg('#6688cc', true, 'Planned') }), el('div', { html: _leg('#2e9975', false, 'On-plan / driven') })];
         if (_openN) rows.push(el('div', { html: _leg('#cc666f', true, 'Driver off-plan') }));
         if (_hasC) rows.push(el('div', { html: _leg('#47b26b', false, 'Justified detour') }));
-        if (_hasP) rows.push(el('div', { html: _leg('#8066cc', true, 'Personal Conveyance') }));
+        if (_hasP) rows.push(el('div', { html: _leg('#8066cc', false, 'Personal Conveyance') }));
         if (_hasK) rows.push(el('div', { html: _leg('#808080', true, 'Kept (flagged)') }));
         mapPanel.appendChild(el('div', { style: { position: 'absolute', right: '14px', bottom: '30px', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
           el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _hdrClr, marginBottom: '2px' } }, [_hdrTxt])
@@ -11425,16 +11425,17 @@ export function initApp() {
             for (let i = 1; i < pts.length; i++) { if (segs[i - 1] > 0 && acc + segs[i - 1] >= target) { const r = (target - acc) / segs[i - 1]; const pt = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * r, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * r]; prefix.push(pt); return { pt: pt, prefix: prefix }; } acc += segs[i - 1]; prefix.push(pts[i]); }
             return { pt: pts[pts.length - 1], prefix: pts.slice() };
           };
-          // Multiple independent deviations. When a detour is JUSTIFIED ("Correct plan
-          // automatically"), the optimal plan bends THROUGH it — the plan now equals what
-          // the driver actually drove there. Open / kept / PC detours stay as branches off
-          // the plan (red open · grey kept · purple PC).
+          // Multiple independent deviations. Both JUSTIFIED ("Correct plan automatically")
+          // and Personal Conveyance detours are INCORPORATED into the optimal plan — the
+          // plan bends through them (the driver did pass there), so they are NOT drawn as
+          // off-plan branches: justified renders green, PC renders purple. Only still-open
+          // and kept detours stay as branches off the plan (red / grey).
           const _devsMap = _orDeviationsFor(routeId, state.orLane);
-          const _corr = _devsMap.filter(d => d.state === 'corrected' && d.f0 != null);
           const _apexOf = (d) => _orOffset(a, b, (d.f0 + d.f1) / 2, d.side * d.mag);
-          // a point on the OPTIMAL plan at frac f — bent through any justified detour it falls in
+          const _inPlan = _devsMap.filter(d => (d.state === 'corrected' || d.state === 'pc') && d.f0 != null);
+          // a point on the OPTIMAL plan at frac f — bent through any detour incorporated into it
           const planAt = (f) => {
-            for (let i = 0; i < _corr.length; i++) { const d = _corr[i]; if (f > d.f0 && f < d.f1) { const ds = (f - d.f0) / (d.f1 - d.f0); return _pathAt([_pathAt(pathPts, d.f0).pt, _apexOf(d), _pathAt(pathPts, d.f1).pt], ds).pt; } }
+            for (let i = 0; i < _inPlan.length; i++) { const d = _inPlan[i]; if (f > d.f0 && f < d.f1) { const ds = (f - d.f0) / (d.f1 - d.f0); return _pathAt([_pathAt(pathPts, d.f0).pt, _apexOf(d), _pathAt(pathPts, d.f1).pt], ds).pt; } }
             return _pathAt(pathPts, f).pt;
           };
           const _planSample = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(planAt(fa + (fb - fa) * i / n)); return o; };
@@ -11481,15 +11482,18 @@ export function initApp() {
               : d.state === 'kept' ? ('Detour ' + d.n + ' — kept (flagged) · +' + Math.round(d.detourMi) + ' mi')
               : ('Detour ' + d.n + ' — driver off-plan · +' + Math.round(d.detourMi) + ' mi');
             const tip = tipBase + ' · click to manage';
-            // corrected detours are drawn AS the plan (above) — only their apex marker here
-            if (d.state !== 'corrected') {
-              const pf0 = _pathAt(pathPts, d.f0).pt, pf1 = _pathAt(pathPts, d.f1).pt;
-              const path = [pf0, apex, pf1];
-              const dash = d.state === 'pc' ? '2 8' : '7 7';
-              L.polyline(path, { color: clr, weight: 4, opacity: .9, dashArray: dash, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
+            const _planSeg = [_pathAt(pathPts, d.f0).pt, apex, _pathAt(pathPts, d.f1).pt];
+            if (d.state === 'pc') {
+              // PC is part of the plan (the driver had to pass there) → draw that plan
+              // segment purple, not as an off-plan branch.
+              L.polyline(_planSeg, { color: '#8066cc', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
+            } else if (d.state !== 'corrected') {
+              // open / kept → branch corridor off the plan (red / grey)
+              const dash = '7 7';
+              L.polyline(_planSeg, { color: clr, weight: 4, opacity: .9, dashArray: dash, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
               if (truckFrac > d.f0) {
                 const ds = Math.min(1, (Math.min(truckFrac, d.f1) - d.f0) / (d.f1 - d.f0));
-                if (ds > 0.01) L.polyline(_pathAt(path, ds).prefix, { color: clr, weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
+                if (ds > 0.01) L.polyline(_pathAt(_planSeg, ds).prefix, { color: clr, weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
               }
             }
             const fg = d.state === 'pc' ? '#f5f5f5' : '#141414';
