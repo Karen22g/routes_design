@@ -7894,6 +7894,7 @@ export function initApp() {
 
   function renderDetail(routeId) {
     if (state.detailTab === 'control') return renderControl(routeId);
+    if (state.detailTab === 'report') return renderReport(routeId);
     const d = buildDetailRows(routeId);
     const r = d.r;
     const c = STATUS[r.status];
@@ -8254,14 +8255,14 @@ export function initApp() {
     function _detailTab(id, icon, label) {
       var active = state.detailTab === id;
       return el('div', {
-        onclick: id === 'report' ? undefined : (() => setState({ detailTab: id })),
+        onclick: () => setState({ detailTab: id, reportLane: null }),
         style: {
           display: 'flex', alignItems: 'center', gap: '7px', padding: '12px 12px',
           fontSize: '12.5px', fontWeight: '800',
           color: active ? '#2e9975' : '#808080',
           boxShadow: active ? 'inset 0 -2px 0 0 #2e9975' : 'none',
-          cursor: id === 'report' ? 'default' : 'pointer',
-          opacity: id === 'report' ? '.5' : '1'
+          cursor: 'pointer',
+          opacity: '1'
         },
         html: icon + '<span style="margin-left:7px;">' + label + '</span>'
       });
@@ -9688,6 +9689,517 @@ export function initApp() {
   }
   function _orHideTip() { const t = document.getElementById('or-tip'); if (t) t.remove(); }
 
+  // Build the per-route segment registry (loads + deadheads) — shared by On Road and
+  // Report so both have lane geometry/exec/deviations even without visiting On Road first.
+  function _orEnsureSegReg(routeId, cd, sim) {
+    _orSegReg[routeId] = {};
+    let dhN = 0;
+    cd.rows.forEach((row, idx) => {
+      const isLoad = row.kind === 'load';
+      const key = isLoad ? ('L' + row.loadIdx) : ('DH' + (dhN++));
+      row.segKey = key;
+      let miles, oLL, dLL;
+      if (isLoad) {
+        miles = row.load.miles;
+      } else {
+        const h = (row.origin + row.dest + key).split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+        miles = 50 + (h % 51);
+        const hub = _OR_COORD[row.dest];
+        if (hub) {
+          const nextLoad = cd.rows[idx + 1];
+          const nd = (nextLoad && nextLoad.kind === 'load') ? _OR_COORD[nextLoad.dest] : null;
+          let uy = 0.55, ux = -0.85;
+          if (nd) { const dy = hub[0] - nd[0], dx = hub[1] - nd[1]; const L = Math.hypot(dy, dx) || 1; uy = dy / L; ux = dx / L; }
+          const delta = 0.55 + (h % 4) * 0.12;
+          oLL = [hub[0] + uy * delta, hub[1] + ux * delta];
+          dLL = hub;
+        }
+      }
+      let truckMi;
+      if (isLoad) {
+        if (row.exec === 'Completed' || (sim.started && row.loadIdx < sim.activeLaneIdx)) truckMi = miles + 1;
+        else if (row.exec === 'In progress') truckMi = (_orProgress[routeId] && _orProgress[routeId][key] != null) ? _orProgress[routeId][key] : ((sim.started && row.loadIdx === sim.activeLaneIdx) ? sim.progress * miles : miles * 0.5);
+        else truckMi = -1;
+      } else {
+        truckMi = row.exec === 'Completed' ? miles + 1 : (row.exec === 'In progress' ? miles * 0.5 : -1);
+      }
+      _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0, oLL: oLL, dLL: dLL };
+    });
+    _orSeedPlan(routeId);
+  }
+
+  // ── Report live map + playback (reuses the persistent Leaflet instance) ──
+  let _reportLanePath = null;      // pathPts of the lane currently drawn (for the scrubber)
+  let _reportTruckMarker = null;   // moving truck marker (playback)
+  const _reportPlay = { timer: null, frac: null };
+  function _orPathAt(pts, frac) {
+    let total = 0; const segs = [];
+    for (let i = 1; i < pts.length; i++) { const dl = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(dl); total += dl; }
+    let target = frac * total, acc = 0; const prefix = [pts[0]];
+    for (let i = 1; i < pts.length; i++) { if (segs[i - 1] > 0 && acc + segs[i - 1] >= target) { const rr = (target - acc) / segs[i - 1]; const pt = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * rr, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * rr]; prefix.push(pt); return { pt: pt, prefix: prefix }; } acc += segs[i - 1]; prefix.push(pts[i]); }
+    return { pt: pts[pts.length - 1], prefix: pts.slice() };
+  }
+  function _orReportStopPlay() { if (_reportPlay.timer) { clearInterval(_reportPlay.timer); _reportPlay.timer = null; } }
+  function _orReportSetPlayIcon(playing) { const b = document.getElementById('ef-scrub-btn'); if (b) b.innerHTML = playing ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>'; }
+  function _orReportPlayToggle() {
+    if (_reportPlay.timer) { _orReportStopPlay(); _orReportSetPlayIcon(false); return; }
+    if (!_reportLanePath) return;
+    let f = (_reportPlay.frac != null && _reportPlay.frac < 1) ? _reportPlay.frac : 0;
+    _orReportSetPlayIcon(true);
+    _reportPlay.timer = setInterval(() => {
+      f = Math.min(1, f + 0.015); _reportPlay.frac = f;
+      if (_reportTruckMarker && _reportLanePath) { try { _reportTruckMarker.setLatLng(_orPathAt(_reportLanePath, f).pt); } catch (e) {} }
+      const fill = document.getElementById('ef-scrub-fill'), knob = document.getElementById('ef-scrub-knob'), pctEl = document.getElementById('ef-scrub-pct');
+      if (fill) fill.style.width = (f * 100) + '%';
+      if (knob) knob.style.left = 'calc(' + (f * 100) + '% - 6px)';
+      if (pctEl) pctEl.textContent = Math.round(f * 100) + '%';
+      if (f >= 1) { _orReportStopPlay(); _orReportSetPlayIcon(false); }
+    }, 55);
+  }
+  // Draw the route overview (mode 'route') or a single lane (mode 'lane') on the
+  // persistent map, mounted into #ef-report-mapslot.
+  function _orDrawReportMap(routeId, mode, key) {
+    _orReportStopPlay();
+    if (typeof L === 'undefined') return;
+    const slot = document.getElementById('ef-report-mapslot');
+    if (!slot) return;
+    if (!_orMapEl) { _orMapEl = document.createElement('div'); _orMapEl.style.cssText = 'position:absolute;inset:0;background:#1a1a1a'; }
+    if (_orMapEl.parentNode !== slot) slot.appendChild(_orMapEl);
+    if (!_orMap) {
+      _orMap = L.map(_orMapEl, { zoomControl: false, attributionControl: true, scrollWheelZoom: true });
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors' }).addTo(_orMap);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, opacity: .9, pane: 'shadowPane' }).addTo(_orMap);
+      _orMapLayers = L.layerGroup().addTo(_orMap);
+    }
+    const map = _orMap, layers = _orMapLayers;
+    layers.clearLayers(); _reportTruckMarker = null; _reportLanePath = null;
+    map.invalidateSize();
+    const reg = _orSegReg[routeId] || {};
+    const _dot = (col) => L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:' + col + ';border:3px solid #141414;box-shadow:0 1px 4px rgba(0,0,0,.6)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+    const _truck = (ll) => L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="position:relative;display:grid;place-items:center;width:34px;height:34px"><div style="position:absolute;width:34px;height:34px;border-radius:50%;background:rgba(46,153,117,.18)"></div><div style="position:absolute;width:18px;height:18px;border-radius:50%;background:rgba(46,153,117,.35);animation:_efDotPulse 1.8s ease-in-out infinite"></div><div style="position:relative;width:13px;height:13px;border-radius:50%;background:#2e9975;border:3px solid #141414"></div></div>', iconSize: [34, 34], iconAnchor: [17, 17] }), zIndexOffset: 1000 });
+    const allPts = [];
+    if (mode === 'route') {
+      Object.keys(reg).forEach((k) => {
+        const s = reg[k]; const a = s.oLL || _OR_COORD[s.origin], b = s.dLL || _OR_COORD[s.dest];
+        if (!a || !b) return;
+        const done = s.truckMi > s.miles, active = s.truckMi >= 0 && !done;
+        const col = done ? '#2e9975' : (active ? '#6688cc' : '#455163');
+        L.polyline([a, b], { color: col, weight: 4, opacity: .92, dashArray: s.isLoad ? null : '2 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip(s.origin + ' → ' + s.dest, { sticky: true });
+        L.marker(a, { icon: _dot(col) }).addTo(layers); L.marker(b, { icon: _dot(col) }).addTo(layers);
+        allPts.push(a, b);
+        if (active) { const f = Math.max(0, Math.min(1, s.truckMi / s.miles)); _truck([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]).addTo(layers); }
+      });
+      if (allPts.length) { try { map.fitBounds(L.latLngBounds(allPts), { padding: [45, 45] }); } catch (e) {} }
+      return;
+    }
+    // lane mode
+    const s = reg[key]; if (!s) return;
+    const a = s.oLL || _OR_COORD[s.origin], b = s.dLL || _OR_COORD[s.dest]; if (!a || !b) return;
+    const laneMiles = s.miles, truckMi = s.truckMi, done = truckMi > laneMiles;
+    const frac = truckMi >= 0 ? Math.max(0, Math.min(1, truckMi / laneMiles)) : 0;
+    const stops = _orLaneStopsSorted(routeId, key) || [];
+    const _stopLL = (st) => { if (st.lat != null && st.lng != null) return [st.lat, st.lng]; const t = st.frac != null ? st.frac : (laneMiles ? st.distanceMi / laneMiles : .5); const side = (st.id && st.id.charCodeAt(st.id.length - 1) % 2) ? 1 : -1; const mag = st.type === 'fuel' ? (0.03 + (st.detourMi || .5) * .05) : (0.10 + (st.detourMi || .6) * .10); return _orOffset(a, b, t, side * mag); };
+    const planLLs = stops.filter(st => !st.pc).map(_stopLL);
+    const pathPts = [a].concat(planLLs).concat([b]);
+    _reportLanePath = pathPts;
+    // deviations incorporated into the plan (corrected/pc) bend the drawn line
+    const devs = _orDeviationsFor(routeId, key) || [];
+    const inPlan = devs.filter(dv => (dv.state === 'corrected' || dv.state === 'pc') && dv.f0 != null);
+    const apexOf = (dv) => _orOffset(a, b, (dv.f0 + dv.f1) / 2, dv.side * dv.mag);
+    const planAt = (f) => { for (let i = 0; i < inPlan.length; i++) { const dv = inPlan[i]; if (f > dv.f0 && f < dv.f1) { const ds = (f - dv.f0) / (dv.f1 - dv.f0); return _orPathAt([_orPathAt(pathPts, dv.f0).pt, apexOf(dv), _orPathAt(pathPts, dv.f1).pt], ds).pt; } } return _orPathAt(pathPts, f).pt; };
+    const sample = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(planAt(fa + (fb - fa) * i / n)); return o; };
+    _reportLanePath = sample(0, 1, 60);   // playback follows the corrected plan
+    // base plan (blue) + green driven prefix
+    L.polyline(sample(0, 1, 60), { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+    if (frac > 0) L.polyline(sample(0, frac, 40), { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+    L.marker(a, { icon: _dot('#47b26b') }).addTo(layers).bindTooltip(s.origin, { direction: 'top' });
+    L.marker(b, { icon: _dot('#6688cc') }).addTo(layers).bindTooltip(s.dest, { direction: 'top' });
+    // deviation branches (open red / kept grey) + PC purple segment on plan
+    const DEVCLR = { open: '#cc666f', corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
+    devs.forEach((dv) => {
+      if (dv.f0 == null) return;
+      const apex = apexOf(dv), clr = DEVCLR[dv.state] || DEVCLR.open;
+      if (dv.state === 'pc') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
+      else if (dv.state !== 'corrected') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 4, opacity: .9, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
+      L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414"></div>', iconSize: [12, 12], iconAnchor: [6, 6] }), zIndexOffset: 800 }).addTo(layers);
+    });
+    // stop markers
+    stops.forEach((st) => {
+      if (st.pc) return;
+      const ll = _stopLL(st); const passed = truckMi >= 0 && st.distanceMi <= truckMi;
+      const col = st.type === 'fuel' ? '#b28835' : (passed ? '#2e9975' : '#6688cc');
+      L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;border-radius:50%;background:' + col + ';border:2.5px solid #141414"></div>', iconSize: [12, 12], iconAnchor: [6, 6] }), zIndexOffset: 500 }).addTo(layers).bindTooltip((st.type === 'fuel' ? (st.brand || 'Fuel') : (st.name || 'Stop')) + ' · ' + st.distanceMi + ' mi', { direction: 'top' });
+    });
+    // truck marker (playback moves this)
+    _reportTruckMarker = _truck(_orPathAt(_reportLanePath, frac).pt).addTo(layers);
+    _reportPlay.frac = frac;
+    try { map.fitBounds(L.latLngBounds(pathPts), { padding: [55, 55] }); } catch (e) {}
+  }
+
+  // ─────────────────────────────── REPORT TAB ───────────────────────────────
+  // Route-level report (overview + KPIs + map + breakdown by lane). Picking a lane
+  // replaces the view with that lane's report (renderReportLane). Financials reuse
+  // buildDetailRows; execution reuses buildControlData / LOADS.
+  function _reportChrome(routeId, r, curIncome, estIncome) {
+    const F = '"General Sans", Nunito, system-ui';
+    const _RI = {
+      spin: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>',
+      clock: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+      check: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+      pencil: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+      truck: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+      sliders: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>'
+    };
+    const _stMap = { 'In progress': { t: 'In Progress', c: '#6688cc', ic: _RI.spin }, 'Planned': { t: 'Planned', c: '#b28835', ic: _RI.clock }, 'Completed': { t: 'Completed', c: '#47b26b', ic: _RI.check } };
+    const _st = _stMap[r.status] || _stMap['Planned'];
+    const backBtn = el('div', { class: 'hoverable', onclick: () => setState({ openRoute: null }), style: { width: '34px', height: '34px', borderRadius: '8px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>' });
+    const nameBlock = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0', maxWidth: '220px' } }, [
+      el('span', { style: { font: '800 15px ' + F, letterSpacing: '-.01em', color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [r.name]),
+      el('div', { class: 'hoverable', style: { width: '26px', height: '26px', borderRadius: '7px', background: '#292929', border: '1px solid rgba(255,255,255,.06)', color: '#6688cc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: _RI.pencil })
+    ]);
+    const statusPillHdr = el('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 13px', borderRadius: '999px', background: 'rgba(102,136,204,.10)', border: '1px solid ' + _st.c + '44', color: _st.c, font: '800 12.5px ' + F, flexShrink: '0' }, html: _st.ic + '<span>' + _st.t + '</span>' });
+    const _incPct = estIncome ? Math.min(100, curIncome / estIncome * 100) : 0;
+    const incomeBar = el('div', { style: { position: 'relative', flex: '1', minWidth: '160px', height: '44px', borderRadius: '12px', background: '#141414', border: '1px solid rgba(255,255,255,.07)', overflow: 'hidden' } }, [
+      el('div', { style: { position: 'absolute', top: '0', left: '0', bottom: '0', width: _incPct + '%', background: 'linear-gradient(90deg,#1a805e,#2e9975)', opacity: '.22' } }),
+      el('div', { style: { position: 'relative', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px' } }, [
+        el('span', { style: { font: '900 15px ' + F, color: curIncome > 0 ? '#2e9975' : '#808080' } }, [money(curIncome)]),
+        el('span', { style: { font: '700 12px ' + F, color: '#666666' } }, ['Est. ' + money(estIncome)])
+      ])
+    ]);
+    const finishBtn = el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 16px', borderRadius: '999px', background: '#2e9975', color: '#1a1a1a', font: '800 13px ' + F, cursor: 'pointer', flexShrink: '0' }, html: '<span>Finish route</span>' + _RI.check });
+    const _noDriver = !r.driver || r.driver === 'Unassigned', _noUnit = !r.unit || r.unit === 'Unassigned';
+    const driverUnitPill = el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 12px 0 5px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', flexShrink: '0' } }, [
+      _noDriver ? el('div', { style: { width: '28px', height: '28px', borderRadius: '50%', background: '#292929', color: '#666666', display: 'grid', placeItems: 'center', font: '800 11px ' + F, flexShrink: '0' } }, ['--']) : avatar(r.driver, 28),
+      el('span', { style: { font: '700 12px ' + F, color: _noDriver ? '#808080' : '#e6e6e6', whiteSpace: 'nowrap' } }, [_noDriver ? 'No driver' : r.driver]),
+      el('span', { style: { width: '1px', height: '18px', background: 'rgba(255,255,255,.12)' } }),
+      el('span', { style: { display: 'flex', color: '#808080' }, html: _RI.truck }),
+      el('span', { style: { font: '700 12px ' + F, color: '#b3b3b3', whiteSpace: 'nowrap' } }, [_noUnit ? '--' : r.unit])
+    ]);
+    const settingsBtn = el('div', { class: 'hoverable', style: { width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: _RI.sliders });
+    const _chatUnread = _orChatGet(routeId).unread;
+    const _chatIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    const chatBtn = el('div', { class: 'hoverable', title: 'Chat with the driver', onclick: () => { _orChatGet(routeId).unread = 0; setState({ orChat: true }); }, style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: _chatIcon + (_chatUnread > 0 ? '<span style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#cc666f;color:#fff;font:800 9px ' + F + ';display:flex;align-items:center;justify-content:center;border:2px solid #141414">' + _chatUnread + '</span>' : '') });
+    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, chatBtn, settingsBtn]);
+    const _tab = (id, icon, label) => el('div', { onclick: () => setState({ detailTab: id, reportLane: null }), style: { display: 'flex', alignItems: 'center', padding: '12px', font: '800 12.5px ' + F, color: state.detailTab === id ? '#2e9975' : '#808080', boxShadow: state.detailTab === id ? 'inset 0 -2px 0 0 #2e9975' : 'none', cursor: 'pointer' }, html: icon + '<span style="margin-left:7px">' + label + '</span>' });
+    const tabBar = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#1a1a1a', borderBottom: '1px solid rgba(255,255,255,.07)', padding: '0 20px' } }, [_tab('plan', ICON.plan, 'Plan'), _tab('control', ICON.onroad, 'On Road'), _tab('report', ICON.report, 'Report')]);
+    return { header: header, tabBar: tabBar };
+  }
+  // read-only refresh toast for the Report views (the full On Road toast lives in renderControl)
+  function _reportToast() {
+    if (!_orToast) return null;
+    const F = '"General Sans", Nunito, system-ui';
+    return el('div', { id: 'or-toast', style: { position: 'absolute', bottom: '26px', left: '50%', transform: 'translateX(-50%)', zIndex: '3000', display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 16px', borderRadius: '12px', background: '#292929', border: '1px solid rgba(255,255,255,.14)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, [
+      el('span', { style: { display: 'flex', color: '#6688cc' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg>' }),
+      el('span', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_orToast])
+    ]);
+  }
+  // small SVG donut: deadhead (blue) vs loaded (green)
+  function _reportDonut(dhPct) {
+    const R = 46, C = 2 * Math.PI * R, dh = Math.max(0, Math.min(100, dhPct)), dhLen = C * dh / 100;
+    return '<svg width="132" height="132" viewBox="0 0 132 132">'
+      + '<circle cx="66" cy="66" r="' + R + '" fill="none" stroke="#2e9975" stroke-width="15"/>'
+      + '<circle cx="66" cy="66" r="' + R + '" fill="none" stroke="#5bbccb" stroke-width="15" stroke-linecap="round" stroke-dasharray="' + dhLen.toFixed(1) + ' ' + (C - dhLen).toFixed(1) + '" transform="rotate(-90 66 66)"/>'
+      + '</svg>';
+  }
+  function renderReport(routeId) {
+    const F = '"General Sans", Nunito, system-ui';
+    const d = buildDetailRows(routeId);
+    const cd = buildControlData(routeId);
+    const r = d.r;
+    const loads = loadsOf(routeId);
+    _orEnsureSegReg(routeId, cd, _ctrlSimGet(routeId));   // ensure lane geometry/exec/deviations
+    const curIncome = cd.currentIncome || 0;
+    const estIncome = d.incomeNum;
+    const chrome = _reportChrome(routeId, r, curIncome, estIncome);
+
+    if (state.reportLane != null) return renderReportLane(routeId, state.reportLane, chrome);
+
+    // ── financials (reuse buildDetailRows aggregates) ──
+    const _billedStatuses = { Delivered: 1, Invoiced: 1, Paid: 1, Completed: 1 };
+    const billedNum = loads.filter(l => _billedStatuses[l.status]).reduce((s, l) => s + l.income, 0);
+    const totalMiNum = d.totalMiNum, dhMilesNum = d.dhMilesNum;
+    const fuelNum = Math.round(totalMiNum * 0.52);
+    const opNum = Math.round(totalMiNum * 1.88);
+    const dhCostNum = Math.round(dhMilesNum * 2.4);
+    const netProfitNum = d.incomeNum - d.totalCostNum;
+    const dhPct = totalMiNum ? Math.round(dhMilesNum / totalMiNum * 100) : 0;
+    const drivenMi = loads.reduce((s, l) => s + (_billedStatuses[l.status] ? l.miles : (l.status === 'In Transit' ? Math.round(l.miles * 0.5) : 0)), 0);
+    const allDone = loads.length > 0 && loads.every(l => _billedStatuses[l.status]);
+    const inProgress = !allDone;
+    const downtimeH = loads.reduce((s, l) => s + (l.stops || 1) * 0.6, 0);
+
+    // ── in-progress banner ──
+    const banner = inProgress ? el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '14px 20px 0', padding: '11px 14px', borderRadius: '11px', background: 'rgba(178,136,53,.08)', border: '1px solid rgba(178,136,53,.28)' } }, [
+      el('span', { style: { color: '#b28835', display: 'flex' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8h.01"/><path d="M11 12h1v4h1"/></svg>' }),
+      el('span', { style: { font: '600 12px ' + F, color: '#d9c08a' } }, ['This route is in progress. Partial data is shown and will update as lanes are completed.'])
+    ]) : null;
+
+    // ── quality/status pill ──
+    const pill = (txt, kind) => { const m = kind === 'final' ? ['rgba(46,153,117,.16)', '#47b26b'] : ['rgba(102,136,204,.14)', '#8fb0ff']; return el('span', { style: { display: 'inline-block', font: '800 9.5px ' + F, letterSpacing: '.02em', color: m[1], background: m[0], padding: '3px 8px', borderRadius: '999px' } }, [txt]); };
+    const _pillKind = allDone ? 'final' : 'prog';
+    const _pillTxt = allDone ? 'Final' : 'In Progress';
+
+    // ── KPI card ──
+    const kpi = (label, value, sub, icon) => el('div', { style: { display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '116px', padding: '15px 16px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' } }, [
+        el('div', { style: { font: '700 12px ' + F, color: '#808080' } }, [label]),
+        el('div', { style: { color: '#4d4d4d', display: 'flex' }, html: icon || '' })
+      ]),
+      el('div', {}, [
+        el('div', { style: { font: '900 22px ' + F, color: '#f5f5f5', marginTop: '8px' } }, [value]),
+        el('div', { style: { marginTop: '9px' } }, [pill(sub || _pillTxt, sub ? 'final' : _pillKind)])
+      ])
+    ]);
+    const _ic = { bag: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>', chart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>', dollar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>', fuel: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></svg>', dh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>', clock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' };
+
+    // ── Route Cost Summary (tall card + donut) ──
+    const costSummary = el('div', { style: { gridRow: 'span 2', display: 'flex', flexDirection: 'column', padding: '16px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+        el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Route Cost Summary']),
+        el('div', { style: { color: '#4d4d4d', display: 'flex' }, html: _ic.chart })
+      ]),
+      el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', marginTop: '10px' } }, ['$' + d.totalCostNum.toLocaleString('en-US')]),
+      el('div', { style: { display: 'flex', gap: '12px', marginTop: '5px', font: '800 11px ' + F } }, [
+        el('span', { style: { color: '#47b26b' } }, ['PFT ' + (netProfitNum < 0 ? '-$' : '$') + Math.abs(netProfitNum).toLocaleString('en-US')]),
+        el('span', { style: { color: '#cc666f' } }, ['CST $' + d.totalCostNum.toLocaleString('en-US')])
+      ]),
+      el('div', { style: { position: 'relative', display: 'grid', placeItems: 'center', margin: '14px 0 4px' }, html: _reportDonut(dhPct) }),
+      el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 11px ' + F, color: '#808080', marginTop: '4px' } }, [
+        el('span', {}, [el('span', { style: { color: '#5bbccb', fontWeight: '900' } }, [dhPct + '%']), el('span', {}, [' Deadhead'])]),
+        el('span', {}, [el('span', { style: { color: '#2e9975', fontWeight: '900' } }, [(100 - dhPct) + '%']), el('span', {}, [' Loaded'])])
+      ]),
+      el('div', { style: { flex: '1' } })
+    ]);
+
+    const kpiGrid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto auto auto', gap: '12px' } }, [
+      kpi('Total Billed', money(billedNum), null, _ic.bag),
+      kpi('Net Profit', (netProfitNum < 0 ? '-$' : '$') + Math.abs(netProfitNum).toLocaleString('en-US'), null, _ic.chart),
+      kpi('Total Operating Cost', '$' + opNum.toLocaleString('en-US'), null, _ic.dollar),
+      kpi('Fuel Cost', '$' + fuelNum.toLocaleString('en-US'), null, _ic.fuel),
+      kpi('Deadhead Cost', '$' + dhCostNum.toLocaleString('en-US'), null, _ic.dh),
+      kpi('Total Downtime', Math.round(downtimeH) + ' h', null, _ic.clock)
+    ]);
+
+    const overview = el('div', { style: { padding: '18px 20px 0' } }, [
+      el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '12px' } }, ['Overview']),
+      el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gap: '12px' } }, [costSummary, kpiGrid])
+    ]);
+
+    // ── Breakdown by lane ──
+    const laneRows = cd.rows.filter(row => row.kind === 'load');
+    const breakdown = el('div', { style: { padding: '20px 20px 24px' } }, [
+      el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '12px' } }, ['Breakdown by lane']),
+      el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, laneRows.map((row) => {
+        const key = 'L' + row.loadIdx;
+        const ld = loads[row.loadIdx] || {};
+        const sc = STATUS[ld.status] || STATUS['Unbooked'];
+        return el('div', { class: 'row-hoverable', onclick: () => setState({ reportLane: key }), style: { display: 'grid', gridTemplateColumns: '34px minmax(0,1fr) auto auto 24px', alignItems: 'center', gap: '12px', padding: '13px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)', cursor: 'pointer' } }, [
+          el('div', { style: { width: '30px', height: '30px', borderRadius: '50%', background: '#292929', color: '#e6e6e6', display: 'grid', placeItems: 'center', font: '800 12px ' + F } }, [String(row.num)]),
+          el('div', { style: { minWidth: '0' } }, [
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '800 13px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [el('span', {}, [ld.origin || row.origin]), el('span', { style: { color: '#666666', display: 'flex' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>' }), el('span', {}, [ld.dest || row.dest])]),
+            el('div', { style: { font: '500 10.5px "JetBrains Mono",monospace', color: '#666666', marginTop: '3px' } }, [(ld.pickup ? prettyDate(ld.pickup) : row.originDate || '') + ' → ' + (ld.delivery ? prettyDate(ld.delivery) : row.destDate || '')])
+          ]),
+          el('div', { style: { font: '800 13px ' + F, color: '#47b26b' } }, [money(ld.income || 0)]),
+          pill(ld.status || row.exec, _billedStatuses[ld.status] ? 'final' : 'prog'),
+          el('div', { style: { color: '#666666', display: 'flex' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' })
+        ]);
+      }))
+    ]);
+
+    const leftScroll = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto' } }, [banner, overview, breakdown].filter(Boolean));
+    const leftCol = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [chrome.tabBar, leftScroll]);
+
+    // ── right column: route map placeholder + exec-vs-plan stats ──
+    const statCard = (label, exec, plan, tag) => el('div', { style: { flex: '1', padding: '14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, [el('span', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, [label]), pill(tag || _pillTxt, allDone ? 'final' : 'prog')]),
+      el('div', { style: { font: '600 11.5px ' + F, color: '#808080', marginTop: '10px' } }, ['Exec: ', el('span', { style: { color: '#e6e6e6', fontWeight: '800' } }, [exec]), ' / Plan: ' + plan])
+    ]);
+    const _drivenH = Math.round(drivenMi / 52);
+    const mapPh = el('div', { style: { position: 'relative', flex: '1', minHeight: '300px', borderRadius: '14px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } }, [
+      el('div', { id: 'ef-report-mapslot', style: { position: 'absolute', inset: '0' } }),
+      el('div', { style: { position: 'absolute', left: '12px', bottom: '12px', zIndex: '600', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '11px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
+        el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, ['Route data']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['Updated 2 min ago'])]),
+        el('span', { class: 'hoverable', onclick: () => { _orToast = 'Refreshing latest route data…'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({}); }, title: 'Pull the latest available data', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 10px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.12)', padding: '4px 9px', borderRadius: '999px', cursor: 'pointer' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Update</span>' })
+      ])
+    ]);
+    const bottomStats = el('div', { style: { display: 'flex', gap: '12px', padding: '14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { flex: '1' } }, [el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, [Math.round(drivenMi / 6.5) + ' gal']), el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px' } }, ['Fuel usage'])]),
+      el('div', { style: { flex: '1' } }, [el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, [(drivenMi > 0 ? 54 : 0) + ' mph']), el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px' } }, ['Avg. Speed'])]),
+      el('div', { style: { flex: '1' } }, [el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, ['0 events']), el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px' } }, ['Speeding Violations'])])
+    ]);
+    const rightWrapper = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '0', overflowY: 'auto', paddingRight: '4px' } }, [
+      mapPh,
+      el('div', { style: { display: 'flex', gap: '12px' } }, [statCard('Time', _drivenH + ' h', (d.cycle || '—'), null), statCard('Miles', drivenMi.toLocaleString('en-US') + ' mi', totalMiNum.toLocaleString('en-US') + ' mi', null)]),
+      bottomStats
+    ]);
+
+    const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', padding: '0 16px 16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
+    setTimeout(() => _orDrawReportMap(routeId, 'route'), 0);
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [chrome.header, splitBody, _reportToast()].filter(Boolean));
+  }
+  // Lane-level report (replaces the view) — the Figma "Detalle de operación por lane".
+  function renderReportLane(routeId, key, chrome) {
+    const F = '"General Sans", Nunito, system-ui';
+    const cd = buildControlData(routeId);
+    const d = buildDetailRows(routeId);
+    const loads = loadsOf(routeId);
+    _orEnsureSegReg(routeId, cd, _ctrlSimGet(routeId));
+    const row = cd.rows.find(rw => rw.segKey === key) || cd.rows.find(rw => ('L' + rw.loadIdx) === key && rw.kind === 'load');
+    const seg = (_orSegReg[routeId] || {})[key] || {};
+    const ld = (row && row.kind === 'load') ? (loads[row.loadIdx] || {}) : {};
+    const _num = (v) => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n; };
+    // ── execution (derived from the segment registry) ──
+    const laneMiles = seg.miles || ld.miles || 0;
+    const truckMi = seg.truckMi != null ? seg.truckMi : -1;
+    const started = truckMi >= 0;
+    const done = started && truckMi > laneMiles;
+    const milesDriven = started ? Math.max(0, Math.min(laneMiles, truckMi)) : 0;
+    const pct = laneMiles ? Math.round(milesDriven / laneMiles * 100) : 0;
+    // ── financials (reuse the buildDetailRows lane row) ──
+    const drow = d.rows.find(rr => rr.num !== 'DH' && rr.loadIdx === (row ? row.loadIdx : -1));
+    const dhRow = drow ? d.rows[d.rows.indexOf(drow) - 1] : null;   // the deadhead into this load
+    const billedNum = ld.income || seg.income || 0;
+    const costNum = Math.round(laneMiles * 2.4);
+    const fuelNum = Math.round(laneMiles * 0.52);
+    const earnedNum = billedNum - costNum;
+    const dhCostNum = dhRow ? Math.abs(_num(dhRow.cost)) : 0;
+    const dhMi = dhRow ? _num(dhRow.mileage) : 0;
+    const dhPct = (laneMiles + dhMi) ? Math.round(dhMi / (laneMiles + dhMi) * 100) : 0;
+    const stops = _orLaneStopsSorted(routeId, key) || [];
+    const downtimeH = ((ld.stops || stops.length || 1) * 0.6) + (done ? 1.5 : 0);
+    const devs = _orDeviationsFor(routeId, key) || [];
+    const fuelMeta = (_orFuel[routeId] || {})[key];
+    const fuelSavings = (fuelMeta && fuelMeta.applied) ? fuelMeta.savings : Math.round(fuelNum * 0.11);
+
+    // ── quality pill ──
+    const _Q = { Optimum: ['rgba(46,153,117,.16)', '#47b26b'], Regular: ['rgba(178,136,53,.16)', '#d0a038'], Aceptable: ['rgba(201,162,39,.16)', '#c9a227'], Critical: ['rgba(204,102,111,.16)', '#cc666f'] };
+    const qpill = (kind) => { const m = _Q[kind] || _Q.Regular; return el('span', { style: { display: 'inline-block', font: '800 9.5px ' + F, color: m[1], background: m[0], padding: '3px 8px', borderRadius: '999px' } }, [kind]); };
+    // thresholds (mock, documented): quality by ratio vs billed
+    const costQ = costNum / (billedNum || 1) < 0.45 ? 'Optimum' : costNum / (billedNum || 1) < 0.65 ? 'Regular' : 'Critical';
+    const fuelQ = 'Aceptable';
+    const dhQ = dhCostNum < 120 ? 'Optimum' : dhCostNum < 260 ? 'Regular' : 'Critical';
+    const downQ = downtimeH < 8 ? 'Regular' : downtimeH < 13 ? 'Aceptable' : 'Critical';
+
+    // ── back + lane header ──
+    const back = el('div', { class: 'hoverable', onclick: () => setState({ reportLane: null }), style: { display: 'inline-flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 13px', borderRadius: '9px', background: '#292929', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg><span>Back to route report</span>' });
+    const _stClr = done || (ld.status && /Deliver|Invoic|Paid/.test(ld.status)) ? ['#47b26b', 'rgba(46,153,117,.16)'] : (started ? ['#6688cc', 'rgba(102,136,204,.16)'] : ['#b28835', 'rgba(178,136,53,.16)']);
+    const laneHeader = el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', marginTop: '14px', padding: '13px 15px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)' } }, [
+      el('div', { style: { width: '32px', height: '32px', borderRadius: '50%', background: '#292929', color: '#e6e6e6', display: 'grid', placeItems: 'center', font: '800 13px ' + F, flexShrink: '0' } }, [row ? String(row.num) : '1']),
+      el('div', { style: { flex: '1', minWidth: '0' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', font: '800 15px ' + F, color: '#e6e6e6' } }, [el('span', {}, [ld.origin || seg.origin || 'Origin hub']), el('span', { style: { color: '#666666', display: 'flex' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>' }), el('span', {}, [ld.dest || seg.dest || 'Destination hub'])]),
+        el('div', { style: { font: '600 10.5px "JetBrains Mono",monospace', color: '#666666', marginTop: '3px' } }, ['Load ' + (ld.id || key) + (ld.pickup ? ' · ' + prettyDate(ld.pickup) : '')])
+      ]),
+      el('span', { style: { font: '800 10px ' + F, color: _stClr[0], background: _stClr[1], padding: '5px 11px', borderRadius: '999px' } }, [done ? 'Completed' : (ld.status || (started ? 'In transit' : 'Upcoming'))])
+    ]);
+
+    // ── Lane Cost Summary + donut ──
+    const costSummary = el('div', { style: { display: 'flex', flexDirection: 'column', padding: '16px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Lane Cost Summary']),
+      el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', marginTop: '8px' } }, ['$' + costNum.toLocaleString('en-US')]),
+      el('div', { style: { display: 'flex', gap: '12px', marginTop: '5px', font: '800 11px ' + F } }, [el('span', { style: { color: '#47b26b' } }, ['PFT ' + (earnedNum < 0 ? '-$' : '$') + Math.abs(earnedNum).toLocaleString('en-US')]), el('span', { style: { color: '#cc666f' } }, ['CST $' + costNum.toLocaleString('en-US')])]),
+      el('div', { style: { display: 'grid', placeItems: 'center', margin: '12px 0 2px' }, html: _reportDonut(dhPct) }),
+      el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 11px ' + F, color: '#808080', marginTop: '2px' } }, [el('span', {}, [el('span', { style: { color: '#5bbccb', fontWeight: '900' } }, [dhPct + '%']), ' Deadhead']), el('span', {}, [el('span', { style: { color: '#2e9975', fontWeight: '900' } }, [(100 - dhPct) + '%']), ' Loaded'])]),
+      el('div', { style: { flex: '1' } })
+    ]);
+
+    // ── "How much…" KPI grid ──
+    const hm = (label, value, kind) => el('div', { style: { display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '96px', padding: '13px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { font: '700 11px ' + F, color: '#808080', lineHeight: '1.35' } }, [label]),
+      el('div', {}, [el('div', { style: { font: '900 18px ' + F, color: '#f5f5f5', marginTop: '6px' } }, [value]), el('div', { style: { marginTop: '7px' } }, [qpill(kind)])])
+    ]);
+    const kpiGrid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' } }, [
+      hm('How much was it?', money(billedNum), 'Optimum'),
+      hm('How much was earned?', money(Math.max(0, earnedNum)), earnedNum > billedNum * 0.35 ? 'Optimum' : 'Regular'),
+      hm('How much did it cost?', '$' + costNum.toLocaleString('en-US'), costQ),
+      hm('How much fuel was consumed?', '$' + fuelNum.toLocaleString('en-US'), fuelQ),
+      hm('How much deadhead was there?', '$' + dhCostNum.toLocaleString('en-US'), dhQ),
+      hm('How much downtime was there?', Math.round(downtimeH) + ' h', downQ)
+    ]);
+
+    const overview = el('div', { style: { display: 'grid', gridTemplateColumns: '270px minmax(0,1fr)', gap: '12px', marginTop: '14px' } }, [costSummary, kpiGrid]);
+
+    // ── Outcome (read-only: how the realized margin compares to the optimal plan) ──
+    const realized = Math.max(0, earnedNum);
+    const optimal = realized + fuelSavings + Math.round(dhCostNum * 0.5);
+    const gap = Math.max(0, optimal - realized);
+    const capturePct = optimal ? Math.min(100, Math.round(realized / optimal * 100)) : 100;
+    const oc = (label, value, clr) => el('div', { style: { flex: '1', minWidth: '0', padding: '13px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { font: '700 11px ' + F, color: '#808080' } }, [label]),
+      el('div', { style: { font: '900 19px ' + F, color: clr || '#f5f5f5', marginTop: '6px' } }, [value])
+    ]);
+    const outcome = el('div', { style: { marginTop: '18px' } }, [
+      el('div', { style: { marginBottom: '10px' } }, [
+        el('div', { style: { font: '800 12px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Outcome']),
+        el('div', { style: { font: '500 10.5px ' + F, color: '#666666', marginTop: '2px' } }, ['How this lane’s realized margin compared to its optimal plan.'])
+      ]),
+      el('div', { style: { display: 'flex', gap: '10px' } }, [oc('Realized margin', '$' + realized.toLocaleString('en-US'), '#47b26b'), oc('Optimal margin', '$' + optimal.toLocaleString('en-US')), oc('Margin gap', gap > 0 ? '-$' + gap.toLocaleString('en-US') : '$0', gap > 0 ? '#d0a038' : '#47b26b'), oc('Margin captured', capturePct + '%')])
+    ]);
+
+    // ── Event timeline (from stops + deviations + departure/arrival) ──
+    const evs = [];
+    evs.push({ label: 'Departed pickup', state: started ? 'Completed' : 'Planned', type: 'neutral', pos: 0, time: ld.pickupTime || '—' });
+    stops.forEach((s) => {
+      const passed = started && s.distanceMi <= truckMi;
+      const skipped = !s.via && _orStopStatus[routeId] && _orStopStatus[routeId][key] && _orStopStatus[routeId][key][s.id] === 'Skipped';
+      evs.push({ label: s.via ? 'Route point' : (s.type === 'fuel' ? (s.brand || 'Fuel') : (s.name || 'Stop')), state: skipped ? 'Skipped' : (passed ? 'Completed' : 'Planned'), type: s.pc ? 'good' : 'neutral', pos: laneMiles ? s.distanceMi / laneMiles : 0.5, time: s.distanceMi + ' mi' });
+    });
+    devs.forEach((dv) => {
+      const t = dv.state === 'open' ? 'deviation' : (dv.state === 'kept' ? 'neutral' : 'good');
+      const callout = dv.state === 'open' ? 'Deviation' : (dv.state === 'pc' ? 'Personal Conveyance' : (dv.state === 'corrected' ? 'Corrected' : 'Kept'));
+      evs.push({ label: 'Off-plan detour', state: started && truckMi >= dv.f1 * laneMiles ? 'Completed' : 'Planned', type: t, pos: (dv.f0 + dv.f1) / 2, time: '+' + Math.round(dv.detourMi) + ' mi', callout: callout });
+    });
+    evs.push({ label: done ? 'Arrived' : 'Drop-off', state: done ? 'Completed' : 'Planned', type: done ? 'good' : 'neutral', pos: 1, time: ld.deliveryTime || '—' });
+    evs.sort((a, b) => a.pos - b.pos);
+    const _EVC = { neutral: '#6688cc', deviation: '#b28835', bad: '#cc666f', good: '#47b26b' };
+    const _EVIC = { neutral: '<circle cx="12" cy="12" r="7"/>', deviation: '<path d="M12 3l9 16H3z"/><path d="M12 10v4"/>', bad: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', good: '<polyline points="20 6 9 17 4 12"/>' };
+    const _evSt = { Completed: ['#47b26b', 'rgba(46,153,117,.16)'], Skipped: ['#808080', 'rgba(255,255,255,.06)'], Planned: ['#808080', 'rgba(255,255,255,.05)'] };
+    const _completedN = evs.filter(e => e.state === 'Completed').length;
+    const _lineGreenPct = evs.length > 1 ? Math.max(0, Math.min(100, (_completedN - 0.5) / (evs.length - 1) * 100)) : 0;
+    const timelineTrack = el('div', { style: { position: 'relative', height: '3px', margin: '0 70px', background: 'rgba(102,136,204,.3)', borderRadius: '2px' } }, [
+      el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: _lineGreenPct + '%', background: '#2e9975', borderRadius: '2px' } })
+    ]);
+    const evCols = el('div', { style: { display: 'flex' } }, evs.map((ev) => {
+      const c = _EVC[ev.type] || _EVC.neutral, stt = _evSt[ev.state] || _evSt.Planned;
+      return el('div', { style: { width: '140px', flexShrink: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '0 6px' } }, [
+        ev.callout ? el('div', { style: { font: '800 8.5px ' + F, color: c, background: c + '22', border: '1px solid ' + c + '55', borderRadius: '7px', padding: '3px 7px', marginBottom: '8px', whiteSpace: 'nowrap' } }, [ev.callout]) : el('div', { style: { height: '25px' } }),
+        el('div', { style: { width: '26px', height: '26px', borderRadius: '50%', background: '#141414', border: '2.5px solid ' + c, color: c, display: 'grid', placeItems: 'center', marginTop: '-13px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' + (_EVIC[ev.type] || _EVIC.neutral) + '</svg>' }),
+        el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6', marginTop: '9px', lineHeight: '1.3' } }, [ev.label]),
+        el('div', { style: { marginTop: '5px' } }, [el('span', { style: { font: '800 8.5px ' + F, color: stt[0], background: stt[1], padding: '2px 7px', borderRadius: '999px' } }, [ev.state])]),
+        el('div', { style: { font: '600 9px "JetBrains Mono",monospace', color: '#666666', marginTop: '5px' } }, [ev.time])
+      ]);
+    }));
+    const timeline = el('div', { style: { marginTop: '18px', padding: '16px 14px 18px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' } }, [
+        el('div', { style: { font: '800 12px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Execution timeline']),
+        el('div', { style: { font: '600 10px ' + F, color: '#666666' } }, [_completedN + ' of ' + evs.length + ' events completed'])
+      ]),
+      el('div', { class: 'ef-scroll', style: { overflowX: 'auto', paddingTop: '18px' } }, [el('div', { style: { minWidth: 'max-content' } }, [timelineTrack, evCols])])
+    ]);
+
+    const leftScroll = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px 24px' } }, [back, laneHeader, overview, outcome, timeline]);
+    const leftCol = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [chrome.tabBar, leftScroll]);
+
+    // ── right column: live lane map + ELD overlay + playback scrubber ──
+    const laneMap = el('div', { style: { position: 'relative', flex: '1', minHeight: '320px', borderRadius: '14px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } }, [
+      el('div', { id: 'ef-report-mapslot', style: { position: 'absolute', inset: '0' } }),
+      el('div', { style: { position: 'absolute', left: '12px', bottom: '12px', zIndex: '600', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '11px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
+        el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, ['ELD status']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['Updated 2 min ago'])]),
+        el('span', { style: { font: '800 10px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '4px 9px', borderRadius: '999px' } }, ['Synced']),
+        el('span', { class: 'hoverable', onclick: () => { _orToast = 'Refreshing latest ELD data…'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({}); }, title: 'Pull the latest available data', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 10px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.12)', padding: '4px 9px', borderRadius: '999px', cursor: 'pointer' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Update</span>' })
+      ])
+    ]);
+    const scrubber = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
+      el('div', { id: 'ef-scrub-btn', class: 'hoverable', onclick: () => _orReportPlayToggle(), title: 'Play the recorded trace', style: { width: '30px', height: '30px', borderRadius: '50%', background: '#292929', color: '#e6e6e6', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>' }),
+      el('div', { style: { position: 'relative', flex: '1', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,.12)' } }, [el('div', { id: 'ef-scrub-fill', style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: pct + '%', background: '#2e9975', borderRadius: '2px' } }), el('div', { id: 'ef-scrub-knob', style: { position: 'absolute', left: 'calc(' + pct + '% - 6px)', top: '-4px', width: '12px', height: '12px', borderRadius: '50%', background: '#2e9975', border: '2px solid #141414' } })]),
+      el('span', { id: 'ef-scrub-pct', style: { font: '700 10px "JetBrains Mono",monospace', color: '#808080', flexShrink: '0' } }, [pct + '%'])
+    ]);
+    const rightWrapper = el('div', { class: 'ef-scroll', style: { display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '0', overflowY: 'auto', paddingTop: '16px', paddingRight: '4px' } }, [laneMap, scrubber]);
+
+    const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 480px', columnGap: '16px', padding: '0 16px 16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
+    setTimeout(() => _orDrawReportMap(routeId, 'lane', key), 0);
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [chrome.header, splitBody, _reportToast()].filter(Boolean));
+  }
+
   function renderControl(routeId) {
     const F = '"General Sans", Nunito, system-ui';
     const d = buildDetailRows(routeId);
@@ -9698,44 +10210,7 @@ export function initApp() {
     const estIncome = d.incomeNum;
 
     // ── segment registry: every row (loaded lane OR deadhead) is a manageable segment ──
-    _orSegReg[routeId] = {};
-    (function () {
-      let dhN = 0;
-      cd.rows.forEach((row, idx) => {
-        const isLoad = row.kind === 'load';
-        const key = isLoad ? ('L' + row.loadIdx) : ('DH' + (dhN++));
-        row.segKey = key;
-        // Deadheads are real short repositioning lanes (~50–100 mi) into the next load's
-        // pickup hub — they share the hub name but have their own start→end + distance.
-        let miles, oLL, dLL;
-        if (isLoad) {
-          miles = row.load.miles;
-        } else {
-          const h = (row.origin + row.dest + key).split('').reduce((s, c) => s + c.charCodeAt(0), 0);
-          miles = 50 + (h % 51);   // 50–100 mi
-          const hub = _OR_COORD[row.dest];
-          if (hub) {
-            const nextLoad = cd.rows[idx + 1];
-            const nd = (nextLoad && nextLoad.kind === 'load') ? _OR_COORD[nextLoad.dest] : null;
-            let uy = 0.55, ux = -0.85;   // fallback heading if the next load's dest is unknown
-            if (nd) { const dy = hub[0] - nd[0], dx = hub[1] - nd[1]; const L = Math.hypot(dy, dx) || 1; uy = dy / L; ux = dx / L; }
-            const delta = 0.55 + (h % 4) * 0.12;   // short spur just off the hub
-            oLL = [hub[0] + uy * delta, hub[1] + ux * delta];
-            dLL = hub;
-          }
-        }
-        let truckMi;
-        if (isLoad) {
-          if (row.exec === 'Completed' || (sim.started && row.loadIdx < sim.activeLaneIdx)) truckMi = miles + 1;
-          else if (row.exec === 'In progress') truckMi = (_orProgress[routeId] && _orProgress[routeId][key] != null) ? _orProgress[routeId][key] : ((sim.started && row.loadIdx === sim.activeLaneIdx) ? sim.progress * miles : miles * 0.5);
-          else truckMi = -1;
-        } else {
-          truckMi = row.exec === 'Completed' ? miles + 1 : (row.exec === 'In progress' ? miles * 0.5 : -1);
-        }
-        _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0, oLL: oLL, dLL: dLL };
-      });
-    })();
-    _orSeedPlan(routeId);   // pre-assign a realistic plan (load stops, fuel, a missed pickup)
+    _orEnsureSegReg(routeId, cd, sim);   // build the segment registry + seed a realistic plan
 
     // ── inline icons ──
     const IC = {
@@ -9801,8 +10276,8 @@ export function initApp() {
     function _tab(id, icon, label) {
       const active = state.detailTab === id;
       return el('div', {
-        onclick: id === 'report' ? undefined : (() => setState({ detailTab: id })),
-        style: { display: 'flex', alignItems: 'center', padding: '12px', font: '800 12.5px ' + F, color: active ? '#2e9975' : '#808080', boxShadow: active ? 'inset 0 -2px 0 0 #2e9975' : 'none', cursor: id === 'report' ? 'default' : 'pointer', opacity: id === 'report' ? '.5' : '1' },
+        onclick: () => setState({ detailTab: id, reportLane: null }),
+        style: { display: 'flex', alignItems: 'center', padding: '12px', font: '800 12.5px ' + F, color: active ? '#2e9975' : '#808080', boxShadow: active ? 'inset 0 -2px 0 0 #2e9975' : 'none', cursor: 'pointer' },
         html: icon + '<span style="margin-left:7px">' + label + '</span>'
       });
     }
