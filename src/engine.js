@@ -9677,7 +9677,7 @@ export function initApp() {
     const bg = color || '#0d0d0d';
     const fg = color ? '#141414' : '#e6e6e6';
     const bd = color ? 'rgba(0,0,0,.28)' : 'rgba(255,255,255,.16)';
-    tip.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;max-width:250px;padding:6px 10px;border-radius:8px;background:' + bg + ';border:1px solid ' + bd + ';box-shadow:0 12px 32px rgba(0,0,0,.6);color:' + fg + ';font:800 11px "General Sans", Nunito, system-ui;line-height:1.35;display:block';
+    tip.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;max-width:260px;padding:7px 11px;border-radius:8px;background:' + bg + ';border:1px solid ' + bd + ';box-shadow:0 12px 32px rgba(0,0,0,.6);color:' + fg + ';font:800 11px "General Sans", Nunito, system-ui;line-height:1.45;white-space:pre-line;display:block';
     tip.textContent = text;
     const r = anchor.getBoundingClientRect();
     const tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -10200,6 +10200,46 @@ export function initApp() {
     return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [chrome.header, splitBody, _reportToast()].filter(Boolean));
   }
 
+  // ─── Pre-dispatch route planning (booked lanes) ───────────────────────────
+  // A booked lane (assigned load, not started) can be left planned with one of two
+  // optimal-route options. The dispatcher compares them on the map (Google-Maps style)
+  // and assigns the one to follow once dispatched.
+  const _orRouteOpts = {};     // routeId → segKey → [optA, optB]  (deterministic, cached)
+  const _orRouteChoice = {};   // routeId → segKey → 'A' | 'B'     (assigned option; default 'A')
+  function _orRouteOptsGet(routeId, key, a, b, baseMiles) {
+    if (!_orRouteOpts[routeId]) _orRouteOpts[routeId] = {};
+    if (_orRouteOpts[routeId][key]) return _orRouteOpts[routeId][key];
+    const h = String(key).split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+    const side = (h % 2) ? 1 : -1;
+    const bowA = 0.02 + (h % 3) * 0.01;
+    const extraPct = 0.06 + (h % 5) * 0.01;   // alternative is 6–10% longer
+    const base = Math.round(baseMiles || 0);
+    const optA = { id: 'A', name: 'Recommended route', miles: base, recommended: true, color: '#6688cc', path: [a, _orOffset(a, b, 0.5, side * bowA), b] };
+    const optB = { id: 'B', name: 'Alternative route', miles: Math.round(base * (1 + extraPct)), recommended: false, color: '#9a86e0', path: [a, _orOffset(a, b, 0.32, -side * (0.11 + bowA)), _orOffset(a, b, 0.66, -side * (0.12 + bowA)), b] };
+    _orRouteOpts[routeId][key] = [optA, optB];
+    return _orRouteOpts[routeId][key];
+  }
+  function _orRouteChoiceGet(routeId, key) { return (_orRouteChoice[routeId] && _orRouteChoice[routeId][key]) || 'A'; }
+  const _orRoutePlanned = {};  // routeId → segKey → true once the optimal route is confirmed
+  function _orRouteIsPlanned(routeId, key) { return !!(_orRoutePlanned[routeId] && _orRoutePlanned[routeId][key]); }
+  // confirm the chosen optimal route → the lane moves on to stop planning over that polyline
+  function _orConfirmRoute(routeId, key, opt) {
+    if (!_orRouteChoice[routeId]) _orRouteChoice[routeId] = {};
+    if (!_orRoutePlanned[routeId]) _orRoutePlanned[routeId] = {};
+    _orRouteChoice[routeId][key] = opt.id;
+    _orRoutePlanned[routeId][key] = true;
+    _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Optimal route planned — ' + opt.name + ' · ' + opt.miles.toLocaleString('en-US') + ' mi', revertible: false });
+    _orToast = 'Route planned — ' + opt.name;
+    if (_orToastTimer) clearTimeout(_orToastTimer);
+    _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 3000);
+    setState({ orRouteSel: null });
+  }
+  // reopen the route-choice step (from the map "Change route" button or the panel)
+  function _orChangeRoute(routeId, key) {
+    if (_orRoutePlanned[routeId]) delete _orRoutePlanned[routeId][key];
+    setState({ orRouteSel: _orRouteChoiceGet(routeId, key), orAddType: null, orEdit: false });
+  }
+
   function renderControl(routeId) {
     const F = '"General Sans", Nunito, system-ui';
     const d = buildDetailRows(routeId);
@@ -10642,18 +10682,22 @@ export function initApp() {
       const hosRisk = !!(hos && hos.risk && !hos.acked);
       if (!offPlan && !skipped && !alerts.length && !late && !hosRisk) return el('div', {});
       const crit = alerts.some(a => a.sev === 'crit');
-      const chip = (icon, txt, col, title) => el('span', { onmouseenter: (e) => _orShowTip(e.currentTarget, 'Click to view', col), onmouseleave: _orHideTip, onclick: _orHideTip, style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '800 9.5px ' + F, color: col, background: col + '1f', border: '1px solid ' + col + '55', padding: '3px 6px', borderRadius: '999px', whiteSpace: 'nowrap', lineHeight: '1', cursor: 'pointer' }, html: icon + (txt ? '<span>' + txt + '</span>' : '') });
-      const bell = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
-      const xic = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-      const clk = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-      const gauge = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13a4 4 0 1 0-4-4"/><path d="M12 13v8"/><path d="M5 21h14"/></svg>';
-      const out = [];
-      if (hosRisk) out.push(chip(gauge, hos.breakInH <= 0 ? 'break due' : 'HOS', '#cc666f', hos.breakInH <= 0 ? 'HOS risk · 30-min break overdue' : 'HOS risk · driver runs out of hours ' + _hClock(hos.shortByH) + ' before delivery'));
-      if (late) out.push(chip(clk, '+' + li.byMin + 'm', '#b28835', 'Running late · ETA ' + li.liveEta + ', ' + li.byMin + ' min past the delivery window'));
-      if (offPlan) out.push(chip(_EX_WARN, '', '#cc666f', 'Driver off-plan · +' + Math.round(adh.detourMi) + ' mi'));
-      if (skipped) out.push(chip(xic, String(skipped), '#cc666f', skipped + ' skipped stop' + (skipped > 1 ? 's' : '')));
-      if (alerts.length) out.push(chip(bell, String(alerts.length), crit ? '#cc666f' : '#b28835', alerts.length + ' feasibility alert' + (alerts.length > 1 ? 's' : '')));
-      return el('div', { style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0' } }, out);
+      // Collect every issue as one line, then collapse into a SINGLE warning chip
+      // (icon + count) whose hover lists them all — keeps a busy lane's row from
+      // overflowing into the status control when another lane is expanded.
+      const issues = [];
+      if (hosRisk) issues.push({ sev: 'crit', label: hos.breakInH <= 0 ? 'HOS risk · 30-min break overdue' : 'HOS risk · runs out of hours ' + _hClock(hos.shortByH) + ' before delivery' });
+      if (offPlan) issues.push({ sev: 'crit', label: 'Driver off-plan · +' + Math.round(adh.detourMi) + ' mi' });
+      if (skipped) issues.push({ sev: 'crit', label: skipped + ' skipped stop' + (skipped > 1 ? 's' : '') });
+      if (alerts.length) issues.push({ sev: crit ? 'crit' : 'warn', label: alerts.length + ' feasibility alert' + (alerts.length > 1 ? 's' : '') });
+      if (late) issues.push({ sev: 'warn', label: 'Running late · ETA ' + li.liveEta + ' · ' + li.byMin + ' min past window' });
+      const worst = issues.some(i => i.sev === 'crit') ? '#cc666f' : '#b28835';
+      const n = issues.length;
+      const tipText = issues.map(i => '• ' + i.label).join('\n') + '\nClick to view';
+      const _warn = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+      return el('div', { style: { display: 'flex', alignItems: 'center', flexShrink: '0' } }, [
+        el('span', { onmouseenter: (e) => _orShowTip(e.currentTarget, tipText, worst), onmouseleave: _orHideTip, onclick: _orHideTip, style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 10px ' + F, color: worst, background: worst + '1f', border: '1px solid ' + worst + '55', padding: '3px 7px', borderRadius: '999px', whiteSpace: 'nowrap', lineHeight: '1', cursor: 'pointer' }, html: _warn + (n > 1 ? '<span>' + n + '</span>' : '') })
+      ]);
     }
     const segItems = [];
     // DVIR reminder (driver/unit level) — inspection is done in the driver app; here
@@ -10703,10 +10747,14 @@ export function initApp() {
             el('span', { style: { font: '600 10px ' + F, color: '#666666' } }, ['Booked · not started'])
           ]));
         }
-        const bookedPill = row.kind === 'load'
+        // load lanes can be planned (pick the optimal route); deadheads stay informational
+        const canPlan = row.kind === 'load';
+        const isSelB = canPlan && row.segKey === state.orLane;
+        const _togglePlan = () => setState({ orLane: isSelB ? null : row.segKey, orAddType: null, orReplace: null, orStopOpen: null, orEdit: false, orViewOpen: false, orRouteSel: null });
+        const bookedPill = canPlan
           ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', font: '800 11.5px ' + F, whiteSpace: 'nowrap' }, html: IC.box + '<span>Booked</span>' })
           : el('div', {});
-        segItems.push(el('div', { style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '11px', padding: '12px 14px', borderRadius: '12px', background: 'transparent', border: '1px solid transparent', opacity: '.82' } }, [
+        segItems.push(el('div', { class: canPlan ? 'row-hoverable' : '', onclick: canPlan ? _togglePlan : undefined, style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '11px', padding: '12px 14px', borderRadius: '12px', background: isSelB ? 'rgba(102,136,204,.08)' : 'transparent', border: isSelB ? '1px solid rgba(102,136,204,.16)' : '1px solid transparent', opacity: isSelB ? '1' : '.82', cursor: canPlan ? 'pointer' : 'default' } }, [
           _badge(row),
           el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 18px 1fr', alignItems: 'center', gap: '8px', minWidth: '0' } }, [
             _endpoint(row.origin, row.originDate, null, false),
@@ -10715,8 +10763,9 @@ export function initApp() {
           ]),
           el('div', {}),
           bookedPill,
-          el('div', {})
+          canPlan ? el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _togglePlan(); }, title: isSelB ? 'Hide route options' : 'Plan the route', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSelB ? '#6688cc' : '#666666', transform: isSelB ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown }) : el('div', {})
         ]));
+        if (isSelB) segItems.push(_orRouteIsPlanned(routeId, row.segKey) ? _laneInlinePanel(row) : _laneRoutePlanPanel(row));
         return;
       }
       const done = row.exec === 'Completed';
@@ -10745,6 +10794,12 @@ export function initApp() {
     const segList = el('div', { id: 'or-manage-scroll', class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '10px 8px 18px 20px', display: 'flex', flexDirection: 'column', gap: '4px' } }, segItems);
     // ───────────────────── LANE DETAIL (stop management) ──────────────────
     const laneMode = !!(state.orLane != null && _orSegReg[routeId] && _orSegReg[routeId][state.orLane]);
+    // A booked (assigned, not-started) load lane selected → pre-dispatch route planning
+    // (pick between two optimal-route options) instead of the execution/stop panel.
+    const _selRowPlan = laneMode ? cd.rows.find(r => r.segKey === state.orLane) : null;
+    const _isBookedLane = !!(laneMode && _selRowPlan && _selRowPlan.kind === 'load' && _selRowPlan.exec !== 'Completed' && _selRowPlan.exec !== 'In progress');
+    const planRouteMode = _isBookedLane && !_orRouteIsPlanned(routeId, state.orLane);   // choosing the optimal route
+    const bookedPlanned = _isBookedLane && _orRouteIsPlanned(routeId, state.orLane);    // route chosen → plan stops over it
     const addType = state.orAddType || null;
 
     function _rankPill(rank) {
@@ -11330,6 +11385,43 @@ export function initApp() {
         ]);
       }));
     }
+    // Pre-dispatch route planning panel for a booked (not-started) load lane: two optimal
+    // route options; pick one to leave assigned to the plan. Mirrors the map (Google-Maps style).
+    function _laneRoutePlanPanel(row) {
+      const key = row.segKey;
+      const seg = _orSegReg[routeId][key] || {};
+      const a = seg.oLL || _OR_COORD[seg.origin], b = seg.dLL || _OR_COORD[seg.dest];
+      const baseMiles = seg.miles || (row.load ? row.load.miles : 0) || 0;
+      const opts = (a && b) ? _orRouteOptsGet(routeId, key, a, b, baseMiles) : [];
+      const pend = state.orRouteSel || 'A';   // pending selection (not yet confirmed)
+      const recMiles = opts.length ? opts[0].miles : baseMiles;
+      const card = (o) => {
+        const isSel = o.id === pend;
+        const dMiles = o.miles - recMiles;
+        return el('div', { class: 'hoverable', onclick: () => { if (!isSel) setState({ orRouteSel: o.id }); }, style: { display: 'flex', alignItems: 'center', gap: '11px', padding: '13px 14px', borderRadius: '12px', cursor: 'pointer', background: isSel ? 'rgba(102,136,204,.10)' : '#1f1f1f', border: '1px solid ' + (isSel ? 'rgba(102,136,204,.5)' : 'rgba(255,255,255,.07)') } }, [
+          el('span', { style: { width: '18px', height: '18px', borderRadius: '50%', flexShrink: '0', display: 'grid', placeItems: 'center', border: '2px solid ' + (isSel ? '#6688cc' : '#4d4d4d') } }, [isSel ? el('span', { style: { width: '8px', height: '8px', borderRadius: '50%', background: '#6688cc' } }) : null]),
+          el('span', { style: { width: '4px', alignSelf: 'stretch', minHeight: '34px', borderRadius: '3px', background: o.color, flexShrink: '0', opacity: isSel ? '1' : '.6' } }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, [
+              el('span', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [o.name]),
+              o.recommended ? el('span', { style: { font: '800 8.5px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '2px 7px', borderRadius: '999px' } }, ['Recommended']) : null
+            ]),
+            el('div', { style: { font: '600 10.5px "JetBrains Mono",monospace', color: '#808080', marginTop: '3px' } }, [o.miles.toLocaleString('en-US') + ' mi · ' + drive(o.miles) + (dMiles > 0 ? ' · +' + dMiles + ' mi' : (o.recommended ? ' · shortest' : ''))])
+          ])
+        ]);
+      };
+      const pendOpt = opts.find(o => o.id === pend) || opts[0];
+      const confirmBtn = pendOpt ? el('div', { class: 'hoverable', onclick: () => _orConfirmRoute(routeId, key, pendOpt), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', marginTop: '12px', height: '40px', borderRadius: '10px', background: '#2e9975', color: '#0d1a13', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Confirm route &amp; plan stops</span>' }) : null;
+      return el('div', { class: 'row-hoverable-none', style: { flexShrink: '0', margin: '2px 4px 10px', padding: '14px', borderRadius: '14px', background: '#191919', border: '1px solid rgba(255,255,255,.06)' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' } }, [
+          el('span', { style: { width: '22px', height: '22px', borderRadius: '999px', background: 'rgba(102,136,204,.16)', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0', font: '800 11px ' + F } }, ['1']),
+          el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, ['Choose the optimal route'])
+        ]),
+        el('div', { style: { font: '600 11px ' + F, color: '#808080', lineHeight: '1.45', marginBottom: '12px' } }, ['This lane is booked but hasn’t started. Pick the route to leave planned, then plan stops over it. Compare the options on the map — click a route or a card.']),
+        el('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, opts.map(card)),
+        confirmBtn
+      ]);
+    }
     function _laneInlinePanel(row) {
       const key = row.segKey;
       const seg = _orSegReg[routeId][key];
@@ -11601,8 +11693,25 @@ export function initApp() {
       const logBtn = el('div', { class: 'hoverable', onclick: () => setState({ orLog: key }), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', margin: '2px 12px 12px', height: '34px', borderRadius: '9px', cursor: 'pointer', font: '800 11.5px ' + F, color: '#b3b3b3', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>Plan change log' + (nChanges ? ' (' + nChanges + ')' : '') + '</span>' });
       // stops list grows to ~5 stops, then scrolls internally
       const listWrap = isAdding ? listArea : el('div', { class: 'ef-scroll', style: { maxHeight: '380px', overflowY: 'auto' } }, [listArea]);
+      // A not-started lane has no execution yet → hide the exec strip, deviations and
+      // live-alert banners; a booked lane with a confirmed route shows a "Planned route"
+      // strip instead (with a Change-route affordance).
+      const _started = truckMi >= 0;
+      let _routeStrip = null;
+      if (!_started && isLoad && _orRouteIsPlanned(routeId, key)) {
+        const _a = seg.oLL || _OR_COORD[seg.origin], _b = seg.dLL || _OR_COORD[seg.dest];
+        const _ro = (_a && _b) ? _orRouteOptsGet(routeId, key, _a, _b, seg.miles).find(o => o.id === _orRouteChoiceGet(routeId, key)) : null;
+        if (_ro) _routeStrip = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '10px 16px 2px', padding: '10px 12px', borderRadius: '11px', background: 'rgba(102,136,204,.08)', border: '1px solid rgba(102,136,204,.22)' } }, [
+          el('span', { style: { display: 'flex', color: '#6688cc', flexShrink: '0' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>' }),
+          el('div', { style: { flex: '1', minWidth: '0' } }, [
+            el('div', { style: { font: '800 11.5px ' + F, color: '#e6e6e6' } }, ['Planned route · ' + _ro.name]),
+            el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px' } }, [_ro.miles.toLocaleString('en-US') + ' mi · ' + drive(_ro.miles) + ' · add stops over this route below'])
+          ]),
+          el('div', { class: 'hoverable', onclick: () => _orChangeRoute(routeId, key), style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '8px', background: 'rgba(178,136,53,.12)', border: '1px solid rgba(178,136,53,.4)', color: '#d0a038', font: '800 11px ' + F, cursor: 'pointer' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7.5 7.5"/><path d="M8 21H3v-5"/><path d="M3 21l7.5-7.5"/></svg><span>Change route</span>' })
+        ]);
+      }
       return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
-        loadCard, _orExecStrip(row), deviationsSection, hosBanner, lateBanner, missedBanner, secHead, listWrap, impactStrip, fuelBanner, logBtn
+        loadCard, (_started ? _orExecStrip(row) : _routeStrip), (_started ? deviationsSection : null), (_started ? hosBanner : null), (_started ? lateBanner : null), (_started ? missedBanner : null), secHead, listWrap, impactStrip, fuelBanner, logBtn
       ]);
     }
 
@@ -11741,8 +11850,37 @@ export function initApp() {
         }
         mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '18px', zIndex: '1300', width: '360px', maxWidth: 'calc(100% - 28px)', padding: '12px', borderRadius: '12px', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(8px)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, body));
       }
+    } else if (planRouteMode) {
+      // ─────────── route-planning overlay: title chip + options legend ───────────
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 13px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
+        el('span', { style: { display: 'flex', color: '#6688cc' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>' }),
+        el('div', {}, [
+          el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ['Choose the route to plan']),
+          el('div', { style: { font: '600 10px ' + F, color: '#808080', marginTop: '1px' } }, ['Click a route on the map or a card to assign it'])
+        ])
+      ]));
+      (function () {
+        const seg = _orSegReg[routeId][state.orLane];
+        const a2 = seg && (seg.oLL || _OR_COORD[seg.origin]), b2 = seg && (seg.dLL || _OR_COORD[seg.dest]);
+        if (!a2 || !b2) return;
+        const opts = _orRouteOptsGet(routeId, state.orLane, a2, b2, seg.miles || 0);
+        const chosen = state.orRouteSel || 'A';
+        const legRows = opts.map(o => el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+          el('span', { style: { width: '18px', height: '0', borderTop: '4px solid ' + o.color, flexShrink: '0', opacity: o.id === chosen ? '1' : '.55' } }),
+          el('span', { style: { font: '700 11px ' + F, color: '#e6e6e6' } }, [o.name + ' · ' + o.miles.toLocaleString('en-US') + ' mi' + (o.id === chosen ? ' ✓' : '')])
+        ]));
+        mapPanel.appendChild(el('div', { style: { position: 'absolute', right: '14px', bottom: '30px', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
+          el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#6688cc', marginBottom: '2px' } }, ['Route options'])
+        ].concat(legRows)));
+      })();
     } else if (laneMode) {
       // (adding stops is initiated from the lane's inline panel, not the map)
+      // ── Change route (booked lane with a confirmed optimal route) — top-left ──
+      if (bookedPlanned) {
+        mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1250' } }, [
+          el('div', { class: 'hoverable', onclick: () => _orChangeRoute(routeId, state.orLane), title: 'Pick a different optimal route', style: { display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '999px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(178,136,53,.5)', backdropFilter: 'blur(6px)', color: '#d0a038', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<span>Change route</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7.5 7.5"/><path d="M8 21H3v-5"/><path d="M3 21l7.5-7.5"/><path d="M3 8V3h5"/><path d="M9.5 9.5 3 3"/></svg>' })
+        ]));
+      }
       // ── Update (pull latest from driver app) + View (top-right) ──
       const _laneActive = (function () { const r0 = cd.rows.find(r => r.segKey === state.orLane); return r0 && r0.exec === 'In progress'; })();
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '8px' } }, [
@@ -11903,6 +12041,35 @@ export function initApp() {
       const layers = _orMapLayers;
       layers.clearLayers();
       map.invalidateSize();
+      if (planRouteMode) {
+        // ── pre-dispatch route planning: draw the two optimal-route options (Google-Maps style) ──
+        const seg = _orSegReg[routeId][state.orLane];
+        const a = seg.oLL || _OR_COORD[seg.origin], b = seg.dLL || _OR_COORD[seg.dest];
+        if (a && b) {
+          const opts = _orRouteOptsGet(routeId, state.orLane, a, b, seg.miles || 0);
+          const chosen = state.orRouteSel || 'A';   // pending selection while choosing
+          const allPts = [];
+          // draw the non-selected option(s) first (underneath), the selected one on top
+          opts.slice().sort((x, y) => (x.id === chosen ? 1 : 0) - (y.id === chosen ? 1 : 0)).forEach(function (o) {
+            const isSel = o.id === chosen;
+            o.path.forEach(p => allPts.push(p));
+            L.polyline(o.path, { color: '#0d0d0d', weight: isSel ? 9 : 7, opacity: isSel ? .9 : .5, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+            L.polyline(o.path, { color: o.color, weight: isSel ? 6 : 4, opacity: isSel ? .98 : .55, lineCap: 'round', lineJoin: 'round', interactive: true })
+              .addTo(layers)
+              .bindTooltip(o.name + ' · ' + o.miles.toLocaleString('en-US') + ' mi · ' + drive(o.miles) + (isSel ? '' : ' · click to select'), { sticky: true })
+              .on('click', function () { if (!isSel) setState({ orRouteSel: o.id }); });
+            const mid = o.path[Math.floor(o.path.length / 2)] || _orLerp(a, b, .5);
+            L.marker(mid, { icon: L.divIcon({ className: '', html: '<div style="white-space:nowrap;transform:translate(-50%,-50%);padding:3px 9px;border-radius:999px;font:800 10px ' + F + ';color:' + (isSel ? '#0d1a13' : '#e6e6e6') + ';background:' + (isSel ? o.color : 'rgba(20,20,20,.92)') + ';border:1px solid ' + (isSel ? o.color : 'rgba(255,255,255,.18)') + ';box-shadow:0 2px 8px rgba(0,0,0,.45)">' + drive(o.miles) + (isSel ? ' ✓' : '') + '</div>', iconSize: [0, 0], iconAnchor: [0, 0] }), interactive: false, zIndexOffset: isSel ? 900 : 600 }).addTo(layers);
+          });
+          L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
+          L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:18px;height:18px;border-radius:50%;background:#cc666f;border:3px solid #141414"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
+          const _lb = L.latLngBounds(allPts);
+          const _fitKey = 'plan:' + state.orLane;
+          const _fit = () => { try { map.invalidateSize(); if (_lb.isValid()) map.fitBounds(_lb, { padding: [55, 55] }); } catch (e) {} };
+          if (_fresh || _orMapFitKey !== _fitKey) { _orMapFitKey = _fitKey; _fit(); requestAnimationFrame(() => { _fit(); requestAnimationFrame(_fit); }); [120, 350, 700].forEach(ms => setTimeout(_fit, ms)); }
+        } else if (_fresh || _orMapFitKey !== 'plan-nogeo') { _orMapFitKey = 'plan-nogeo'; map.setView([37.8, -96], 4); }
+        return;
+      }
       if (laneMode) {
         // ── lane-focused view: single lane polyline + its stops (+ candidates) ──
         const seg = _orSegReg[routeId][state.orLane];
@@ -11928,7 +12095,11 @@ export function initApp() {
           // PC vias don't reshape the plan — the planned line stays straight (blue) and the
           // PC detour is drawn separately (purple). Route the plan through non-PC stops only.
           const _planLLs = _sorted.filter(s => !s.pc).map(_stopLL);
-          const pathPts = [a].concat(_planLLs).concat([b]);
+          // a booked lane with a confirmed optimal route uses that route as the base
+          // corridor (until stops are added, which then reshape the line as usual)
+          const _plnOpt = bookedPlanned ? (_orRouteOptsGet(routeId, state.orLane, a, b, laneMiles).find(o => o.id === _orRouteChoiceGet(routeId, state.orLane))) : null;
+          const _baseInterior = (_plnOpt && _planLLs.length === 0) ? _plnOpt.path.slice(1, -1) : [];
+          const pathPts = [a].concat(_baseInterior).concat(_planLLs).concat([b]);
           const _pathAt = (pts, frac) => {
             let total = 0; const segs = [];
             for (let i = 1; i < pts.length; i++) { const dl = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(dl); total += dl; }
