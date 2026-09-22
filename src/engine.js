@@ -10679,10 +10679,46 @@ export function initApp() {
         ])
       ]));
     }
-    cd.rows.forEach(row => {
-      // On Road only manages operational stops for lanes already finished or in
-      // progress — upcoming/not-started lanes are hidden here (managed in Plan).
-      if (row.exec !== 'Completed' && row.exec !== 'In progress') return;
+    // On Road shows lanes the truck has already worked (Completed / In progress) AND
+    // lanes that are booked but not started yet — so the dispatcher sees the whole
+    // upcoming sequence. Only lanes WITHOUT an assigned load (Unbooked / Offer) are
+    // left out; those are still just plan candidates and belong in the Plan tab.
+    const _laneAssigned = (l) => !!(l && l.status && ['Unbooked', 'Offer'].indexOf(l.status) < 0);
+    const _rowMode = (row, idx) => {
+      if (row.exec === 'Completed' || row.exec === 'In progress') return 'exec';
+      if (row.kind === 'load') return _laneAssigned(row.load) ? 'booked' : null;
+      const nxt = cd.rows[idx + 1];   // deadhead rides along only if the load it feeds is shown
+      return (nxt && nxt.kind === 'load' && nxt.exec !== 'Completed' && nxt.exec !== 'In progress' && _laneAssigned(nxt.load)) ? 'booked' : null;
+    };
+    let _upcomingDivider = false;
+    cd.rows.forEach((row, idx) => {
+      const mode = _rowMode(row, idx);
+      if (!mode) return;
+      if (mode === 'booked') {
+        if (!_upcomingDivider) {
+          _upcomingDivider = true;
+          segItems.push(el('div', { style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '10px', margin: '10px 8px 2px', padding: '0 6px' } }, [
+            el('span', { style: { font: '800 10px ' + F, letterSpacing: '.08em', textTransform: 'uppercase', color: '#808080' } }, ['Upcoming']),
+            el('span', { style: { flex: '1', height: '1px', background: 'rgba(255,255,255,.08)' } }),
+            el('span', { style: { font: '600 10px ' + F, color: '#666666' } }, ['Booked · not started'])
+          ]));
+        }
+        const bookedPill = row.kind === 'load'
+          ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', font: '800 11.5px ' + F, whiteSpace: 'nowrap' }, html: IC.box + '<span>Booked</span>' })
+          : el('div', {});
+        segItems.push(el('div', { style: { display: 'grid', gridTemplateColumns: '32px minmax(0,1fr) auto auto 30px', alignItems: 'center', gap: '11px', padding: '12px 14px', borderRadius: '12px', background: 'transparent', border: '1px solid transparent', opacity: '.82' } }, [
+          _badge(row),
+          el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 18px 1fr', alignItems: 'center', gap: '8px', minWidth: '0' } }, [
+            _endpoint(row.origin, row.originDate, null, false),
+            el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
+            _endpoint(row.dest, row.destDate, null, false)
+          ]),
+          el('div', {}),
+          bookedPill,
+          el('div', {})
+        ]));
+        return;
+      }
       const done = row.exec === 'Completed';
       const active = row.exec === 'In progress';
       const isSel = row.segKey === state.orLane;   // lane selected → inline panel + lane-focused right panel
