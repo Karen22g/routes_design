@@ -12561,7 +12561,7 @@ export function initApp() {
         const _typeAct = isFuel ? { label: 'Update price', msg: 'Fuel price update requested' }
           : (sp.type === 'parking' || sp.type === 'rest') ? { label: 'Update Availability', msg: 'Availability update requested' }
           : (['wash', 'repair', 'hotel'].indexOf(sp.type) >= 0) ? { label: 'Call', msg: 'Calling ' + (sp.name || svc.label) + '…' } : null;
-        const bg = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '450', background: 'rgba(10,10,10,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } });
+        const bg = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '2000', background: 'rgba(10,10,10,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } });
         const modal = el('div', { onclick: e => e.stopPropagation(), style: { width: '440px', maxWidth: '100%', maxHeight: '86%', overflowY: 'auto', borderRadius: '16px', background: '#242424', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.6)' } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 20px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
             _svcIconBox(sp.type, 40),
