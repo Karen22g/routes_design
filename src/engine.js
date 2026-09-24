@@ -9276,6 +9276,19 @@ export function initApp() {
     walmart: ['Walmart'],
     driver:  ['Driver Services']
   };
+  // FO-parity: mock ratings & reviews for a stop's profile, deterministic from its id
+  const _OR_REVIEW_AUTHORS = ['GAS_HUNTER2023', 'Brjeka', 'Buddy_xp5mezm7', 'Arayasunshyne Loves', 'Brandon Reed', 'Brian', 'Golden_Gas_FL', 'TruckerMike', 'RoadDog88', 'Diesel_Dan'];
+  const _OR_REVIEW_TEXTS = ['Truck friendly people', 'Clean and quick service', 'Easy in and out for big rigs', 'Staff was helpful', 'Could use some maintenance', 'Great prices, highly recommended', 'Plenty of space for trucks', 'Fast service, no wait', 'Restrooms were clean', 'Would stop here again'];
+  function _orStopReviews(c) {
+    const type = c.type, tag = (_OR_STOP_FEATURES[type] || ['Service'])[0];
+    const h = String(c.id || c.name || type).split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
+    const out = [];
+    for (let i = 0; i < 3; i++) {
+      const k = h + i * 7;
+      out.push({ name: _OR_REVIEW_AUTHORS[k % _OR_REVIEW_AUTHORS.length], stars: 1 + (k % 5), monthsAgo: 2 + ((k * 3) % 78), text: _OR_REVIEW_TEXTS[k % _OR_REVIEW_TEXTS.length], tag: tag });
+    }
+    return { count: 4 + (h % 40), topTag: tag, list: out };
+  }
   // FO-parity: derive the detail fields a stop's profile shows, deterministic from its id
   // so an added stop (which persists only a subset) still renders the same details.
   function _orStopInfo(c) {
@@ -12460,6 +12473,8 @@ export function initApp() {
         const isFuel = sp.type === 'fuel';
         const svc = _OR_SVC[sp.type] || _OR_SVC.fuel;
         const info = _orStopInfo(sp);
+        const rv = _orStopReviews(sp);
+        const _stars = (n, sz) => { let s = ''; for (let i = 1; i <= 5; i++) s += '<svg width="' + (sz || 12) + '" height="' + (sz || 12) + '" viewBox="0 0 24 24" fill="' + (i <= n ? '#e0b341' : 'none') + '" stroke="' + (i <= n ? '#e0b341' : '#4d4d4d') + '" stroke-width="2"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.7L12 17.3 5.8 20.6l1.6-6.7L2.2 8.9l6.9-.6z"/></svg>'; return '<span style="display:inline-flex;gap:1px;vertical-align:middle">' + s + '</span>'; };
         const close = () => setState({ orProfile: null });
         const _pToast = (msg) => { _orToast = msg; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({}); };
         const statusChip = _candStatusBadge(Object.assign({ type: sp.type }, info));
@@ -12516,7 +12531,26 @@ export function initApp() {
             el('div', { style: { display: 'flex', flexDirection: 'column' } }, rows),
             el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '12px 0 9px' } }, ['Features']),
             el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } }, info.features.map(ft => el('span', { style: { font: '700 11px ' + F, color: '#b3b3b3', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', padding: '5px 11px', borderRadius: '999px' } }, [ft]))),
-            _typeAct ? el('div', { class: 'hoverable', onclick: () => _pToast(_typeAct.msg), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', marginTop: '14px', padding: '10px', borderRadius: '10px', font: '800 12px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.3)', cursor: 'pointer' } }, [_typeAct.label]) : null
+            _typeAct ? el('div', { class: 'hoverable', onclick: () => _pToast(_typeAct.msg), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', marginTop: '14px', padding: '10px', borderRadius: '10px', font: '800 12px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.3)', cursor: 'pointer' } }, [_typeAct.label]) : null,
+            // Ratings & Reviews (FO parity)
+            el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '18px 0 8px' } }, ['Ratings & Reviews']),
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '4px' }, html: _stars(Math.round(sp.rating || 4), 14) + '<span style="font:800 12px ' + F + ';color:#e6e6e6">' + (sp.rating != null ? sp.rating : '4.0') + '</span><span style="font:600 11px ' + F + ';color:#808080">· ' + rv.count + ' reviews</span>' }),
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '12px' } }, [
+              el('span', { style: { font: '700 11px ' + F, color: '#808080' } }, ['Top tags:']),
+              el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 10.5px ' + F, color: '#6688cc', border: '1px solid rgba(102,136,204,.35)', padding: '3px 9px', borderRadius: '999px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span>' + rv.topTag + '</span>' })
+            ]),
+            el('div', { style: { display: 'flex', flexDirection: 'column' } }, rv.list.map(r => el('div', { style: { display: 'flex', gap: '10px', padding: '11px 0', borderTop: '1px solid rgba(255,255,255,.06)' } }, [
+              el('div', { style: { width: '30px', height: '30px', borderRadius: '50%', background: '#292929', color: '#808080', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' }),
+              el('div', { style: { flex: '1', minWidth: '0' } }, [
+                el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } }, [
+                  el('span', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, [r.name]),
+                  el('span', { html: _stars(r.stars, 10) }),
+                  el('span', { style: { font: '600 10px ' + F, color: '#666666' } }, [r.monthsAgo + ' months ago'])
+                ]),
+                el('div', { style: { font: '600 11.5px ' + F, color: '#b3b3b3', marginTop: '4px', lineHeight: '1.4' } }, [r.text]),
+                el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 9.5px ' + F, color: '#808080', border: '1px solid rgba(255,255,255,.12)', padding: '2px 8px', borderRadius: '999px', marginTop: '7px' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span>' + r.tag + '</span>' })
+              ])
+            ])))
           ]),
           el('div', { style: { display: 'flex', gap: '8px', padding: '4px 20px 20px' } }, isCand
             ? [el('div', { class: 'hoverable', onclick: () => _orCommitCand(sp), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#141414', background: sp._match ? '#2e9975' : '#6688cc', cursor: 'pointer' } }, [sp._match ? 'Combine stop' : 'Add Stop'])]
