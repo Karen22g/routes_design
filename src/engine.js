@@ -9099,37 +9099,94 @@ export function initApp() {
     const st = _orStopsGet(routeId, key).find(s => s.id === stopId); if (!st) return null;
     return st.frac != null ? st.frac : (seg.miles ? st.distanceMi / seg.miles : 0.5);
   }
-  // Lane-status dropdown: In-transit ⇄ Completed. Completing an in-progress lane with no
-  // auto-detected closing stop enters the map "pick real stop" mode instead of finishing.
+  // ─── Lane status lifecycle (per segment type) ────────────────────────────
+  // A loaded lane follows the load lifecycle; a deadhead follows its own. The
+  // dropdown only enables adjacent (± 1) transitions so a lane keeps a coherent
+  // flow, and a Completed deadhead is locked (its lane is closed).
+  const _OR_LANE_FLOW = {
+    load: ['Unbooked', 'Booked', 'Assigned', 'Dispatched', 'In Transit', 'Delivered', 'Invoiced', 'Paid'],
+    dh:   ['Upcoming', 'In progress', 'Completed']
+  };
+  const _OR_LST_IC = {
+    clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    box:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
+    user:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    truck: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+    spin:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>',
+    check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    doc:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+    dollar:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+  };
+  const _OR_LANE_ST = {
+    'Unbooked':    { label: 'Unbooked',    color: '#808080', bg: 'rgba(255,255,255,.05)', ic: _OR_LST_IC.clock },
+    'Booked':      { label: 'Booked',      color: '#6688cc', bg: 'rgba(102,136,204,.12)', ic: _OR_LST_IC.box },
+    'Assigned':    { label: 'Assigned',    color: '#b3b3b3', bg: 'rgba(255,255,255,.06)', ic: _OR_LST_IC.user },
+    'Dispatched':  { label: 'Dispatched',  color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.truck },
+    'In Transit':  { label: 'In Transit',  color: '#6688cc', bg: 'rgba(102,136,204,.12)', ic: _OR_LST_IC.truck },
+    'Delivered':   { label: 'Delivered',   color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.check },
+    'Invoiced':    { label: 'Invoiced',    color: '#89e589', bg: 'rgba(137,229,137,.12)', ic: _OR_LST_IC.doc },
+    'Paid':        { label: 'Paid',        color: '#89e589', bg: 'rgba(46,153,117,.20)', ic: _OR_LST_IC.dollar },
+    'Upcoming':    { label: 'Upcoming',    color: '#808080', bg: 'transparent',          ic: _OR_LST_IC.clock },
+    'In progress': { label: 'In Progress', color: '#6688cc', bg: 'rgba(102,136,204,.12)', ic: _OR_LST_IC.spin },
+    'Completed':   { label: 'Completed',   color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.check }
+  };
+  const _orLaneStatusOverride = {};   // manually-set lifecycle status per lane (maquetado)
+  function _orLaneStatusGet(routeId, key, exec) {
+    const ov = _orLaneStatusOverride[routeId] && _orLaneStatusOverride[routeId][key];
+    if (ov) return ov;
+    const isLoad = String(key).charAt(0) === 'L';
+    if (isLoad) return exec === 'Completed' ? 'Delivered' : exec === 'In progress' ? 'In Transit' : exec === 'Booked' ? 'Booked' : 'Upcoming';
+    return exec === 'Completed' ? 'Completed' : exec === 'In progress' ? 'In progress' : 'Upcoming';
+  }
+  // Lane-status dropdown: full lifecycle per type, only adjacent (± 1) transitions
+  // enabled; a Completed deadhead is locked. Setting the closing state (loaded →
+  // Delivered / deadhead → Completed) enters the map "pick real stop" mode.
   function _orLaneStatusMenu(anchorEl, routeId, key, current) {
     const F = '"General Sans", Nunito, system-ui';
-    const _isLoadKey = String(key).charAt(0) === 'L';   // 'L'+idx = loaded lane, 'DH'+n = deadhead
+    const isLoad = String(key).charAt(0) === 'L';
+    const flow = isLoad ? _OR_LANE_FLOW.load : _OR_LANE_FLOW.dh;
+    const closing = isLoad ? 'Delivered' : 'Completed';
+    const active = isLoad ? 'In Transit' : 'In progress';
+    const curIdx = flow.indexOf(current);
+    const locked = !isLoad && current === 'Completed';   // deadhead closed → no changes
     const ex = document.getElementById('or-lane-menu'); if (ex) ex.remove();
     const rect = anchorEl.getBoundingClientRect();
     const _pick = (s) => {
       const m = document.getElementById('or-lane-menu'); if (m) m.remove();
-      if (s === current) return;
-      if (s === 'Completed') {
+      if (s === current || locked) return;
+      if (s === closing) {
         const cands = _orCloseCandidates(routeId, key);
         setState({ orLane: key, orCloseLane: key, orCloseStop: null, orCloseSel: cands.length ? cands[cands.length - 1] : null, orAddType: null, orReplace: null, orEdit: false, orViewOpen: false });
-      } else {
+      } else if (s === active) {
         if (_orLaneExec[routeId]) delete _orLaneExec[routeId][key];
         if (_orRealStop[routeId]) delete _orRealStop[routeId][key];
-        _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Lane reopened · back to in-transit', revertible: false });
+        if (_orLaneStatusOverride[routeId]) delete _orLaneStatusOverride[routeId][key];
+        _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Lane reopened · back to ' + active, revertible: false });
         setState({ orCloseLane: null, orCloseSel: null });
+      } else {
+        if (!_orLaneStatusOverride[routeId]) _orLaneStatusOverride[routeId] = {};
+        _orLaneStatusOverride[routeId][key] = s;
+        _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'edit', text: 'Lane status → ' + s, revertible: false });
+        _orToast = 'Lane status set to ' + s; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500);
+        setState({});
       }
     };
     const ck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-    const opt = (s, label, dot) => el('div', { class: 'hoverable', onclick: () => _pick(s), style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', font: '700 12px ' + F, color: s === current ? '#e6e6e6' : '#b3b3b3' } }, [
-      el('span', { style: { width: '8px', height: '8px', borderRadius: '50%', background: dot, flexShrink: '0' } }),
-      el('span', { style: { flex: '1' } }, [label]),
-      s === current ? el('span', { style: { color: '#6688cc', display: 'flex' }, html: ck }) : null
-    ]);
-    const menu = el('div', { id: 'or-lane-menu', style: { position: 'fixed', zIndex: '9999', top: '-9999px', left: Math.max(8, Math.min(rect.left, window.innerWidth - 208)) + 'px', width: '200px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px', boxSizing: 'border-box' } }, [
-      el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#666666', padding: '5px 10px 3px' } }, ['Lane status']),
-      opt('In progress', _isLoadKey ? 'In Transit' : 'In Progress', '#6688cc'),
-      opt('Completed', _isLoadKey ? 'Delivered' : 'Completed', '#47b26b')
-    ]);
+    const opt = (s) => {
+      const meta = _OR_LANE_ST[s] || {};
+      const isCur = s === current;
+      const j = flow.indexOf(s);
+      const enabled = !locked && !isCur && (j === curIdx - 1 || j === curIdx + 1);
+      const dim = !enabled && !isCur;
+      return el('div', { class: enabled ? 'hoverable' : '', onclick: enabled ? (() => _pick(s)) : undefined, title: dim && !locked ? 'Not a valid next status' : undefined, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', cursor: enabled ? 'pointer' : 'default', font: '700 12px ' + F, color: isCur ? '#e6e6e6' : (dim ? '#5a5a5a' : meta.color), background: isCur ? 'rgba(102,136,204,.12)' : 'transparent', opacity: dim ? '.55' : '1' } }, [
+        el('span', { style: { display: 'flex', color: isCur ? '#6688cc' : (dim ? '#5a5a5a' : meta.color) }, html: meta.ic || '' }),
+        el('span', { style: { flex: '1' } }, [meta.label || s]),
+        isCur ? el('span', { style: { color: '#6688cc', display: 'flex' }, html: ck }) : null
+      ]);
+    };
+    const menu = el('div', { id: 'or-lane-menu', style: { position: 'fixed', zIndex: '9999', top: '-9999px', left: Math.max(8, Math.min(rect.left, window.innerWidth - 236)) + 'px', width: '228px', background: '#242424', border: '1px solid rgba(255,255,255,.14)', borderRadius: '11px', boxShadow: '0 18px 44px rgba(0,0,0,.55)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '2px', boxSizing: 'border-box' } }, [
+      el('div', { style: { font: '800 9px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: locked ? '#cc666f' : '#666666', padding: '5px 10px 3px', lineHeight: '1.35' } }, [locked ? (isLoad ? 'Lane is closed · cannot modify' : 'Cannot modify DH status when lane is closed') : 'Lane status'])
+    ].concat(flow.map(opt)));
     document.body.appendChild(menu);
     const M = 8, gap = 6, vh = window.innerHeight, mh = menu.offsetHeight;
     menu.style.top = ((rect.bottom + gap + mh + M <= vh) ? (rect.bottom + gap) : Math.max(M, rect.top - mh - gap)) + 'px';
@@ -10414,17 +10471,11 @@ export function initApp() {
         active ? el('span', { style: { display: 'flex', color: '#666666' }, html: IC.sync }) : null
       ]);
     }
-    function _statusDrop(exec, onClick, isLoad) {
-      // Labels differ by segment type: a loaded lane is In Transit → Delivered (terminal),
-      // a deadhead is In Progress → Completed.
-      const M = {
-        'Completed':   { label: isLoad ? 'Delivered' : 'Completed',    ic: IC.check, fg: '#47b26b', bg: 'rgba(46,153,117,.12)', bd: '1px solid transparent' },
-        'In progress': { label: isLoad ? 'In Transit' : 'In Progress', ic: IC.truck, fg: '#6688cc', bg: 'rgba(102,136,204,.12)', bd: '1px solid transparent' },
-        'Booked':      { label: 'Booked',     ic: IC.box,   fg: '#b3b3b3', bg: 'rgba(255,255,255,.05)', bd: '1px solid rgba(255,255,255,.08)' },
-        'Upcoming':    { label: 'Upcoming',   ic: IC.clock, fg: '#808080', bg: 'transparent',           bd: '1px solid rgba(255,255,255,.1)' }
-      };
-      const m = M[exec] || M.Booked;
-      return el('div', { class: 'hoverable', onclick: onClick ? ((e) => { if (e && e.stopPropagation) e.stopPropagation(); onClick(e); }) : undefined, title: onClick ? 'Change lane status' : undefined, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '9px', background: m.bg, border: m.bd, color: m.fg, font: '800 11.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
+    // status is a lifecycle key from _OR_LANE_ST (In Transit / Delivered / In progress /
+    // Completed / Dispatched / Invoiced / …); the chip renders that state's label + icon.
+    function _statusDrop(status, onClick) {
+      const m = _OR_LANE_ST[status] || _OR_LANE_ST['Booked'];
+      return el('div', { class: 'hoverable', onclick: onClick ? ((e) => { if (e && e.stopPropagation) e.stopPropagation(); onClick(e); }) : undefined, title: onClick ? 'Change lane status' : undefined, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '9px', background: m.bg, border: '1px solid transparent', color: m.color, font: '800 11.5px ' + F, cursor: 'pointer', whiteSpace: 'nowrap' }, html: m.ic + '<span>' + m.label + '</span>' + '<span style="display:flex;color:#666666">' + IC.chevDown + '</span>' });
     }
     // ─────────── On Road execution tracking (real data from the mobile app) ───────────
     // A lane's live snapshot: real miles driven, departure, delay, ELD sync, HOS/speed.
@@ -10835,7 +10886,7 @@ export function initApp() {
           _endpoint(row.dest, row.destDate, active ? 'ETA' : (done ? 'Arrived' : null), false)
         ]),
         _laneIssues(row),
-        _statusDrop(row.exec, (e) => _orLaneStatusMenu(e.currentTarget, routeId, row.segKey, row.exec), row.kind === 'load'),
+        (function () { const _life = _orLaneStatusGet(routeId, row.segKey, row.exec); return _statusDrop(_life, (e) => _orLaneStatusMenu(e.currentTarget, routeId, row.segKey, _life)); })(),
         el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _toggle(); }, title: isSel ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSel ? '#6688cc' : '#666666', transform: isSel ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
       if (isSel) segItems.push(_laneInlinePanel(row));
