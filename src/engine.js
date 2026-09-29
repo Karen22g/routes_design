@@ -10003,6 +10003,58 @@ export function initApp() {
       el('span', { style: { font: '800 12.5px ' + F, color: '#e6e6e6' } }, [_orToast])
     ]);
   }
+  // ── Report data sync: pulls the latest ELD / market data and refreshes every metric,
+  // the polyline and all lane/route info at once (read-only — it re-fetches, never edits).
+  const _orSync = {};   // routeId -> { syncing, tick, lastMs }
+  function _orSyncGet(routeId) { if (!_orSync[routeId]) _orSync[routeId] = { syncing: false, tick: 0, lastMs: Date.now() - 135000 }; return _orSync[routeId]; }
+  function _orSyncAgo(routeId) {
+    const s = _orSyncGet(routeId); if (s.syncing) return 'Syncing…';
+    const secs = Math.max(1, Math.round((Date.now() - s.lastMs) / 1000));
+    if (secs < 45) return 'Updated just now';
+    return 'Updated ' + Math.max(1, Math.round(secs / 60)) + ' min ago';
+  }
+  // deterministic market fuel rate that ticks a little on every sync (so metrics visibly move)
+  function _orFuelRate(routeId) { const t = _orSyncGet(routeId).tick; return 0.52 * (1 + (((t * 37) % 9) - 4) / 100); }  // 0.52 ±4%
+  let _orSyncTimer = null;
+  function _orSyncNow(routeId) {
+    const s = _orSyncGet(routeId);
+    if (s.syncing) return;
+    s.syncing = true;
+    if (_orSyncTimer) clearTimeout(_orSyncTimer);
+    setState({});
+    _orSyncTimer = setTimeout(function () {
+      s.syncing = false; s.tick += 1; s.lastMs = Date.now();
+      // latest telemetry: an in-progress truck has advanced since the last sync
+      const sim = _ctrlSimGet(routeId);
+      if (sim && sim.started && sim.progress < 1) sim.progress = Math.min(1, sim.progress + 0.06);
+      _orToast = 'Synced · latest data pulled';
+      if (_orToastTimer) clearTimeout(_orToastTimer);
+      _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500);
+      setState({});
+    }, 1800);
+  }
+  // small teal spinner shown next to a section title while syncing (else nothing)
+  function _syncSpin(routeId, size) {
+    if (!_orSyncGet(routeId).syncing) return null;
+    const sz = size || 13;
+    return el('span', { style: { display: 'inline-flex', color: '#2e9975', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' });
+  }
+  // map-overlay Sync control: "Synchronized ✓ / Sync" (or "Syncing…") + "Updated … ago"
+  function _orSyncOverlay(routeId, dataLabel) {
+    const F = '"General Sans", Nunito, system-ui';
+    const s = _orSyncGet(routeId), syncing = s.syncing;
+    const pill = syncing
+      ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: '#d0a038', background: 'rgba(178,136,53,.14)', padding: '5px 10px', borderRadius: '999px' } }, [
+          el('span', { style: { display: 'inline-flex', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' }),
+          el('span', {}, ['Syncing…'])
+        ])
+      : el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '5px 10px', borderRadius: '999px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Synchronized</span>' });
+    const syncBtn = el('div', { class: syncing ? '' : 'hoverable', onclick: syncing ? null : () => _orSyncNow(routeId), title: 'Pull the latest available data', style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10.5px ' + F, color: syncing ? '#555' : '#7fd0dd', background: syncing ? 'rgba(255,255,255,.04)' : 'rgba(91,188,203,.14)', padding: '5px 11px', borderRadius: '999px', cursor: syncing ? 'default' : 'pointer' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"' + (syncing ? ' style="animation:_efAdaptSpin .8s linear infinite"' : '') + '><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Sync</span>' });
+    return el('div', { style: { position: 'absolute', left: '12px', bottom: '12px', zIndex: '600', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '11px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
+      el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, [dataLabel || 'Live data']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, [_orSyncAgo(routeId)])]),
+      pill, syncBtn
+    ]);
+  }
   // small SVG donut: deadhead (blue) vs loaded (green)
   function _reportDonut(dhPct) {
     const R = 46, C = 2 * Math.PI * R, dh = Math.max(0, Math.min(100, dhPct)), dhLen = C * dh / 100;
@@ -10010,6 +10062,151 @@ export function initApp() {
       + '<circle cx="66" cy="66" r="' + R + '" fill="none" stroke="#2e9975" stroke-width="15"/>'
       + '<circle cx="66" cy="66" r="' + R + '" fill="none" stroke="#5bbccb" stroke-width="15" stroke-linecap="round" stroke-dasharray="' + dhLen.toFixed(1) + ' ' + (C - dhLen).toFixed(1) + '" transform="rotate(-90 66 66)"/>'
       + '</svg>';
+  }
+  // ── Trip / Route / Lane cost breakdown model (Figma "Trip Cost Summary") ──
+  // Derives a coherent set of cost drivers from the total cost + deadhead share,
+  // so the overview (Deadhead vs Loaded) and the expanded breakdown always agree.
+  function _costPctFmt(p) { return p >= 1 ? Math.round(p) + '%' : (p > 0 ? p.toFixed(2) + '%' : '0%'); }
+  function _costMoney(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
+  function _costSegments(total, dhPct) {
+    const dh = Math.max(0, Math.min(100, dhPct || 0)) / 100, ld = 1 - dh;
+    // sub-weights within each group (sum to 1) — mirrors the Fuel Optimizer breakdown
+    const L = [
+      { key: 'eff', label: 'Efficient Miles', color: '#22c98a', w: 0.830 },
+      { key: 'lde', label: 'Loaded Deviation Excess', color: '#ef5a5a', w: 0.135 },
+      { key: 'pcl', label: 'PC while loaded', color: '#3b82f6', w: 0.035 }
+    ];
+    const D = [
+      { key: 'rdh', label: 'Reposition deadhead', color: '#eab308', w: 0.740 },
+      { key: 'ocr', label: 'Operative center return', color: '#5ec8b7', w: 0.130 },
+      { key: 'pcu', label: 'PC while unloaded', color: '#f59e0b', w: 0.075 },
+      { key: 'dde', label: 'Deadhead Deviation Excess', color: '#9aa3ad', w: 0.055 }
+    ];
+    const segs = [];
+    L.forEach(c => segs.push({ key: c.key, label: c.label, color: c.color, frac: ld * c.w }));
+    D.forEach(c => segs.push({ key: c.key, label: c.label, color: c.color, frac: dh * c.w }));
+    segs.forEach(s => { s.amount = total * s.frac; s.pct = s.frac * 100; });
+    segs.sort((a, b) => b.frac - a.frac);
+    return segs;
+  }
+  function _costArcPath(cx, cy, r, a0, a1) {
+    const large = (a1 - a0) > Math.PI ? 1 : 0;
+    const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    return 'M ' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2);
+  }
+  // Builds a donut ring (SVG string) from segments [{frac,color}] with a small gap between slices.
+  function _costRingSvg(segs, size, thickness) {
+    const cx = size / 2, cy = size / 2, r = (size - thickness) / 2;
+    const TWO = Math.PI * 2, gap = 0.02;
+    let ang = -Math.PI / 2, parts = '';
+    // background track
+    parts += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="' + thickness + '"/>';
+    segs.forEach((s, i) => {
+      const sweep = TWO * s.frac; if (sweep <= 0) return;
+      let a0 = ang, a1 = ang + sweep;
+      let a0g = a0 + gap / 2, a1g = a1 - gap / 2;
+      if (a1g <= a0g) { a0g = a0; a1g = a1; }
+      parts += '<path data-seg="' + i + '" d="' + _costArcPath(cx, cy, r, a0g, a1g) + '" fill="none" stroke="' + s.color + '" stroke-width="' + thickness + '" stroke-linecap="butt" style="transition:opacity .12s,stroke-width .12s;cursor:pointer"/>';
+      ang = a1;
+    });
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' + parts + '</svg>';
+  }
+  // Interactive "Cost Summary" card: overview donut (hover an arc → its cost) with an
+  // "Explore breakdown" state (multi-segment donut + legend; hovering a slice or row
+  // highlights it and shows its % / name in the center). Used in route & lane reports.
+  function _costSummaryCard(opts) {
+    const F = '"General Sans", Nunito, system-ui';
+    const total = Math.max(0, Math.round(opts.total || 0));
+    const dhPct = Math.max(0, Math.min(100, Math.round(opts.dhPct || 0)));
+    const segs = _costSegments(total, dhPct);
+    const dhAmt = total * dhPct / 100, ldAmt = total - dhAmt;
+    const overSegs = [
+      { key: 'loaded', label: 'Loaded miles', color: '#3f5670', frac: (100 - dhPct) / 100, amount: ldAmt, pct: 100 - dhPct },
+      { key: 'dh', label: 'Deadhead', color: '#6cc5d4', frac: dhPct / 100, amount: dhAmt, pct: dhPct }
+    ];
+    const SZ = 156, TH = 20;
+    const _ic = { chart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/></svg>', back: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' };
+
+    // header (title + toggling icon button)
+    const iconBtn = el('div', { class: 'hoverable', style: { color: '#808080', display: 'flex', cursor: 'pointer', borderRadius: '8px', padding: '2px' }, html: _ic.chart, title: 'Explore breakdown' });
+    const header = el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+        el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [opts.title || 'Trip Cost Summary']),
+        opts.busy || null
+      ]),
+      iconBtn
+    ]);
+    const totalEl = el('div', {}, [
+      el('div', { style: { font: '900 30px ' + F, color: '#f5f5f5', marginTop: '8px', lineHeight: '1.05' } }, [_costMoney(total)]),
+      el('div', { style: { font: '700 11px ' + F, color: '#808080', marginTop: '2px' } }, ['Total'])
+    ]);
+
+    // ── donut center overlay (shared position, per-view content) ──
+    const mkCenter = () => el('div', { style: { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 26px' } });
+
+    // ── OVERVIEW view ──
+    const oCenter = mkCenter();
+    const oDefault = '<div style="font:700 11px ' + F + ';color:#666">Hover a slice</div>';
+    oCenter.innerHTML = oDefault;
+    const oRingWrap = el('div', { style: { position: 'relative', width: SZ + 'px', height: SZ + 'px' }, html: _costRingSvg(overSegs, SZ, TH) }, []);
+    oRingWrap.appendChild(oCenter);
+    const oPaths = oRingWrap.querySelectorAll('path[data-seg]');
+    const oSetCenter = (s) => { oCenter.innerHTML = '<div style="font:900 26px ' + F + ';color:' + s.color + '">' + _costMoney(s.amount) + '</div><div style="font:700 11px ' + F + ';color:#8a8a8a;margin-top:2px">' + s.label + '</div>'; };
+    oPaths.forEach((p) => {
+      const s = overSegs[+p.getAttribute('data-seg')];
+      p.addEventListener('mouseenter', () => { oPaths.forEach(q => { q.style.opacity = '.3'; }); p.style.opacity = '1'; p.style.strokeWidth = (TH + 3) + 'px'; oSetCenter(s); });
+      p.addEventListener('mouseleave', () => { oPaths.forEach(q => { q.style.opacity = '1'; q.style.strokeWidth = TH + 'px'; }); oCenter.innerHTML = oDefault; });
+    });
+    const oLegend = el('div', { style: { display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '10px' } }, overSegs.slice().reverse().map(s => el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, [
+      el('span', { style: { width: '9px', height: '9px', borderRadius: '3px', background: s.color, flexShrink: '0' } }),
+      el('span', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, [_costPctFmt(s.pct)]),
+      el('span', { style: { font: '600 11px ' + F, color: '#808080' } }, [s.label])
+    ])));
+    const exploreBtn = el('div', { class: 'hoverable', style: { marginTop: '14px', padding: '12px', borderRadius: '11px', background: 'rgba(91,188,203,.10)', border: '1px solid rgba(91,188,203,.22)', textAlign: 'center', font: '800 13px ' + F, color: '#7fd0dd', cursor: 'pointer' } }, ['Explore breakdown']);
+    const overview = el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center' } }, [
+      el('div', { style: { marginTop: '14px' } }, [oRingWrap]), oLegend, exploreBtn
+    ]);
+
+    // ── BREAKDOWN view ──
+    const bCenter = mkCenter();
+    const bRingWrap = el('div', { style: { position: 'relative', width: SZ + 'px', height: SZ + 'px' }, html: _costRingSvg(segs, SZ, TH) }, []);
+    bRingWrap.appendChild(bCenter);
+    const bPaths = bRingWrap.querySelectorAll('path[data-seg]');
+    const bSetCenter = (s) => { bCenter.innerHTML = '<div style="font:900 26px ' + F + ';color:' + s.color + '">' + _costPctFmt(s.pct) + '</div><div style="font:700 11px ' + F + ';color:#8a8a8a;margin-top:3px;line-height:1.25">' + s.label + '</div>'; };
+    const rowEls = [];
+    const focus = (i) => { bPaths.forEach((q, k) => { q.style.opacity = k === i ? '1' : '.28'; q.style.strokeWidth = (k === i ? TH + 3 : TH) + 'px'; }); rowEls.forEach((r, k) => { r.style.background = k === i ? 'rgba(255,255,255,.05)' : 'transparent'; }); bSetCenter(segs[i]); };
+    const blur = () => { bPaths.forEach(q => { q.style.opacity = '1'; q.style.strokeWidth = TH + 'px'; }); rowEls.forEach(r => { r.style.background = 'transparent'; }); if (segs[0]) bSetCenter(segs[0]); };
+    bPaths.forEach((p) => { const i = +p.getAttribute('data-seg'); p.addEventListener('mouseenter', () => focus(i)); p.addEventListener('mouseleave', blur); });
+    const legendList = el('div', { style: { display: 'flex', flexDirection: 'column', marginTop: '14px' } }, segs.map((s, i) => {
+      const rowEl = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', alignItems: 'center', gap: '10px', padding: '9px 8px', borderRadius: '9px', cursor: 'default', transition: 'background .12s' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', minWidth: '0' } }, [
+          el('span', { style: { width: '10px', height: '10px', borderRadius: '3px', background: s.color, flexShrink: '0' } }),
+          el('span', { style: { font: '700 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [s.label])
+        ]),
+        el('span', { style: { font: '700 12px ' + F, color: '#808080' } }, [_costPctFmt(s.pct)]),
+        el('span', { style: { font: '800 13px ' + F, color: '#f5f5f5', minWidth: '48px', textAlign: 'right' } }, [_costMoney(s.amount)])
+      ]);
+      rowEl.addEventListener('mouseenter', () => focus(i));
+      rowEl.addEventListener('mouseleave', blur);
+      rowEls.push(rowEl);
+      return rowEl;
+    }));
+    if (segs[0]) bSetCenter(segs[0]);
+    const breakdown = el('div', { style: { display: 'none', flexDirection: 'column', alignItems: 'center' } }, [
+      el('div', { style: { marginTop: '14px' } }, [bRingWrap]),
+      el('div', { style: { width: '100%' } }, [legendList])
+    ]);
+
+    // ── view toggle ──
+    const showBreakdown = () => { overview.style.display = 'none'; breakdown.style.display = 'flex'; iconBtn.innerHTML = _ic.back; iconBtn.title = 'Back to overview'; };
+    const showOverview = () => { breakdown.style.display = 'none'; overview.style.display = 'flex'; iconBtn.innerHTML = _ic.chart; iconBtn.title = 'Explore breakdown'; };
+    exploreBtn.addEventListener('click', showBreakdown);
+    iconBtn.addEventListener('click', () => { (breakdown.style.display === 'none' ? showBreakdown : showOverview)(); });
+
+    const cardStyle = { display: 'flex', flexDirection: 'column', padding: '16px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' };
+    if (opts.tall) cardStyle.gridRow = 'span 2';
+    return el('div', { style: cardStyle }, [header, totalEl, overview, breakdown]);
   }
   function renderReport(routeId) {
     const F = '"General Sans", Nunito, system-ui';
@@ -10028,7 +10225,7 @@ export function initApp() {
     const _billedStatuses = { Delivered: 1, Invoiced: 1, Paid: 1, Completed: 1 };
     const billedNum = loads.filter(l => _billedStatuses[l.status]).reduce((s, l) => s + l.income, 0);
     const totalMiNum = d.totalMiNum, dhMilesNum = d.dhMilesNum;
-    const fuelNum = Math.round(totalMiNum * 0.52);
+    const fuelNum = Math.round(totalMiNum * _orFuelRate(routeId));
     const opNum = Math.round(totalMiNum * 1.88);
     const dhCostNum = Math.round(dhMilesNum * 2.4);
     const netProfitNum = d.incomeNum - d.totalCostNum;
@@ -10062,24 +10259,8 @@ export function initApp() {
     ]);
     const _ic = { bag: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>', chart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>', dollar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>', fuel: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></svg>', dh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>', clock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' };
 
-    // ── Route Cost Summary (tall card + donut) ──
-    const costSummary = el('div', { style: { gridRow: 'span 2', display: 'flex', flexDirection: 'column', padding: '16px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
-      el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
-        el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Route Cost Summary']),
-        el('div', { style: { color: '#4d4d4d', display: 'flex' }, html: _ic.chart })
-      ]),
-      el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', marginTop: '10px' } }, ['$' + d.totalCostNum.toLocaleString('en-US')]),
-      el('div', { style: { display: 'flex', gap: '12px', marginTop: '5px', font: '800 11px ' + F } }, [
-        el('span', { style: { color: '#47b26b' } }, ['PFT ' + (netProfitNum < 0 ? '-$' : '$') + Math.abs(netProfitNum).toLocaleString('en-US')]),
-        el('span', { style: { color: '#cc666f' } }, ['CST $' + d.totalCostNum.toLocaleString('en-US')])
-      ]),
-      el('div', { style: { position: 'relative', display: 'grid', placeItems: 'center', margin: '14px 0 4px' }, html: _reportDonut(dhPct) }),
-      el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 11px ' + F, color: '#808080', marginTop: '4px' } }, [
-        el('span', {}, [el('span', { style: { color: '#5bbccb', fontWeight: '900' } }, [dhPct + '%']), el('span', {}, [' Deadhead'])]),
-        el('span', {}, [el('span', { style: { color: '#2e9975', fontWeight: '900' } }, [(100 - dhPct) + '%']), el('span', {}, [' Loaded'])])
-      ]),
-      el('div', { style: { flex: '1' } })
-    ]);
+    // ── Route Cost Summary (interactive donut + explorable breakdown) ──
+    const costSummary = _costSummaryCard({ title: 'Route Cost Summary', total: d.totalCostNum, dhPct: dhPct, tall: true, busy: _syncSpin(routeId) });
 
     const kpiGrid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto auto auto', gap: '12px' } }, [
       kpi('Total Billed', money(billedNum), null, _ic.bag),
@@ -10091,14 +10272,14 @@ export function initApp() {
     ]);
 
     const overview = el('div', { style: { padding: '18px 20px 0' } }, [
-      el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '12px' } }, ['Overview']),
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } }, [el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Overview']), _syncSpin(routeId, 12)]),
       el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gap: '12px' } }, [costSummary, kpiGrid])
     ]);
 
     // ── Breakdown by lane ──
     const laneRows = cd.rows.filter(row => row.kind === 'load');
     const breakdown = el('div', { style: { padding: '20px 20px 24px' } }, [
-      el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '12px' } }, ['Breakdown by lane']),
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } }, [el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Breakdown by lane']), _syncSpin(routeId, 12)]),
       el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, laneRows.map((row) => {
         const key = 'L' + row.loadIdx;
         const ld = loads[row.loadIdx] || {};
@@ -10127,10 +10308,7 @@ export function initApp() {
     const _drivenH = Math.round(drivenMi / 52);
     const mapPh = el('div', { style: { position: 'relative', flex: '1', minHeight: '300px', borderRadius: '14px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } }, [
       el('div', { id: 'ef-report-mapslot', style: { position: 'absolute', inset: '0' } }),
-      el('div', { style: { position: 'absolute', left: '12px', bottom: '12px', zIndex: '600', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '11px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
-        el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, ['Route data']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['Updated 2 min ago'])]),
-        el('span', { class: 'hoverable', onclick: () => { _orToast = 'Refreshing latest route data…'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({}); }, title: 'Pull the latest available data', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 10px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.12)', padding: '4px 9px', borderRadius: '999px', cursor: 'pointer' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Update</span>' })
-      ])
+      _orSyncOverlay(routeId, 'Route data')
     ]);
     const bottomStats = el('div', { style: { display: 'flex', gap: '12px', padding: '14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
       el('div', { style: { flex: '1' } }, [el('div', { style: { font: '800 15px ' + F, color: '#e6e6e6' } }, [Math.round(drivenMi / 6.5) + ' gal']), el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginTop: '2px' } }, ['Fuel usage'])]),
@@ -10170,7 +10348,7 @@ export function initApp() {
     const dhRow = drow ? d.rows[d.rows.indexOf(drow) - 1] : null;   // the deadhead into this load
     const billedNum = ld.income || seg.income || 0;
     const costNum = Math.round(laneMiles * 2.4);
-    const fuelNum = Math.round(laneMiles * 0.52);
+    const fuelNum = Math.round(laneMiles * _orFuelRate(routeId));
     const earnedNum = billedNum - costNum;
     const dhCostNum = dhRow ? Math.abs(_num(dhRow.cost)) : 0;
     const dhMi = dhRow ? _num(dhRow.mileage) : 0;
@@ -10202,48 +10380,94 @@ export function initApp() {
       el('span', { style: { font: '800 10px ' + F, color: _stClr[0], background: _stClr[1], padding: '5px 11px', borderRadius: '999px' } }, [done ? 'Completed' : (ld.status || (started ? 'In transit' : 'Upcoming'))])
     ]);
 
-    // ── Lane Cost Summary + donut ──
-    const costSummary = el('div', { style: { display: 'flex', flexDirection: 'column', padding: '16px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
-      el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Lane Cost Summary']),
-      el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', marginTop: '8px' } }, ['$' + costNum.toLocaleString('en-US')]),
-      el('div', { style: { display: 'flex', gap: '12px', marginTop: '5px', font: '800 11px ' + F } }, [el('span', { style: { color: '#47b26b' } }, ['PFT ' + (earnedNum < 0 ? '-$' : '$') + Math.abs(earnedNum).toLocaleString('en-US')]), el('span', { style: { color: '#cc666f' } }, ['CST $' + costNum.toLocaleString('en-US')])]),
-      el('div', { style: { display: 'grid', placeItems: 'center', margin: '12px 0 2px' }, html: _reportDonut(dhPct) }),
-      el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 11px ' + F, color: '#808080', marginTop: '2px' } }, [el('span', {}, [el('span', { style: { color: '#5bbccb', fontWeight: '900' } }, [dhPct + '%']), ' Deadhead']), el('span', {}, [el('span', { style: { color: '#2e9975', fontWeight: '900' } }, [(100 - dhPct) + '%']), ' Loaded'])]),
-      el('div', { style: { flex: '1' } })
-    ]);
+    // ── Executed vs Optimal cost model (Figma "Operation details") ──
+    // Executed = what actually happened (planned distance + off-plan detours); Optimal =
+    // the best-case plan. The gap between them is surfaced as "missed savings".
+    const _rate = laneMiles ? (costNum / laneMiles) : 2.4;              // $/mi baseline
+    const extraMi = Math.round(devs.reduce((s, dv) => s + (dv.detourMi || 0), 0));
+    const optMi = laneMiles;
+    const exMi = laneMiles + extraMi;
+    const optMilesCost = Math.round(optMi * _rate);                     // == costNum
+    const exMilesCost = Math.round(exMi * _rate);
+    const milesMissed = exMilesCost - optMilesCost;
+    const exFuel = fuelNum;
+    const optFuel = Math.max(0, fuelNum - fuelSavings);
+    const fuelMissed = exFuel - optFuel;
+    const exGal = Math.round(exMi / 6.5), optGal = Math.round(optMi / 6.5);
+    const exPpg = exGal ? (exFuel / exGal) : 0, optPpg = optGal ? (optFuel / optGal) : 0;
+    const income = billedNum;
+    const exTotalCost = exMilesCost + exFuel;
+    const optTotalCost = optMilesCost + optFuel;
+    const exMargin = income - exTotalCost;
+    const optMargin = income - optTotalCost;
+    const totalMissed = optMargin - exMargin;                          // = milesMissed + fuelMissed
+    const _money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
 
-    // ── "How much…" KPI grid ──
-    const hm = (label, value, kind) => el('div', { style: { display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '96px', padding: '13px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
-      el('div', { style: { font: '700 11px ' + F, color: '#808080', lineHeight: '1.35' } }, [label]),
-      el('div', {}, [el('div', { style: { font: '900 18px ' + F, color: '#f5f5f5', marginTop: '6px' } }, [value]), el('div', { style: { marginTop: '7px' } }, [qpill(kind)])])
+    // orange "missed savings" pill (green when nothing was missed)
+    const missedBox = (amt, sub, label) => {
+      const good = amt <= 0, clr = good ? '#47b26b' : '#e0a13a';
+      const bg = good ? 'rgba(46,153,117,.10)' : 'rgba(224,161,58,.10)', bd = good ? 'rgba(46,153,117,.28)' : 'rgba(224,161,58,.32)';
+      return el('div', { style: { marginLeft: 'auto', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: '148px', padding: '13px 16px', borderRadius: '12px', background: bg, border: '1px solid ' + bd } }, [
+        el('div', { style: { font: '900 22px ' + F, color: clr } }, [_money(amt)]),
+        sub ? el('div', { style: { font: '700 11px ' + F, color: clr, opacity: '.85', marginTop: '2px' } }, [sub]) : null,
+        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', color: clr, marginTop: '5px' } }, [label])
+      ].filter(Boolean));
+    };
+    const _colBlock = (big, subs, tag, bigClr) => el('div', {}, [
+      el('div', { style: { font: '900 26px ' + F, color: bigClr || '#f5f5f5', lineHeight: '1.05' } }, [big]),
+      ...(subs || []).map(s => el('div', { style: { font: '600 11.5px ' + F, color: '#8a8a8a', marginTop: '3px' } }, [s])),
+      el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666', marginTop: '5px' } }, [tag])
     ]);
-    const kpiGrid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' } }, [
-      hm('How much was it?', money(billedNum), 'Optimum'),
-      hm('How much was earned?', money(Math.max(0, earnedNum)), earnedNum > billedNum * 0.35 ? 'Optimum' : 'Regular'),
-      hm('How much did it cost?', '$' + costNum.toLocaleString('en-US'), costQ),
-      hm('How much fuel was consumed?', '$' + fuelNum.toLocaleString('en-US'), fuelQ),
-      hm('How much deadhead was there?', '$' + dhCostNum.toLocaleString('en-US'), dhQ),
-      hm('How much downtime was there?', Math.round(downtimeH) + ' h', downQ)
-    ]);
+    const _cardBase = { position: 'relative', display: 'flex', flexDirection: 'column', padding: '16px 18px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' };
 
-    const overview = el('div', { style: { display: 'grid', gridTemplateColumns: '270px minmax(0,1fr)', gap: '12px', marginTop: '14px' } }, [costSummary, kpiGrid]);
-
-    // ── Outcome (read-only: how the realized margin compares to the optimal plan) ──
-    const realized = Math.max(0, earnedNum);
-    const optimal = realized + fuelSavings + Math.round(dhCostNum * 0.5);
-    const gap = Math.max(0, optimal - realized);
-    const capturePct = optimal ? Math.min(100, Math.round(realized / optimal * 100)) : 100;
-    const oc = (label, value, clr) => el('div', { style: { flex: '1', minWidth: '0', padding: '13px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
-      el('div', { style: { font: '700 11px ' + F, color: '#808080' } }, [label]),
-      el('div', { style: { font: '900 19px ' + F, color: clr || '#f5f5f5', marginTop: '6px' } }, [value])
-    ]);
-    const outcome = el('div', { style: { marginTop: '18px' } }, [
-      el('div', { style: { marginBottom: '10px' } }, [
-        el('div', { style: { font: '800 12px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Outcome']),
-        el('div', { style: { font: '500 10.5px ' + F, color: '#666666', marginTop: '2px' } }, ['How this lane’s realized margin compared to its optimal plan.'])
+    // ── Earnings card (income · executed vs optimal margin · total missed savings) ──
+    const _trendIc = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>';
+    const earningsCard = el('div', { style: _cardBase }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Earnings']), _syncSpin(routeId)]),
+        el('div', { style: { color: '#4d4d4d', display: 'flex' }, html: _trendIc })
       ]),
-      el('div', { style: { display: 'flex', gap: '10px' } }, [oc('Realized margin', '$' + realized.toLocaleString('en-US'), '#47b26b'), oc('Optimal margin', '$' + optimal.toLocaleString('en-US')), oc('Margin gap', gap > 0 ? '-$' + gap.toLocaleString('en-US') : '$0', gap > 0 ? '#d0a038' : '#47b26b'), oc('Margin captured', capturePct + '%')])
+      el('div', { style: { display: 'flex', alignItems: 'stretch', gap: '30px', marginTop: '14px' } }, [
+        el('div', {}, [
+          el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666' } }, ['INCOME']),
+          el('div', { style: { font: '900 30px ' + F, color: '#f5f5f5', marginTop: '4px', lineHeight: '1.05' } }, [_money(income)])
+        ]),
+        _colBlock(_money(exMargin), ['Margin'], 'EXECUTED', exMargin < 0 ? '#cc666f' : '#f5f5f5'),
+        el('div', { style: { alignSelf: 'center' } }, [
+          el('div', { style: { display: 'flex', gap: '8px', font: '700 13px ' + F } }, [el('span', { style: { color: '#808080' } }, ['Cost']), el('span', { style: { color: '#e6e6e6', fontWeight: '800' } }, [_money(optTotalCost)])]),
+          el('div', { style: { display: 'flex', gap: '8px', font: '700 15px ' + F, marginTop: '4px' } }, [el('span', { style: { color: '#808080' } }, ['Margin']), el('span', { style: { color: '#47b26b', fontWeight: '900' } }, [_money(optMargin)])]),
+          el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666', marginTop: '5px' } }, ['OPTIMAL'])
+        ]),
+        missedBox(totalMissed, null, 'TOTAL MISSED SAVINGS')
+      ])
     ]);
+
+    // ── Trip Cost Summary (interactive donut + explorable breakdown) ──
+    const costSummary = _costSummaryCard({ title: 'Trip Cost Summary', total: exTotalCost, dhPct: dhPct, tall: true, busy: _syncSpin(routeId) });
+
+    // ── Fuel cost & Miles cost cards (executed vs optimal + missed savings) ──
+    const _fuelIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></svg>';
+    const _milesIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19a2 2 0 0 1 0-4h5a2 2 0 0 0 0-4H6a2 2 0 0 1 0-4h10a2 2 0 0 1 0 4"/><circle cx="6" cy="5" r="1.6"/><circle cx="18" cy="19" r="1.6"/></svg>';
+    const costCompareCard = (title, iconHtml, exBig, exSubs, optBig, optSubs, missed, missedSub, missedLabel) => el('div', { style: _cardBase }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [title]), _syncSpin(routeId)]),
+      el('div', { style: { display: 'flex', alignItems: 'stretch', gap: '26px', marginTop: '16px' } }, [
+        _colBlock(exBig, exSubs, 'EXECUTED'),
+        _colBlock(optBig, optSubs, 'OPTIMAL'),
+        missedBox(missed, missedSub, missedLabel)
+      ]),
+      el('div', { style: { position: 'absolute', right: '16px', bottom: '14px', color: '#333333', display: 'flex' }, html: iconHtml })
+    ]);
+    const fuelCard = costCompareCard('Fuel cost', _fuelIc,
+      _money(exFuel), ['$' + exPpg.toFixed(2) + '/gal', exGal + ' gal'],
+      _money(optFuel), ['$' + optPpg.toFixed(2) + '/gal', optGal + ' gal'],
+      fuelMissed, (exGal - optGal) + ' gal', 'FUEL MISSED SAVINGS');
+    const milesCard = costCompareCard('Miles cost', _milesIc,
+      _money(exMilesCost), [exMi + ' mi'],
+      _money(optMilesCost), [optMi + ' mi'],
+      milesMissed, extraMi + ' mi', 'MILES MISSED SAVINGS');
+
+    const costRow = el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gridTemplateRows: 'auto auto', gap: '12px', marginTop: '12px' } }, [costSummary, fuelCard, milesCard]);
+    const opsSummary = el('div', { style: { marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' } }, [earningsCard, costRow]);
 
     // ── Event timeline (from stops + deviations + departure/arrival) ──
     const evs = [];
@@ -10280,23 +10504,19 @@ export function initApp() {
     }));
     const timeline = el('div', { style: { marginTop: '18px', padding: '16px 14px 18px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
       el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' } }, [
-        el('div', { style: { font: '800 12px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Execution timeline']),
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 12px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#808080' } }, ['Execution timeline']), _syncSpin(routeId, 12)]),
         el('div', { style: { font: '600 10px ' + F, color: '#666666' } }, [_completedN + ' of ' + evs.length + ' events completed'])
       ]),
       el('div', { class: 'ef-scroll', style: { overflowX: 'auto', paddingTop: '18px' } }, [el('div', { style: { minWidth: 'max-content' } }, [timelineTrack, evCols])])
     ]);
 
-    const leftScroll = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px 24px' } }, [back, laneHeader, overview, outcome, timeline]);
+    const leftScroll = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px 24px' } }, [back, laneHeader, opsSummary, timeline]);
     const leftCol = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [chrome.tabBar, leftScroll]);
 
     // ── right column: live lane map + ELD overlay + playback scrubber ──
     const laneMap = el('div', { style: { position: 'relative', flex: '1', minHeight: '320px', borderRadius: '14px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } }, [
       el('div', { id: 'ef-report-mapslot', style: { position: 'absolute', inset: '0' } }),
-      el('div', { style: { position: 'absolute', left: '12px', bottom: '12px', zIndex: '600', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '11px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
-        el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, ['ELD status']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, ['Updated 2 min ago'])]),
-        el('span', { style: { font: '800 10px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '4px 9px', borderRadius: '999px' } }, ['Synced']),
-        el('span', { class: 'hoverable', onclick: () => { _orToast = 'Refreshing latest ELD data…'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({}); }, title: 'Pull the latest available data', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 10px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.12)', padding: '4px 9px', borderRadius: '999px', cursor: 'pointer' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Update</span>' })
-      ])
+      _orSyncOverlay(routeId, 'ELD data')
     ]);
     const scrubber = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
       el('div', { id: 'ef-scrub-btn', class: 'hoverable', onclick: () => _orReportPlayToggle(), title: 'Play the recorded trace', style: { width: '30px', height: '30px', borderRadius: '50%', background: '#292929', color: '#e6e6e6', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>' }),
