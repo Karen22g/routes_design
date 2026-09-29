@@ -10147,7 +10147,7 @@ export function initApp() {
 
     // ── OVERVIEW view ──
     const oCenter = mkCenter();
-    const oDefault = '<div style="font:700 11px ' + F + ';color:#666">Hover a slice</div>';
+    const oDefault = '';
     oCenter.innerHTML = oDefault;
     const oRingWrap = el('div', { style: { position: 'relative', width: SZ + 'px', height: SZ + 'px' }, html: _costRingSvg(overSegs, SZ, TH) }, []);
     oRingWrap.appendChild(oCenter);
@@ -10395,12 +10395,21 @@ export function initApp() {
     const fuelMissed = exFuel - optFuel;
     const exGal = Math.round(exMi / 6.5), optGal = Math.round(optMi / 6.5);
     const exPpg = exGal ? (exFuel / exGal) : 0, optPpg = optGal ? (optFuel / optGal) : 0;
+    // deadhead: executed vs optimal (optimal repositioning trims ~28% of the empty miles)
+    const _dhRate = dhMi ? (dhCostNum / dhMi) : 2.4;
+    const exDhMi = Math.round(dhMi);
+    const optDhMi = Math.round(dhMi * 0.72);
+    const exDhCost = dhCostNum;
+    const optDhCost = Math.round(optDhMi * _dhRate);
+    const dhMissed = exDhCost - optDhCost;
+    // downtime: executed hours (loading, unloading & detention)
+    const exDownH = Math.round(downtimeH);
     const income = billedNum;
-    const exTotalCost = exMilesCost + exFuel;
-    const optTotalCost = optMilesCost + optFuel;
+    const exTotalCost = exMilesCost + exFuel + exDhCost;
+    const optTotalCost = optMilesCost + optFuel + optDhCost;
     const exMargin = income - exTotalCost;
     const optMargin = income - optTotalCost;
-    const totalMissed = optMargin - exMargin;                          // = milesMissed + fuelMissed
+    const totalMissed = optMargin - exMargin;                          // = milesMissed + fuelMissed + dhMissed
     const _money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
 
     // orange "missed savings" pill (green when nothing was missed)
@@ -10465,9 +10474,26 @@ export function initApp() {
       _money(exMilesCost), [exMi + ' mi'],
       _money(optMilesCost), [optMi + ' mi'],
       milesMissed, extraMi + ' mi', 'MILES MISSED SAVINGS');
+    const _dhIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
+    const _clockIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    const deadheadCard = costCompareCard('Deadhead cost', _dhIc,
+      _money(exDhCost), [exDhMi + ' mi'],
+      _money(optDhCost), [optDhMi + ' mi'],
+      dhMissed, (exDhMi - optDhMi) + ' mi', 'DEADHEAD MISSED SAVINGS');
+    // Downtime: single metric (executed hours) — no optimal comparison requested
+    const downtimeCard = el('div', { style: _cardBase }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Downtime']), _syncSpin(routeId)]),
+      el('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '16px' } }, [
+        el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', lineHeight: '1.05' } }, [exDownH + ' h']),
+        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666' } }, ['EXECUTED'])
+      ]),
+      el('div', { style: { font: '600 11.5px ' + F, color: '#8a8a8a', marginTop: '6px' } }, ['Loading, unloading & detention']),
+      el('div', { style: { position: 'absolute', right: '16px', bottom: '14px', color: '#333333', display: 'flex' }, html: _clockIc })
+    ]);
 
     const costRow = el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gridTemplateRows: 'auto auto', gap: '12px', marginTop: '12px' } }, [costSummary, fuelCard, milesCard]);
-    const opsSummary = el('div', { style: { marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' } }, [earningsCard, costRow]);
+    const costRow2 = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)', gap: '12px' } }, [deadheadCard, downtimeCard]);
+    const opsSummary = el('div', { style: { marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' } }, [earningsCard, costRow, costRow2]);
 
     // ── Event timeline (from stops + deviations + departure/arrival) ──
     const evs = [];
