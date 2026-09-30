@@ -10208,6 +10208,91 @@ export function initApp() {
     if (opts.tall) cardStyle.gridRow = 'span 2';
     return el('div', { style: cardStyle }, [header, totalEl, overview, breakdown]);
   }
+  // ── Shared "Operation details" metric cards (used by the lane report and, via a toggle,
+  // by the route report). `m` is a normalized executed-vs-optimal model. Returns the nodes:
+  // Earnings (full width), then costRow (Trip/Route Cost Summary donut | Fuel · Miles),
+  // then costRow2 (Deadhead cost | Downtime). Every card shows a sync spinner while syncing.
+  function _opsMetricCards(routeId, m) {
+    const F = '"General Sans", Nunito, system-ui';
+    const _money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
+    const missedBox = (amt, sub, label) => {
+      const good = amt <= 0, clr = good ? '#47b26b' : '#e0a13a';
+      const bg = good ? 'rgba(46,153,117,.10)' : 'rgba(224,161,58,.10)', bd = good ? 'rgba(46,153,117,.28)' : 'rgba(224,161,58,.32)';
+      return el('div', { style: { marginLeft: 'auto', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: '148px', padding: '13px 16px', borderRadius: '12px', background: bg, border: '1px solid ' + bd } }, [
+        el('div', { style: { font: '900 22px ' + F, color: clr } }, [_money(amt)]),
+        sub ? el('div', { style: { font: '700 11px ' + F, color: clr, opacity: '.85', marginTop: '2px' } }, [sub]) : null,
+        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', color: clr, marginTop: '5px' } }, [label])
+      ].filter(Boolean));
+    };
+    const _colBlock = (big, subs, tag, bigClr) => el('div', {}, [
+      el('div', { style: { font: '900 26px ' + F, color: bigClr || '#f5f5f5', lineHeight: '1.05' } }, [big]),
+      ...(subs || []).map(s => el('div', { style: { font: '600 11.5px ' + F, color: '#8a8a8a', marginTop: '3px' } }, [s])),
+      el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666', marginTop: '5px' } }, [tag])
+    ]);
+    const _cardBase = { position: 'relative', display: 'flex', flexDirection: 'column', padding: '16px 18px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' };
+
+    const _trendIc = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>';
+    const earningsCard = el('div', { style: _cardBase }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Earnings']), _syncSpin(routeId)]),
+        el('div', { style: { color: '#4d4d4d', display: 'flex' }, html: _trendIc })
+      ]),
+      el('div', { style: { display: 'flex', alignItems: 'stretch', gap: '30px', marginTop: '14px', flexWrap: 'wrap' } }, [
+        el('div', {}, [
+          el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666' } }, ['INCOME']),
+          el('div', { style: { font: '900 30px ' + F, color: '#f5f5f5', marginTop: '4px', lineHeight: '1.05' } }, [_money(m.income)])
+        ]),
+        _colBlock(_money(m.exMargin), ['Margin'], 'EXECUTED', m.exMargin < 0 ? '#cc666f' : '#f5f5f5'),
+        el('div', { style: { alignSelf: 'center' } }, [
+          el('div', { style: { display: 'flex', gap: '8px', font: '700 13px ' + F } }, [el('span', { style: { color: '#808080' } }, ['Cost']), el('span', { style: { color: '#e6e6e6', fontWeight: '800' } }, [_money(m.optTotalCost)])]),
+          el('div', { style: { display: 'flex', gap: '8px', font: '700 15px ' + F, marginTop: '4px' } }, [el('span', { style: { color: '#808080' } }, ['Margin']), el('span', { style: { color: '#47b26b', fontWeight: '900' } }, [_money(m.optMargin)])]),
+          el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666', marginTop: '5px' } }, ['OPTIMAL'])
+        ]),
+        missedBox(m.totalMissed, null, 'TOTAL MISSED SAVINGS')
+      ])
+    ]);
+
+    const costSummary = _costSummaryCard({ title: m.costTitle || 'Trip Cost Summary', total: m.exTotalCost, dhPct: m.dhPct, tall: true, busy: _syncSpin(routeId) });
+
+    const _fuelIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></svg>';
+    const _milesIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19a2 2 0 0 1 0-4h5a2 2 0 0 0 0-4H6a2 2 0 0 1 0-4h10a2 2 0 0 1 0 4"/><circle cx="6" cy="5" r="1.6"/><circle cx="18" cy="19" r="1.6"/></svg>';
+    const _dhIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
+    const _clockIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    const costCompareCard = (title, iconHtml, exBig, exSubs, optBig, optSubs, missed, missedSub, missedLabel) => el('div', { style: _cardBase }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [title]), _syncSpin(routeId)]),
+      el('div', { style: { display: 'flex', alignItems: 'stretch', gap: '26px', marginTop: '16px' } }, [
+        _colBlock(exBig, exSubs, 'EXECUTED'),
+        _colBlock(optBig, optSubs, 'OPTIMAL'),
+        missedBox(missed, missedSub, missedLabel)
+      ]),
+      el('div', { style: { position: 'absolute', right: '16px', bottom: '14px', color: '#333333', display: 'flex' }, html: iconHtml })
+    ]);
+    const fuelCard = costCompareCard('Fuel cost', _fuelIc,
+      _money(m.exFuel), ['$' + m.exPpg.toFixed(2) + '/gal', m.exGal + ' gal'],
+      _money(m.optFuel), ['$' + m.optPpg.toFixed(2) + '/gal', m.optGal + ' gal'],
+      m.fuelMissed, (m.exGal - m.optGal) + ' gal', 'FUEL MISSED SAVINGS');
+    const milesCard = costCompareCard('Miles cost', _milesIc,
+      _money(m.exMilesCost), [m.exMi.toLocaleString('en-US') + ' mi'],
+      _money(m.optMilesCost), [m.optMi.toLocaleString('en-US') + ' mi'],
+      m.milesMissed, (m.exMi - m.optMi).toLocaleString('en-US') + ' mi', 'MILES MISSED SAVINGS');
+    const deadheadCard = costCompareCard('Deadhead cost', _dhIc,
+      _money(m.exDhCost), [m.exDhMi.toLocaleString('en-US') + ' mi'],
+      _money(m.optDhCost), [m.optDhMi.toLocaleString('en-US') + ' mi'],
+      m.dhMissed, (m.exDhMi - m.optDhMi).toLocaleString('en-US') + ' mi', 'DEADHEAD MISSED SAVINGS');
+    const downtimeCard = el('div', { style: _cardBase }, [
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Downtime']), _syncSpin(routeId)]),
+      el('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '16px' } }, [
+        el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', lineHeight: '1.05' } }, [m.exDown + ' h']),
+        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666' } }, ['EXECUTED'])
+      ]),
+      el('div', { style: { font: '600 11.5px ' + F, color: '#8a8a8a', marginTop: '6px' } }, ['Loading, unloading & detention']),
+      el('div', { style: { position: 'absolute', right: '16px', bottom: '14px', color: '#333333', display: 'flex' }, html: _clockIc })
+    ]);
+
+    const costRow = el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gridTemplateRows: 'auto auto', gap: '12px' } }, [costSummary, fuelCard, milesCard]);
+    const costRow2 = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)', gap: '12px' } }, [deadheadCard, downtimeCard]);
+    return { earningsCard: earningsCard, costSummary: costSummary, costRow: costRow, costRow2: costRow2, nodes: [earningsCard, costRow, costRow2] };
+  }
   function renderReport(routeId) {
     const F = '"General Sans", Nunito, system-ui';
     const d = buildDetailRows(routeId);
@@ -10271,9 +10356,48 @@ export function initApp() {
       kpi('Total Downtime', Math.round(downtimeH) + ' h', null, _ic.clock)
     ]);
 
+    // ── detailed route metrics model (aggregates the lanes into the same executed-vs-optimal
+    // shape as the lane report, so the route can show the SAME cards via a toggle) ──
+    const _detailed = !!state.reportDetailed;
+    const _routeOps = (function () {
+      const loadKeys = cd.rows.filter(rw => rw.kind === 'load').map(rw => 'L' + rw.loadIdx);
+      let sumExtraMi = 0, sumFuelSave = 0;
+      loadKeys.forEach((k) => {
+        const dv = _orDeviationsFor(routeId, k) || [];
+        sumExtraMi += dv.reduce((s, x) => s + (x.detourMi || 0), 0);
+        const seg = (_orSegReg[routeId] || {})[k] || {};
+        const lm = seg.miles || 0;
+        const fm = (_orFuel[routeId] || {})[k];
+        const fn = Math.round(lm * _orFuelRate(routeId));
+        sumFuelSave += (fm && fm.applied) ? fm.savings : Math.round(fn * 0.11);
+      });
+      sumExtraMi = Math.round(sumExtraMi);
+      const loadedMi = Math.max(0, totalMiNum - dhMilesNum), rate = 2.4;
+      const optMi = loadedMi, exMi = loadedMi + sumExtraMi;
+      const optMilesCost = Math.round(optMi * rate), exMilesCost = Math.round(exMi * rate);
+      const exFuel = fuelNum, optFuel = Math.max(0, fuelNum - sumFuelSave);
+      const exGal = Math.round((totalMiNum + sumExtraMi) / 6.5), optGal = Math.round(totalMiNum / 6.5);
+      const exPpg = exGal ? exFuel / exGal : 0, optPpg = optGal ? optFuel / optGal : 0;
+      const optDhMi = Math.round(dhMilesNum * 0.72), exDhMi = Math.round(dhMilesNum);
+      const exDhCost = dhCostNum, optDhCost = Math.round(optDhMi * rate);
+      const income = loads.reduce((s, l) => s + (l.income || 0), 0);
+      const exTotalCost = exMilesCost + exFuel + exDhCost, optTotalCost = optMilesCost + optFuel + optDhCost;
+      const exMargin = income - exTotalCost, optMargin = income - optTotalCost;
+      return {
+        costTitle: 'Route Cost Summary', income: income, exMargin: exMargin, optTotalCost: optTotalCost, optMargin: optMargin, totalMissed: optMargin - exMargin, exTotalCost: exTotalCost, dhPct: dhPct,
+        exFuel: exFuel, optFuel: optFuel, exGal: exGal, optGal: optGal, exPpg: exPpg, optPpg: optPpg, fuelMissed: exFuel - optFuel,
+        exMilesCost: exMilesCost, optMilesCost: optMilesCost, exMi: exMi, optMi: optMi, milesMissed: exMilesCost - optMilesCost,
+        exDhCost: exDhCost, optDhCost: optDhCost, exDhMi: exDhMi, optDhMi: optDhMi, dhMissed: exDhCost - optDhCost, exDown: Math.round(downtimeH)
+      };
+    })();
+    const _detailToggle = el('div', { class: 'hoverable', onclick: () => setState({ reportDetailed: !state.reportDetailed }), title: 'Switch between the summary and the full per-metric breakdown', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: 'auto', font: '800 11px ' + F, color: _detailed ? '#b3b3b3' : '#7fd0dd', background: _detailed ? '#292929' : 'rgba(91,188,203,.12)', border: '1px solid ' + (_detailed ? 'rgba(255,255,255,.1)' : 'rgba(91,188,203,.24)'), padding: '6px 12px', borderRadius: '999px', cursor: 'pointer' }, html: (_detailed
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>View summary</span>'
+      : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/></svg><span>View detailed route metrics</span>') });
     const overview = el('div', { style: { padding: '18px 20px 0' } }, [
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } }, [el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Overview']), _syncSpin(routeId, 12)]),
-      el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gap: '12px' } }, [costSummary, kpiGrid])
+      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } }, [el('div', { style: { font: '800 12px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080' } }, ['Overview']), _syncSpin(routeId, 12), _detailToggle]),
+      _detailed
+        ? el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } }, _opsMetricCards(routeId, _routeOps).nodes)
+        : el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gap: '12px' } }, [costSummary, kpiGrid])
     ]);
 
     // ── Breakdown by lane ──
@@ -10410,90 +10534,14 @@ export function initApp() {
     const exMargin = income - exTotalCost;
     const optMargin = income - optTotalCost;
     const totalMissed = optMargin - exMargin;                          // = milesMissed + fuelMissed + dhMissed
-    const _money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
 
-    // orange "missed savings" pill (green when nothing was missed)
-    const missedBox = (amt, sub, label) => {
-      const good = amt <= 0, clr = good ? '#47b26b' : '#e0a13a';
-      const bg = good ? 'rgba(46,153,117,.10)' : 'rgba(224,161,58,.10)', bd = good ? 'rgba(46,153,117,.28)' : 'rgba(224,161,58,.32)';
-      return el('div', { style: { marginLeft: 'auto', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: '148px', padding: '13px 16px', borderRadius: '12px', background: bg, border: '1px solid ' + bd } }, [
-        el('div', { style: { font: '900 22px ' + F, color: clr } }, [_money(amt)]),
-        sub ? el('div', { style: { font: '700 11px ' + F, color: clr, opacity: '.85', marginTop: '2px' } }, [sub]) : null,
-        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.04em', color: clr, marginTop: '5px' } }, [label])
-      ].filter(Boolean));
-    };
-    const _colBlock = (big, subs, tag, bigClr) => el('div', {}, [
-      el('div', { style: { font: '900 26px ' + F, color: bigClr || '#f5f5f5', lineHeight: '1.05' } }, [big]),
-      ...(subs || []).map(s => el('div', { style: { font: '600 11.5px ' + F, color: '#8a8a8a', marginTop: '3px' } }, [s])),
-      el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666', marginTop: '5px' } }, [tag])
-    ]);
-    const _cardBase = { position: 'relative', display: 'flex', flexDirection: 'column', padding: '16px 18px', borderRadius: '14px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' };
-
-    // ── Earnings card (income · executed vs optimal margin · total missed savings) ──
-    const _trendIc = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>';
-    const earningsCard = el('div', { style: _cardBase }, [
-      el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Earnings']), _syncSpin(routeId)]),
-        el('div', { style: { color: '#4d4d4d', display: 'flex' }, html: _trendIc })
-      ]),
-      el('div', { style: { display: 'flex', alignItems: 'stretch', gap: '30px', marginTop: '14px' } }, [
-        el('div', {}, [
-          el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666' } }, ['INCOME']),
-          el('div', { style: { font: '900 30px ' + F, color: '#f5f5f5', marginTop: '4px', lineHeight: '1.05' } }, [_money(income)])
-        ]),
-        _colBlock(_money(exMargin), ['Margin'], 'EXECUTED', exMargin < 0 ? '#cc666f' : '#f5f5f5'),
-        el('div', { style: { alignSelf: 'center' } }, [
-          el('div', { style: { display: 'flex', gap: '8px', font: '700 13px ' + F } }, [el('span', { style: { color: '#808080' } }, ['Cost']), el('span', { style: { color: '#e6e6e6', fontWeight: '800' } }, [_money(optTotalCost)])]),
-          el('div', { style: { display: 'flex', gap: '8px', font: '700 15px ' + F, marginTop: '4px' } }, [el('span', { style: { color: '#808080' } }, ['Margin']), el('span', { style: { color: '#47b26b', fontWeight: '900' } }, [_money(optMargin)])]),
-          el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666', marginTop: '5px' } }, ['OPTIMAL'])
-        ]),
-        missedBox(totalMissed, null, 'TOTAL MISSED SAVINGS')
-      ])
-    ]);
-
-    // ── Trip Cost Summary (interactive donut + explorable breakdown) ──
-    const costSummary = _costSummaryCard({ title: 'Trip Cost Summary', total: exTotalCost, dhPct: dhPct, tall: true, busy: _syncSpin(routeId) });
-
-    // ── Fuel cost & Miles cost cards (executed vs optimal + missed savings) ──
-    const _fuelIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></svg>';
-    const _milesIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19a2 2 0 0 1 0-4h5a2 2 0 0 0 0-4H6a2 2 0 0 1 0-4h10a2 2 0 0 1 0 4"/><circle cx="6" cy="5" r="1.6"/><circle cx="18" cy="19" r="1.6"/></svg>';
-    const costCompareCard = (title, iconHtml, exBig, exSubs, optBig, optSubs, missed, missedSub, missedLabel) => el('div', { style: _cardBase }, [
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, [title]), _syncSpin(routeId)]),
-      el('div', { style: { display: 'flex', alignItems: 'stretch', gap: '26px', marginTop: '16px' } }, [
-        _colBlock(exBig, exSubs, 'EXECUTED'),
-        _colBlock(optBig, optSubs, 'OPTIMAL'),
-        missedBox(missed, missedSub, missedLabel)
-      ]),
-      el('div', { style: { position: 'absolute', right: '16px', bottom: '14px', color: '#333333', display: 'flex' }, html: iconHtml })
-    ]);
-    const fuelCard = costCompareCard('Fuel cost', _fuelIc,
-      _money(exFuel), ['$' + exPpg.toFixed(2) + '/gal', exGal + ' gal'],
-      _money(optFuel), ['$' + optPpg.toFixed(2) + '/gal', optGal + ' gal'],
-      fuelMissed, (exGal - optGal) + ' gal', 'FUEL MISSED SAVINGS');
-    const milesCard = costCompareCard('Miles cost', _milesIc,
-      _money(exMilesCost), [exMi + ' mi'],
-      _money(optMilesCost), [optMi + ' mi'],
-      milesMissed, extraMi + ' mi', 'MILES MISSED SAVINGS');
-    const _dhIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>';
-    const _clockIc = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-    const deadheadCard = costCompareCard('Deadhead cost', _dhIc,
-      _money(exDhCost), [exDhMi + ' mi'],
-      _money(optDhCost), [optDhMi + ' mi'],
-      dhMissed, (exDhMi - optDhMi) + ' mi', 'DEADHEAD MISSED SAVINGS');
-    // Downtime: single metric (executed hours) — no optimal comparison requested
-    const downtimeCard = el('div', { style: _cardBase }, [
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [el('div', { style: { font: '800 13px ' + F, color: '#e6e6e6' } }, ['Downtime']), _syncSpin(routeId)]),
-      el('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '16px' } }, [
-        el('div', { style: { font: '900 26px ' + F, color: '#f5f5f5', lineHeight: '1.05' } }, [exDownH + ' h']),
-        el('div', { style: { font: '800 9.5px ' + F, letterSpacing: '.05em', color: '#666666' } }, ['EXECUTED'])
-      ]),
-      el('div', { style: { font: '600 11.5px ' + F, color: '#8a8a8a', marginTop: '6px' } }, ['Loading, unloading & detention']),
-      el('div', { style: { position: 'absolute', right: '16px', bottom: '14px', color: '#333333', display: 'flex' }, html: _clockIc })
-    ]);
-
-    const costRow = el('div', { style: { display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gridTemplateRows: 'auto auto', gap: '12px', marginTop: '12px' } }, [costSummary, fuelCard, milesCard]);
-    const costRow2 = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)', gap: '12px' } }, [deadheadCard, downtimeCard]);
-    const opsSummary = el('div', { style: { marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' } }, [earningsCard, costRow, costRow2]);
+    const _ops = _opsMetricCards(routeId, {
+      costTitle: 'Trip Cost Summary', income: income, exMargin: exMargin, optTotalCost: optTotalCost, optMargin: optMargin, totalMissed: totalMissed, exTotalCost: exTotalCost, dhPct: dhPct,
+      exFuel: exFuel, optFuel: optFuel, exGal: exGal, optGal: optGal, exPpg: exPpg, optPpg: optPpg, fuelMissed: fuelMissed,
+      exMilesCost: exMilesCost, optMilesCost: optMilesCost, exMi: exMi, optMi: optMi, milesMissed: milesMissed,
+      exDhCost: exDhCost, optDhCost: optDhCost, exDhMi: exDhMi, optDhMi: optDhMi, dhMissed: dhMissed, exDown: exDownH
+    });
+    const opsSummary = el('div', { style: { marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' } }, _ops.nodes);
 
     // ── Event timeline (from stops + deviations + departure/arrival) ──
     const evs = [];
