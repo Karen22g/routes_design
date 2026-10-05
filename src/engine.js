@@ -7040,6 +7040,63 @@ export function initApp() {
     _doRenderLaneMap();
   }
 
+  // ── Time-zone display preference (user-level, persisted). Options per CA-02:
+  // Load local time (default), Device local time, UTC. Lives as a dedicated control in
+  // the route header (Plan / On Road / Report).
+  let _tzPref = null;
+  const _TZ_OPTS = [
+    { k: 'load', label: 'Load local time', short: 'Load local' },
+    { k: 'device', label: 'Device local time', short: 'Device' },
+    { k: 'utc', label: 'UTC', short: 'UTC' }
+  ];
+  function _tzGet() { if (!_tzPref) { try { _tzPref = localStorage.getItem('ef_tz_pref') || 'load'; } catch (e) { _tzPref = 'load'; } } return _tzPref; }
+  function _tzSet(v) { _tzPref = v; try { localStorage.setItem('ef_tz_pref', v); } catch (e) {} }
+  function _tzToast(msg) {
+    const F = '"General Sans", Nunito, system-ui';
+    const ex = document.getElementById('_ef-tz-toast'); if (ex) ex.remove();
+    const t = document.createElement('div'); t.id = '_ef-tz-toast';
+    t.style.cssText = 'position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:9px;padding:11px 16px;border-radius:12px;background:#292929;border:1px solid rgba(255,255,255,.14);box-shadow:0 16px 40px rgba(0,0,0,.5);font:800 12.5px ' + F + ';color:#e6e6e6';
+    t.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#47b26b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>' + msg + '</span>';
+    document.body.appendChild(t);
+    setTimeout(function () { const e = document.getElementById('_ef-tz-toast'); if (e) e.remove(); }, 2500);
+  }
+  function _tzSelector() {
+    const F = '"General Sans", Nunito, system-ui';
+    const cur = _tzGet();
+    const opt = _TZ_OPTS.filter(function (o) { return o.k === cur; })[0] || _TZ_OPTS[0];
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;flex-shrink:0';
+    const btn = document.createElement('div');
+    btn.className = 'hoverable';
+    btn.title = 'Time zone';
+    btn.style.cssText = 'display:flex;align-items:center;gap:7px;height:38px;padding:0 11px;border-radius:999px;background:#292929;border:1px solid rgba(255,255,255,.08);cursor:pointer';
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b3b3b3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+      + '<span style="font:800 12px ' + F + ';color:#e6e6e6;white-space:nowrap">' + opt.short + '</span>'
+      + '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#808080" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+    function close() { const e = document.getElementById('_ef-tz-drop'); if (e) e.remove(); document.removeEventListener('click', onDoc, true); }
+    function onDoc(e) { const d = document.getElementById('_ef-tz-drop'); if (d && !d.contains(e.target) && !wrap.contains(e.target)) close(); }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (document.getElementById('_ef-tz-drop')) { close(); return; }
+      const rect = btn.getBoundingClientRect();
+      const drop = document.createElement('div'); drop.id = '_ef-tz-drop';
+      drop.style.cssText = 'position:fixed;top:' + (rect.bottom + 6) + 'px;right:' + (window.innerWidth - rect.right) + 'px;z-index:9999;min-width:210px;background:#242424;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.6)';
+      const head = document.createElement('div'); head.style.cssText = 'font:800 9.5px ' + F + ';letter-spacing:.06em;text-transform:uppercase;color:#808080;padding:8px 10px 6px'; head.textContent = 'Time zone'; drop.appendChild(head);
+      _TZ_OPTS.forEach(function (o) {
+        const row = document.createElement('div'); row.className = 'hoverable';
+        const active = o.k === _tzGet();
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;font:700 13px ' + F + ';color:' + (active ? '#f5f5f5' : '#b3b3b3');
+        row.innerHTML = '<span>' + o.label + '</span>' + (active ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2e9975" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '');
+        row.addEventListener('click', function (ev) { ev.stopPropagation(); if (o.k === _tzGet()) { close(); return; } _tzSet(o.k); close(); _tzToast('Time zone · ' + o.label); setState({}); });
+        drop.appendChild(row);
+      });
+      document.body.appendChild(drop);
+      setTimeout(function () { document.addEventListener('click', onDoc, true); }, 0);
+    });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
   function _openRoutePreferences(routeId) {
     var ex = document.getElementById('_ef-rp'); if (ex) ex.remove();
     var F = '"General Sans", Nunito, system-ui';
@@ -8134,6 +8191,8 @@ export function initApp() {
       document.body.appendChild(_tm);
     });
     header.appendChild(_htruck);
+    // Time-zone preference selector (CA-02)
+    header.appendChild(_tzSelector());
     // Optimization (clock) button
     var _hopt = document.createElement('button');
     _hopt.style.cssText = 'width:36px;height:36px;border-radius:8px;background:#292929;border:1px solid rgba(255,255,255,.08);color:#e6e6e6;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0';
@@ -9989,7 +10048,7 @@ export function initApp() {
     const _chatUnread = _orChatGet(routeId).unread;
     const _chatIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
     const chatBtn = el('div', { class: 'hoverable', title: 'Chat with the driver', onclick: () => { _orChatGet(routeId).unread = 0; setState({ orChat: true }); }, style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: _chatIcon + (_chatUnread > 0 ? '<span style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#cc666f;color:#fff;font:800 9px ' + F + ';display:flex;align-items:center;justify-content:center;border:2px solid #141414">' + _chatUnread + '</span>' : '') });
-    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, chatBtn, settingsBtn]);
+    const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, chatBtn, _tzSelector(), settingsBtn]);
     const _tab = (id, icon, label) => el('div', { onclick: () => setState({ detailTab: id, reportLane: null }), style: { display: 'flex', alignItems: 'center', padding: '12px', font: '800 12.5px ' + F, color: state.detailTab === id ? '#2e9975' : '#808080', boxShadow: state.detailTab === id ? 'inset 0 -2px 0 0 #2e9975' : 'none', cursor: 'pointer' }, html: icon + '<span style="margin-left:7px">' + label + '</span>' });
     const tabBar = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#1a1a1a', borderBottom: '1px solid rgba(255,255,255,.07)', padding: '0 20px' } }, [_tab('plan', ICON.plan, 'Plan'), _tab('control', ICON.onroad, 'On Road'), _tab('report', ICON.report, 'Report')]);
     return { header: header, tabBar: tabBar };
@@ -10713,7 +10772,7 @@ export function initApp() {
     const chatBtn = el('div', { class: 'hoverable', title: 'Chat with the driver', onclick: () => { _orChatGet(routeId).unread = 0; setState({ orChat: true }); }, style: { position: 'relative', width: '38px', height: '38px', borderRadius: '999px', background: '#292929', border: '1px solid rgba(255,255,255,.08)', color: '#b3b3b3', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: '0' }, html: _chatIcon + (_chatUnread > 0 ? '<span style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#cc666f;color:#fff;font:800 9px ' + F + ';display:flex;align-items:center;justify-content:center;border:2px solid #141414">' + _chatUnread + '</span>' : '') });
     // Alerts live only at the lane level (row chips + in-lane banners) — no plan-wide bell/badge.
     const header = el('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: '14px', padding: '0 16px', background: '#141414', borderBottom: '1px solid rgba(255,255,255,.07)', height: '64px', position: 'relative', zIndex: '10' } }, [
-      backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, chatBtn, settingsBtn
+      backBtn, nameBlock, statusPillHdr, incomeBar, finishBtn, driverUnitPill, chatBtn, _tzSelector(), settingsBtn
     ]);
 
     // ─────────────────────────────── TAB BAR ──────────────────────────────
