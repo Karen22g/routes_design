@@ -7043,14 +7043,31 @@ export function initApp() {
   // ── Time-zone display preference (user-level, persisted). Options per CA-02:
   // Load local time (default), Device local time, UTC. Lives as a dedicated control in
   // the route header (Plan / On Road / Report).
-  let _tzPref = null;
+  let _tzPref = null, _tzCustom = null;
   const _TZ_OPTS = [
-    { k: 'load', label: 'Load local time', short: 'Load local' },
-    { k: 'device', label: 'Device local time', short: 'Device' },
-    { k: 'utc', label: 'UTC', short: 'UTC' }
+    { k: 'load', label: 'Load Local Times', short: 'Load local' },
+    { k: 'mine', label: 'My Time Zone', short: 'My time zone' },
+    { k: 'utc', label: 'UTC', short: 'UTC' },
+    { k: 'custom', label: 'Custom', short: 'Custom' }
+  ];
+  const _TZ_CUSTOM = [
+    { id: 'America/New_York', label: 'Eastern Time — New York (ET)', short: 'ET' },
+    { id: 'America/Chicago', label: 'Central Time — Chicago (CT)', short: 'CT' },
+    { id: 'America/Denver', label: 'Mountain Time — Denver (MT)', short: 'MT' },
+    { id: 'America/Phoenix', label: 'Mountain, no DST — Phoenix (MST)', short: 'MST' },
+    { id: 'America/Los_Angeles', label: 'Pacific Time — Los Angeles (PT)', short: 'PT' },
+    { id: 'America/Anchorage', label: 'Alaska Time — Anchorage (AKT)', short: 'AKT' },
+    { id: 'Pacific/Honolulu', label: 'Hawaii Time — Honolulu (HST)', short: 'HST' },
+    { id: 'America/Halifax', label: 'Atlantic Time — Halifax (AT)', short: 'AT' },
+    { id: 'America/Mexico_City', label: 'Central Time — Mexico City', short: 'CDMX' },
+    { id: 'Europe/London', label: 'London — GMT/BST', short: 'London' },
+    { id: 'Europe/Madrid', label: 'Central European — Madrid (CET)', short: 'CET' }
   ];
   function _tzGet() { if (!_tzPref) { try { _tzPref = localStorage.getItem('ef_tz_pref') || 'load'; } catch (e) { _tzPref = 'load'; } } return _tzPref; }
   function _tzSet(v) { _tzPref = v; try { localStorage.setItem('ef_tz_pref', v); } catch (e) {} }
+  function _tzCustomGet() { if (!_tzCustom) { try { _tzCustom = localStorage.getItem('ef_tz_custom') || _TZ_CUSTOM[0].id; } catch (e) { _tzCustom = _TZ_CUSTOM[0].id; } } return _tzCustom; }
+  function _tzCustomSet(v) { _tzCustom = v; try { localStorage.setItem('ef_tz_custom', v); } catch (e) {} }
+  function _tzCustomOpt() { return _TZ_CUSTOM.filter(function (x) { return x.id === _tzCustomGet(); })[0] || _TZ_CUSTOM[0]; }
   function _tzToast(msg) {
     const F = '"General Sans", Nunito, system-ui';
     const ex = document.getElementById('_ef-tz-toast'); if (ex) ex.remove();
@@ -7060,10 +7077,14 @@ export function initApp() {
     document.body.appendChild(t);
     setTimeout(function () { const e = document.getElementById('_ef-tz-toast'); if (e) e.remove(); }, 2500);
   }
+  function _tzShort() {
+    const m = _tzGet();
+    if (m === 'custom') return _tzCustomOpt().short;
+    const o = _TZ_OPTS.filter(function (x) { return x.k === m; })[0];
+    return o ? o.short : _TZ_OPTS[0].short;
+  }
   function _tzSelector() {
     const F = '"General Sans", Nunito, system-ui';
-    const cur = _tzGet();
-    const opt = _TZ_OPTS.filter(function (o) { return o.k === cur; })[0] || _TZ_OPTS[0];
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:relative;flex-shrink:0';
     const btn = document.createElement('div');
@@ -7071,7 +7092,7 @@ export function initApp() {
     btn.title = 'Time zone';
     btn.style.cssText = 'display:flex;align-items:center;gap:7px;height:38px;padding:0 11px;border-radius:999px;background:#292929;border:1px solid rgba(255,255,255,.08);cursor:pointer';
     btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b3b3b3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
-      + '<span style="font:800 12px ' + F + ';color:#e6e6e6;white-space:nowrap">' + opt.short + '</span>'
+      + '<span style="font:800 12px ' + F + ';color:#e6e6e6;white-space:nowrap">' + _tzShort() + '</span>'
       + '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#808080" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
     function close() { const e = document.getElementById('_ef-tz-drop'); if (e) e.remove(); document.removeEventListener('click', onDoc, true); }
     function onDoc(e) { const d = document.getElementById('_ef-tz-drop'); if (d && !d.contains(e.target) && !wrap.contains(e.target)) close(); }
@@ -7080,15 +7101,32 @@ export function initApp() {
       if (document.getElementById('_ef-tz-drop')) { close(); return; }
       const rect = btn.getBoundingClientRect();
       const drop = document.createElement('div'); drop.id = '_ef-tz-drop';
-      drop.style.cssText = 'position:fixed;top:' + (rect.bottom + 6) + 'px;right:' + (window.innerWidth - rect.right) + 'px;z-index:9999;min-width:210px;background:#242424;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.6)';
+      drop.style.cssText = 'position:fixed;top:' + (rect.bottom + 6) + 'px;right:' + (window.innerWidth - rect.right) + 'px;z-index:9999;min-width:240px;background:#242424;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.6)';
       const head = document.createElement('div'); head.style.cssText = 'font:800 9.5px ' + F + ';letter-spacing:.06em;text-transform:uppercase;color:#808080;padding:8px 10px 6px'; head.textContent = 'Time zone'; drop.appendChild(head);
       _TZ_OPTS.forEach(function (o) {
         const row = document.createElement('div'); row.className = 'hoverable';
         const active = o.k === _tzGet();
         row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;font:700 13px ' + F + ';color:' + (active ? '#f5f5f5' : '#b3b3b3');
         row.innerHTML = '<span>' + o.label + '</span>' + (active ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2e9975" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '');
-        row.addEventListener('click', function (ev) { ev.stopPropagation(); if (o.k === _tzGet()) { close(); return; } _tzSet(o.k); close(); _tzToast('Time zone · ' + o.label); setState({}); });
+        row.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          if (o.k === 'custom') { _tzSet('custom'); close(); _tzToast('Time zone · ' + _tzCustomOpt().label); setState({}); return; }
+          if (o.k === _tzGet()) { close(); return; }
+          _tzSet(o.k); close(); _tzToast('Time zone · ' + o.label); setState({});
+        });
         drop.appendChild(row);
+        // Custom row → a Select with the list of time zones
+        if (o.k === 'custom') {
+          const selWrap = document.createElement('div'); selWrap.style.cssText = 'position:relative;margin:2px 8px 6px;';
+          const sel = document.createElement('select');
+          sel.style.cssText = 'width:100%;box-sizing:border-box;background:#1a1a1a;border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:9px 32px 9px 11px;color:#f5f5f5;font:600 12.5px ' + F + ';outline:none;cursor:pointer;appearance:none;-webkit-appearance:none';
+          _TZ_CUSTOM.forEach(function (c) { const op = document.createElement('option'); op.value = c.id; op.textContent = c.label; if (c.id === _tzCustomGet()) op.selected = true; sel.appendChild(op); });
+          const arr = document.createElement('div'); arr.style.cssText = 'position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none;color:#808080';
+          arr.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>';
+          sel.addEventListener('click', function (ev) { ev.stopPropagation(); });
+          sel.addEventListener('change', function (ev) { ev.stopPropagation(); _tzCustomSet(sel.value); _tzSet('custom'); close(); _tzToast('Time zone · ' + _tzCustomOpt().label); setState({}); });
+          selWrap.appendChild(sel); selWrap.appendChild(arr); drop.appendChild(selWrap);
+        }
       });
       document.body.appendChild(drop);
       setTimeout(function () { document.addEventListener('click', onDoc, true); }, 0);
