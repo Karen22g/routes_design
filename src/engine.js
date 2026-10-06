@@ -7050,18 +7050,38 @@ export function initApp() {
     { k: 'utc', label: 'UTC', short: 'UTC' },
     { k: 'custom', label: 'Custom', short: 'Custom' }
   ];
+  // Smart variety: full US + nearby coverage (where the loads are) plus remote-dispatch
+  // hubs (LATAM, Europe, Asia). Grouped by region. See CA-04 (Backend) for the catalog.
   const _TZ_CUSTOM = [
-    { id: 'America/New_York', label: 'Eastern Time — New York (ET)', short: 'ET' },
-    { id: 'America/Chicago', label: 'Central Time — Chicago (CT)', short: 'CT' },
-    { id: 'America/Denver', label: 'Mountain Time — Denver (MT)', short: 'MT' },
-    { id: 'America/Phoenix', label: 'Mountain, no DST — Phoenix (MST)', short: 'MST' },
-    { id: 'America/Los_Angeles', label: 'Pacific Time — Los Angeles (PT)', short: 'PT' },
-    { id: 'America/Anchorage', label: 'Alaska Time — Anchorage (AKT)', short: 'AKT' },
-    { id: 'Pacific/Honolulu', label: 'Hawaii Time — Honolulu (HST)', short: 'HST' },
-    { id: 'America/Halifax', label: 'Atlantic Time — Halifax (AT)', short: 'AT' },
-    { id: 'America/Mexico_City', label: 'Central Time — Mexico City', short: 'CDMX' },
-    { id: 'Europe/London', label: 'London — GMT/BST', short: 'London' },
-    { id: 'Europe/Madrid', label: 'Central European — Madrid (CET)', short: 'CET' }
+    { id: 'America/New_York', label: 'Eastern Time — New York (ET)', short: 'ET', group: 'North America — US & nearby' },
+    { id: 'America/Chicago', label: 'Central Time — Chicago (CT)', short: 'CT', group: 'North America — US & nearby' },
+    { id: 'America/Denver', label: 'Mountain Time — Denver (MT)', short: 'MT', group: 'North America — US & nearby' },
+    { id: 'America/Phoenix', label: 'Mountain, no DST — Phoenix (MST)', short: 'MST', group: 'North America — US & nearby' },
+    { id: 'America/Los_Angeles', label: 'Pacific Time — Los Angeles (PT)', short: 'PT', group: 'North America — US & nearby' },
+    { id: 'America/Anchorage', label: 'Alaska Time — Anchorage (AKT)', short: 'AKT', group: 'North America — US & nearby' },
+    { id: 'Pacific/Honolulu', label: 'Hawaii Time — Honolulu (HST)', short: 'HST', group: 'North America — US & nearby' },
+    { id: 'America/Halifax', label: 'Atlantic Time — Halifax, CA (AT)', short: 'AT', group: 'North America — US & nearby' },
+    { id: 'America/Toronto', label: 'Eastern — Toronto, CA', short: 'Toronto', group: 'North America — US & nearby' },
+    { id: 'America/Vancouver', label: 'Pacific — Vancouver, CA', short: 'Vancouver', group: 'North America — US & nearby' },
+    { id: 'America/Mexico_City', label: 'Mexico City (CST)', short: 'CDMX', group: 'North America — US & nearby' },
+    { id: 'America/Tijuana', label: 'Tijuana (PST)', short: 'Tijuana', group: 'North America — US & nearby' },
+    { id: 'America/Guatemala', label: 'Central America (CST)', short: 'CAM', group: 'North America — US & nearby' },
+    { id: 'America/Panama', label: 'Panama (EST)', short: 'Panama', group: 'North America — US & nearby' },
+    { id: 'America/Bogota', label: 'Bogotá (COT)', short: 'Bogotá', group: 'Latin America' },
+    { id: 'America/Lima', label: 'Lima (PET)', short: 'Lima', group: 'Latin America' },
+    { id: 'America/Santiago', label: 'Santiago (CLT)', short: 'Santiago', group: 'Latin America' },
+    { id: 'America/Sao_Paulo', label: 'São Paulo (BRT)', short: 'São Paulo', group: 'Latin America' },
+    { id: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires (ART)', short: 'Buenos Aires', group: 'Latin America' },
+    { id: 'Europe/London', label: 'London — GMT/BST', short: 'London', group: 'Europe' },
+    { id: 'Europe/Madrid', label: 'Central European — Madrid (CET)', short: 'CET', group: 'Europe' },
+    { id: 'Europe/Bucharest', label: 'Eastern European (EET)', short: 'EET', group: 'Europe' },
+    { id: 'Europe/Istanbul', label: 'Istanbul (TRT)', short: 'Istanbul', group: 'Europe' },
+    { id: 'Asia/Dubai', label: 'Dubai (GST)', short: 'Dubai', group: 'Asia / Middle East' },
+    { id: 'Asia/Karachi', label: 'Pakistan (PKT)', short: 'PKT', group: 'Asia / Middle East' },
+    { id: 'Asia/Kolkata', label: 'India (IST)', short: 'IST', group: 'Asia / Middle East' },
+    { id: 'Asia/Manila', label: 'Philippines (PHT)', short: 'PHT', group: 'Asia / Middle East' },
+    { id: 'Asia/Singapore', label: 'Singapore (SGT)', short: 'SGT', group: 'Asia / Middle East' },
+    { id: 'UTC', label: 'UTC', short: 'UTC', group: 'Global' }
   ];
   function _tzGet() { if (!_tzPref) { try { _tzPref = localStorage.getItem('ef_tz_pref') || 'load'; } catch (e) { _tzPref = 'load'; } } return _tzPref; }
   function _tzSet(v) { _tzPref = v; try { localStorage.setItem('ef_tz_pref', v); } catch (e) {} }
@@ -7120,7 +7140,12 @@ export function initApp() {
           const selWrap = document.createElement('div'); selWrap.style.cssText = 'position:relative;margin:2px 8px 6px;';
           const sel = document.createElement('select');
           sel.style.cssText = 'width:100%;box-sizing:border-box;background:#1a1a1a;border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:9px 32px 9px 11px;color:#f5f5f5;font:600 12.5px ' + F + ';outline:none;cursor:pointer;appearance:none;-webkit-appearance:none';
-          _TZ_CUSTOM.forEach(function (c) { const op = document.createElement('option'); op.value = c.id; op.textContent = c.label; if (c.id === _tzCustomGet()) op.selected = true; sel.appendChild(op); });
+          const _tzGroups = []; _TZ_CUSTOM.forEach(function (c) { if (_tzGroups.indexOf(c.group) < 0) _tzGroups.push(c.group); });
+          _tzGroups.forEach(function (g) {
+            const og = document.createElement('optgroup'); og.label = g;
+            _TZ_CUSTOM.filter(function (c) { return c.group === g; }).forEach(function (c) { const op = document.createElement('option'); op.value = c.id; op.textContent = c.label; if (c.id === _tzCustomGet()) op.selected = true; og.appendChild(op); });
+            sel.appendChild(og);
+          });
           const arr = document.createElement('div'); arr.style.cssText = 'position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none;color:#808080';
           arr.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>';
           sel.addEventListener('click', function (ev) { ev.stopPropagation(); });
