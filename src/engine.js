@@ -8965,6 +8965,7 @@ export function initApp() {
   // ── Lane-level stop management: state stores (survive re-renders) ──
   const _orStops = {};      // routeId -> laneIdx -> [stop]
   const _orFuel = {};       // routeId -> laneIdx -> { applied, savings, count, totalGal, totalCost, ppg }
+  const _orFuelNoStopAck = {}; // routeId -> laneIdx -> true (optimal plan = no stop; fuel reaches dest → Generate disabled)
   const _orCandCache = {};  // key routeId|laneIdx|type -> [candidate]
   const _orAlerts = {};     // routeId -> [alert]  (feasibility alerts during execution)
   const _orSegReg = {};     // routeId -> segKey -> { miles, origin, dest, truckMi, isLoad, loadIdx, income }  (loads AND deadheads)
@@ -11974,7 +11975,10 @@ export function initApp() {
       const optFuelStops = stops.filter(s => s.type === 'fuel' && s.fuelPlan);
       const manualFuelStops = stops.filter(s => s.type === 'fuel' && !s.fuelPlan);
       const hasOptimalFuel = !!(fuelMeta && fuelMeta.applied && optFuelStops.length);
-      const canGenerateFuel = !hasOptimalFuel;
+      // once the optimal plan came back with no stops (fuel reaches destination), Generate
+      // is disabled so it isn't an endless loop; the user can still add a stop manually.
+      const noStopAck = !!(_orFuelNoStopAck[routeId] && _orFuelNoStopAck[routeId][key]);
+      const canGenerateFuel = !hasOptimalFuel && !noStopAck;
 
       // load card
       const _ldM = (v, label) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, [label])]);
@@ -12047,10 +12051,10 @@ export function initApp() {
       const canGenNow = canGenerateFuel && !isAdding;
       const genFuelBtn = el('div', {
         class: canGenNow ? 'hoverable' : '',
-        onclick: canGenNow ? (() => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orLoading = false; if (_orFuelReaches(routeId, key)) { setState({ orFuelNoStop: key }); } else { _orPushUndo(routeId, key, 'Optimal fuel plan generated'); _orRunFuel(routeId, key); setState({}); } }, 1500); }) : undefined,
-        title: canGenNow ? (manualFuelStops.length ? 'Replace manual fuel stops with the cost-optimal plan' : 'Generate the cost-optimal fuel plan for this lane') : 'The current stops are already the optimal fuel plan',
+        onclick: canGenNow ? (() => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orLoading = false; if (_orFuelReaches(routeId, key)) { (_orFuelNoStopAck[routeId] = _orFuelNoStopAck[routeId] || {})[key] = true; setState({ orFuelNoStop: key }); } else { _orPushUndo(routeId, key, 'Optimal fuel plan generated'); _orRunFuel(routeId, key); setState({}); } }, 1500); }) : undefined,
+        title: canGenNow ? (manualFuelStops.length ? 'Replace manual fuel stops with the cost-optimal plan' : 'Generate the cost-optimal fuel plan for this lane') : (noStopAck ? 'Fuel reaches the destination — no fuel stop needed' : 'The current stops are already the optimal fuel plan'),
         style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, whiteSpace: 'nowrap', flexShrink: '0', cursor: canGenNow ? 'pointer' : 'default', background: canGenNow ? '#6688cc' : '#242424', color: canGenNow ? '#0d1424' : '#5a5a5a', border: '1px solid ' + (canGenNow ? '#6688cc' : 'rgba(255,255,255,.06)') },
-        html: _OR_SVC.fuel.icon + '<span>Generate Optimal Fuel Plan</span>'
+        html: _OR_SVC.fuel.icon + '<span>' + (noStopAck ? 'No fuel stop needed' : 'Generate Optimal Fuel Plan') + '</span>'
       });
       // section header: Added stops (N) + Generate button (right of the title)
       const secHead = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px 6px' } }, [
