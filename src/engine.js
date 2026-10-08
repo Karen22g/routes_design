@@ -9692,6 +9692,17 @@ export function initApp() {
     if (_orStops[routeId]) _orStops[routeId][laneIdx] = _orStopsGet(routeId, laneIdx).filter(s => !s.fuelPlan);
     if (_orFuel[routeId]) delete _orFuel[routeId][laneIdx];
   }
+  // Whether the current fuel level reaches the destination without a stop (mock range).
+  // When true, "Generate Optimal Fuel Plan" returns 200 with NO fuel stops → we offer the
+  // user the option to add one anyway (Fuel Optimizer parity).
+  const _OR_FUEL_RANGE_MI = 550;
+  function _orFuelReaches(routeId, laneIdx) {
+    const miles = _orSegMiles(routeId, laneIdx);
+    const seg = _orSegReg[routeId] && _orSegReg[routeId][laneIdx];
+    const truckMi = (seg && seg.truckMi >= 0) ? Math.min(seg.truckMi, miles) : 0;
+    const remMiles = Math.max(0, miles - truckMi);
+    return remMiles <= _OR_FUEL_RANGE_MI;
+  }
   // Candidate places along the lane for a given service type (cached for stable browse).
   function _orCandidates(routeId, laneIdx, type) {
     const key = routeId + '|' + laneIdx + '|' + type;
@@ -12036,7 +12047,7 @@ export function initApp() {
       const canGenNow = canGenerateFuel && !isAdding;
       const genFuelBtn = el('div', {
         class: canGenNow ? 'hoverable' : '',
-        onclick: canGenNow ? (() => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orPushUndo(routeId, key, 'Optimal fuel plan generated'); _orRunFuel(routeId, key); _orLoading = false; setState({}); }, 1500); }) : undefined,
+        onclick: canGenNow ? (() => { if (_orLoading) return; _orLoading = true; setState({}); setTimeout(() => { _orLoading = false; if (_orFuelReaches(routeId, key)) { setState({ orFuelNoStop: key }); } else { _orPushUndo(routeId, key, 'Optimal fuel plan generated'); _orRunFuel(routeId, key); setState({}); } }, 1500); }) : undefined,
         title: canGenNow ? (manualFuelStops.length ? 'Replace manual fuel stops with the cost-optimal plan' : 'Generate the cost-optimal fuel plan for this lane') : 'The current stops are already the optimal fuel plan',
         style: { display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '9px', font: '800 11px ' + F, whiteSpace: 'nowrap', flexShrink: '0', cursor: canGenNow ? 'pointer' : 'default', background: canGenNow ? '#6688cc' : '#242424', color: canGenNow ? '#0d1424' : '#5a5a5a', border: '1px solid ' + (canGenNow ? '#6688cc' : 'rgba(255,255,255,.06)') },
         html: _OR_SVC.fuel.icon + '<span>Generate Optimal Fuel Plan</span>'
@@ -13141,7 +13152,28 @@ export function initApp() {
       ]);
     }
 
-    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, logPanel, apptModal]);
+    // ── "no fuel stop needed — add one anyway?" modal (Fuel Optimizer parity) ──
+    // Shown when Generate Optimal Fuel Plan returns 200 with no stops (current fuel reaches
+    // the destination). Yes → opens the fuel-stop options along the lane to pick & add one.
+    let fuelNoStopModal = null;
+    if (state.orFuelNoStop != null) {
+      const _fk = state.orFuelNoStop;
+      const _closeNo = () => { _orToast = 'No fuel stop added · fuel reaches destination'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({ orFuelNoStop: null }); };
+      const _yes = () => { _orLoadOptions({ orFuelNoStop: null, orLane: _fk, orAddType: 'fuel', orReplace: null, orCandSel: null }); };
+      fuelNoStopModal = el('div', { onclick: _closeNo, style: { position: 'absolute', inset: '0', zIndex: '2100', background: 'rgba(10,10,10,.62)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', backdropFilter: 'blur(2px)' } }, [
+        el('div', { onclick: e => { if (e && e.stopPropagation) e.stopPropagation(); }, style: { width: '380px', maxWidth: '100%', borderRadius: '16px', background: '#242424', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.6)', padding: '24px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' } }, [
+          el('div', { style: { width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(91,188,203,.14)', color: '#5bbccb', display: 'grid', placeItems: 'center', marginBottom: '14px' }, html: _OR_SVC.fuel.icon }),
+          el('div', { style: { font: '800 15px ' + F, color: '#f5f5f5', lineHeight: '1.4' } }, ['No fuel stop needed for this lane']),
+          el('div', { style: { font: '600 12.5px ' + F, color: '#9a9a9a', marginTop: '8px', lineHeight: '1.5' } }, ['The current fuel level reaches the destination. Would you like to add a fuel stop anyway?']),
+          el('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', marginTop: '20px' } }, [
+            el('div', { class: 'hoverable', onclick: _yes, style: { height: '46px', borderRadius: '12px', background: '#5bbccb', color: '#0d1a1e', font: '800 14px ' + F, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' } }, ['Yes, add a fuel stop']),
+            el('div', { class: 'hoverable', onclick: _closeNo, style: { height: '46px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.1)', color: '#b3b3b3', font: '800 14px ' + F, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' } }, ['No'])
+          ])
+        ])
+      ]);
+    }
+
+    return el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', fontFamily: F, background: '#141414' } }, [header, splitBody, loadingOverlay, profileModal, toast, logPanel, apptModal, fuelNoStopModal]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
