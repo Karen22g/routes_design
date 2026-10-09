@@ -10055,7 +10055,15 @@ export function initApp() {
     _reportLanePath = sample(0, 1, 60);   // playback follows the corrected plan
     // base plan (blue) + green driven prefix
     L.polyline(sample(0, 1, 60), { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
-    if (frac > 0) L.polyline(sample(0, frac, 40), { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+    // green driven — only where the driver was on the plan; open/kept detour windows keep
+    // the blue dashed plan underneath (the route the driver didn't take).
+    if (frac > 0) {
+      const _offW = devs.filter(dv => dv.f0 != null && (dv.state === 'open' || dv.state === 'kept')).map(dv => [Math.max(0, dv.f0), Math.max(dv.f0, dv.f1)]).sort((p, q) => p[0] - q[0]);
+      const _rng = []; let _cur = 0;
+      _offW.forEach(function (w) { const s = Math.max(_cur, 0), e = Math.min(w[0], frac); if (e > s) _rng.push([s, e]); _cur = Math.max(_cur, w[1]); });
+      if (frac > _cur) _rng.push([_cur, frac]);
+      _rng.forEach(function (r) { if (r[1] - r[0] > 0.001) L.polyline(sample(r[0], r[1], 40), { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); });
+    }
     L.marker(a, { icon: _dot('#47b26b') }).addTo(layers).bindTooltip(s.origin, { direction: 'top' });
     L.marker(b, { icon: _dot('#6688cc') }).addTo(layers).bindTooltip(s.dest, { direction: 'top' });
     // deviation branches (open red / kept grey) + PC purple segment on plan
@@ -12675,19 +12683,27 @@ export function initApp() {
               L.circle(c, { radius: 80467, color: i ? '#6688cc' : '#47b26b', weight: 1.5, opacity: .5, fillColor: i ? '#6688cc' : '#47b26b', fillOpacity: .08 }).addTo(layers).bindTooltip((i ? 'Destination' : 'Origin') + ' hub · ~50 mi', { direction: 'top' });
             });
           }
-          // optimal plan line (bends through justified detours). Green when completed;
-          // otherwise green up to the truck + blue dashed for the remaining plan.
+          // Optimal plan + driven line. The driver was ON the plan everywhere EXCEPT inside
+          // open/kept detour windows: there the planned segment is drawn blue dashed (the
+          // route the driver did NOT take) and the green "driven" line skips it — the
+          // driver's actual detour is the red branch drawn below. This prevents the map from
+          // showing the driver as having driven both the plan AND the detour.
           const _blue = { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' };
           const _green = { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
+          const _offWins = _devsMap.filter(d => d.f0 != null && (d.state === 'open' || d.state === 'kept')).map(d => [Math.max(0, d.f0), Math.max(d.f0, d.f1)]).sort((p, q) => p[0] - q[0]);
+          const _drivenFrac = done ? 1 : (truckFrac > 0 ? Math.min(1, truckFrac) : 0);
+          // on-plan driven ranges = [0, driven] minus the off-plan windows
+          const _onPlan = []; (function () { let cur = 0; _offWins.forEach(function (w) { const s = Math.max(cur, 0), e = Math.min(w[0], _drivenFrac); if (e > s) _onPlan.push([s, e]); cur = Math.max(cur, w[1]); }); if (_drivenFrac > cur) _onPlan.push([cur, _drivenFrac]); })();
           if (_vPlan) {
-            if (done) L.polyline(_planSample(0, 1, 64), { color: '#2e9975', weight: 4, opacity: .9, lineCap: 'round', lineJoin: 'round' }).addTo(layers);
-            else if (truckFrac > 0 && truckFrac < 1) L.polyline(_planSample(truckFrac, 1, 48), _blue).addTo(layers);
-            else if (truckFrac <= 0) L.polyline(_planSample(0, 1, 48), _blue).addTo(layers);
+            // remaining optimal plan ahead of the truck (blue dashed)
+            if (!done && truckFrac < 1) L.polyline(_planSample(truckFrac > 0 ? truckFrac : 0, 1, 48), _blue).addTo(layers);
+            // planned segment the driver skipped inside each detour window (blue dashed)
+            _offWins.forEach(function (w) { if (w[1] - w[0] > 0.001) L.polyline(_planSample(w[0], w[1], 24), _blue).addTo(layers); });
           }
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
-          // traveled (green) portion — follows the corrected plan up to the truck
-          if (!done && truckFrac > 0 && truckFrac < 1) L.polyline(_planSample(0, truckFrac, 48), _green).addTo(layers);
+          // traveled (green) — only where the driver was actually on the plan
+          if (_drivenFrac > 0) _onPlan.forEach(function (r) { if (r[1] - r[0] > 0.001) L.polyline(_planSample(r[0], r[1], 48), _green).addTo(layers); });
           // open the resolve menu at a map click point (positions the popover at the cursor)
           const _openDevAt = (ev, d) => { if (ev && ev.originalEvent && L.DomEvent) L.DomEvent.stopPropagation(ev); const oe = ev && ev.originalEvent; const cx = oe ? oe.clientX : window.innerWidth / 2, cy = oe ? oe.clientY : window.innerHeight / 2; const fake = { getBoundingClientRect: () => ({ left: cx, right: cx, top: cy, bottom: cy, width: 0, height: 0 }) }; _orDeviationMenu(fake, routeId, state.orLane, d.id); };
           // each deviation: clickable on the map to open its resolution flow. Open/kept/PC
