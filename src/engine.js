@@ -12226,6 +12226,11 @@ export function initApp() {
       const missedStops = stops.filter(s => !s.fuelPlan && _mss && _mss[s.id] === 'Skipped');
       if (missedStops.length) {
         const m0 = missedStops[0];
+        // Load stops (pickup / drop-off) can't be swapped for an alternative facility — the
+        // freight belongs to that location. "Replacing" one just means assigning where the
+        // driver really stopped, which is the "Mark completed" flow. So the browser-based
+        // Replace is offered ONLY for operative stops (fuel, rest, parking, …).
+        const _isLoadStop = !!((_OR_SVC[m0.type] || {}).load);
         const nm = m0.type === 'fuel' ? (m0.brand || 'Fuel stop') : (m0.name || (_OR_SVC[m0.type] || _OR_SVC.fuel).label);
         const svcLabel = (_OR_SVC[m0.type] || {}).label || 'Stop';
         const more = missedStops.length - 1;
@@ -12253,7 +12258,7 @@ export function initApp() {
           el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' } }, [
             el('div', { class: 'hoverable', title: 'The driver actually serviced it — assign the real stop on the map', onclick: _markDone, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#0d1a13', background: '#2e9975', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Mark completed</span>' }),
             el('div', { class: 'hoverable', title: 'Send a return-to-route request to the driver', onclick: _return, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '9px', font: '800 11px ' + F, color: '#e6e6e6', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', cursor: 'pointer', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>Ask to return</span>' }),
-            el('div', { class: 'hoverable', title: 'Replace this stop with another address or a point on the map', onclick: _replace, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#e6e6e6', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 8a9 9 0 1 0 3-5.7"/></svg><span>Replace stop</span>' }),
+            _isLoadStop ? null : el('div', { class: 'hoverable', title: 'Swap this stop for another option of the same type along this section of the route', onclick: _replace, style: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#e6e6e6', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.12)', whiteSpace: 'nowrap' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 8a9 9 0 1 0 3-5.7"/></svg><span>Replace stop</span>' }),
             el('div', { class: 'hoverable', title: 'Accept the miss and remove it from the plan', onclick: _drop, style: { display: 'inline-flex', alignItems: 'center', height: '30px', padding: '0 12px', font: '800 11px ' + F, color: '#808080', cursor: 'pointer', borderRadius: '9px', border: '1px solid rgba(255,255,255,.1)', whiteSpace: 'nowrap' } }, ['Remove'])
           ])
         ]);
