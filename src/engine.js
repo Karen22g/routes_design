@@ -9419,7 +9419,9 @@ export function initApp() {
     repair:  ['American Reefer Service', 'Speedco Repair', 'Rush Truck Center', 'Fleet Fix Center', 'US Truck Parts & Sales'],
     hotel:   ['Motel 6', 'Super 8', 'Red Roof Inn', 'La Quinta Inn', 'Days Inn'],
     walmart: ['Walmart Supercenter', 'Walmart Neighborhood', 'Walmart #2841', 'Walmart #1523', 'Walmart #4402'],
-    driver:  ['Driver Services Center', 'DOT Physical Clinic', 'CDL Services Hub', 'Trucker Med Center', 'Driver Care Hub']
+    driver:  ['Driver Services Center', 'DOT Physical Clinic', 'CDL Services Hub', 'Trucker Med Center', 'Driver Care Hub'],
+    pickup:  ['Shipper Dock', 'Cross-dock Facility', 'Nearby Warehouse', 'Freight Terminal', 'Alt. Pickup Yard'],
+    dropoff: ['Receiver Dock', 'Cross-dock Facility', 'Nearby Warehouse', 'Freight Terminal', 'Alt. Drop-off Yard']
   };
   // Per-type browse metadata — mirrors the Fuel Optimizer: which status each option
   // shows (fuel→price, parking→availability Low/Med/High, others→Open/Closed) and
@@ -9784,10 +9786,15 @@ export function initApp() {
       if (filter === 'Available Parking') return list.filter(c => c.availability && c.availability !== 'Low');
       return list.filter(c => c.subtype === filter);
     };
-    // HOS rest flow: only rest options within the stretch where drive hours run out
+    // Windowed flows: confine options to a stretch of the lane.
+    //  - HOS rest: rest options where drive hours run out (reset the clock)
+    //  - Replace a missed stop: options of that type in the section where the stop was
     const _restWin = (type === 'rest' && state.orRestWin) ? state.orRestWin : null;
-    const routeCands = _restWin ? _orHosRestCandidates(routeId, laneIdx, _restWin) : _orCandMatches(routeId, laneIdx, type);
-    return { meta: meta, filter: filter, route: applyF(routeCands), nearby: (!_restWin && state.orExpand) ? applyF(_orNearbyCandidates(routeId, laneIdx, type, state.orRadius || 10)) : [] };
+    const _win = (!_restWin && state.orWin) ? state.orWin : null;
+    const routeCands = _restWin ? _orHosRestCandidates(routeId, laneIdx, _restWin)
+      : _win ? _orWindowCandidates(routeId, laneIdx, type, _win)
+      : _orCandMatches(routeId, laneIdx, type);
+    return { meta: meta, filter: filter, route: applyF(routeCands), nearby: (!_restWin && !_win && state.orExpand) ? applyF(_orNearbyCandidates(routeId, laneIdx, type, state.orRadius || 10)) : [] };
   }
   // Picking a stop type calls a backend to fetch places → show an inline loading
   // state in the options panel until they arrive. Seq guards against fast re-picks.
@@ -9874,6 +9881,35 @@ export function initApp() {
         badge: i === 0 ? 'best' : 'ok'
       };
       _orApplyCandStatus(c, 'rest', i);
+      arr.push(c);
+    }
+    return arr;
+  }
+  // Options of a given type confined to a stretch of the lane (win = {f0,f1}). Used when
+  // replacing a missed stop → the dispatcher sees the alternatives of that type in that
+  // section of the polyline and picks one.
+  function _orWindowCandidates(routeId, laneIdx, type, win) {
+    const miles = _orSegMiles(routeId, laneIdx) || 1;
+    const f0 = Math.max(0.02, Math.min(0.95, win.f0));
+    const f1 = Math.max(f0 + 0.03, Math.min(0.99, win.f1));
+    const isFuel = type === 'fuel';
+    const names = isFuel ? _OR_BRANDS : (_OR_PLACE_NAMES[type] || ['Option A', 'Option B', 'Option C', 'Option D', 'Option E']);
+    const h = (routeId + '|' + laneIdx + '|' + type + '|win').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const n = 6, arr = [];
+    for (let i = 0; i < n; i++) {
+      const frac = f0 + (f1 - f0) * (i + 0.5) / n;
+      const base = names[i % names.length];
+      const c = {
+        id: 'win_' + type + '_' + laneIdx + '_' + i, type,
+        name: isFuel ? base : (base + (i >= names.length ? ' #' + (100 + ((i * 7 + h) % 899)) : '')), brand: isFuel ? base : undefined,
+        distanceMi: Math.round(miles * frac), frac: frac,
+        rating: +(3.4 + ((i * 7) % 10) / 10 * 1.4).toFixed(1),
+        detourMi: +(0.2 + (i % 3) * 0.5).toFixed(1),
+        address: _OR_ADDR[(laneIdx + i) % _OR_ADDR.length],
+        badge: i === 0 ? 'best' : (i === n - 1 ? 'high' : 'ok')
+      };
+      if (isFuel) c.pricePerGal = +(3.55 + ((i * 13) % 10) / 10 * 0.6).toFixed(3);
+      _orApplyCandStatus(c, type, i);
       arr.push(c);
     }
     return arr;
@@ -11472,7 +11508,7 @@ export function initApp() {
         el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '7px' } }, types.map(t => {
           const svc = _OR_SVC[t];
           return el('div', {
-            class: 'hoverable', onclick: () => _orLoadOptions({ orAddType: t, orAddFilter: 'All', orRestWin: null }),
+            class: 'hoverable', onclick: () => _orLoadOptions({ orAddType: t, orAddFilter: 'All', orRestWin: null, orWin: null }),
             style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 8px', minHeight: '92px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.07)', cursor: 'pointer', textAlign: 'center' }
           }, [
             _svcIconBox(t, 34),
@@ -11508,7 +11544,7 @@ export function initApp() {
         if (isReplace) { const old = _orStopsGet(routeId, laneIdx).find(s => s.id === state.orReplace); if (old && old.type === 'fuel' && c.type === 'fuel') opts = { gallons: old.gallons }; _orRemoveStop(routeId, laneIdx, state.orReplace); }
         const _tm = _orTruckMi(routeId, laneIdx); opts = Object.assign({}, opts, { adjusted: _tm >= 0 && c.distanceMi <= _tm });
         _orAddCandidate(routeId, laneIdx, c, opts);
-      }, { orAddType: null, orReplace: null, orCandSel: null, orProfile: null, orRestWin: null });
+      }, { orAddType: null, orReplace: null, orCandSel: null, orProfile: null, orRestWin: null, orWin: null });
     }
     // Find a browsed candidate by id (route + nearby) for the current add type.
     function _orFindCand(id) {
@@ -11584,7 +11620,7 @@ export function initApp() {
       const _chip = (label, active, onClick) => el('div', { class: 'hoverable', onclick: onClick, style: { font: '800 11px ' + F, color: active ? '#0d1a13' : '#b3b3b3', background: active ? '#7fd4c1' : 'transparent', border: '1px solid ' + (active ? '#7fd4c1' : 'rgba(255,255,255,.14)'), padding: '6px 13px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' } }, [label]);
       const kids = [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0 12px' } }, [
-          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null, orCandSel: null, orRestWin: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
+          el('div', { class: 'hoverable', onclick: () => setState({ orAddType: '__pick', orReplace: null, orCandSel: null, orRestWin: null, orWin: null }), style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.1)' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' }),
           _svcIconBox(type, 28),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
             el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [(isReplace ? 'Replace with ' : '') + svc.label]),
@@ -11773,7 +11809,7 @@ export function initApp() {
       const laneAlertsSection = laneAlerts.length ? el('div', { style: { padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: '8px' } }, laneAlerts.map(a => _alertCard(a))) : null;
       const addingHint = state.orAddType ? el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', margin: '10px 16px 0', padding: '10px 12px', borderRadius: '10px', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.3)' } }, [
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '700 11.5px ' + F, color: '#6688cc' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pick options on the map →</span>' }),
-        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null, orRestWin: null }), style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer' } }, ['Cancel'])
+        el('div', { class: 'hoverable', onclick: () => setState({ orAddType: null, orReplace: null, orRestWin: null, orWin: null }), style: { font: '800 11px ' + F, color: '#808080', cursor: 'pointer' } }, ['Cancel'])
       ]) : null;
 
       // plan-vs-actual banner: driver deviated from the planned polyline
@@ -12198,7 +12234,14 @@ export function initApp() {
         // mark completed → assign the real stop on the map (same picker as closing a lane)
         const _markDone = () => { const af = _orStopFrac(routeId, key, m0.id); const cands = _orCloseCandidates(routeId, key, af); setState({ orLane: key, orCloseLane: key, orCloseStop: m0.id, orCloseSel: cands.length ? cands[1] : null, orAddType: null, orReplace: null, orEdit: false, orViewOpen: false }); };
         // replace → place a new address / coordinate on the map for this stop
-        const _replace = () => setState({ orLane: key, orEdit: true, orEditTool: 'add', orEditAdd: { mode: 'address' }, orReplace: m0.id, orAddType: null, orCandSel: null, orViewOpen: false });
+        // Replace → launch the options browser for this stop's type, confined to the
+        // section of the polyline where the missed stop sits, so the dispatcher picks an
+        // alternative to swap it for (instead of typing an address on the map).
+        const _replace = () => {
+          const _af = _orStopFrac(routeId, key, m0.id);
+          const _f = (_af != null) ? _af : (seg.miles ? m0.distanceMi / seg.miles : 0.5);
+          _orLoadOptions({ orLane: key, orAddType: m0.type, orReplace: m0.id, orCandSel: null, orEdit: false, orEditTool: null, orEditAdd: null, orViewOpen: false, orWin: { f0: _f - 0.09, f1: _f + 0.09 }, orScrollAdd: true });
+        };
         missedBanner = el('div', { style: { margin: '2px 16px 8px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(204,102,111,.10)', border: '1px solid rgba(204,102,111,.42)' } }, [
           el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '10px' } }, [
             el('div', { style: { color: '#cc666f', display: 'flex', flexShrink: '0', marginTop: '1px' }, html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }),
