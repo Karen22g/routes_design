@@ -11655,7 +11655,11 @@ export function initApp() {
         listKids.push(el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } }, browse.nearby.length ? browse.nearby.map((c, i) => _candRow(c, browse.route.length + i + 1)) : [el('div', { style: { font: '600 11px ' + F, color: '#666666', padding: '10px 2px' } }, ['Nothing within ' + radius + ' mi of the truck for this filter.'])]));
       }
       kids.push(el('div', { class: 'ef-scroll', style: { maxHeight: '340px', overflowY: 'auto', paddingRight: '3px', margin: '0 -3px' } }, listKids));
-      return el('div', { style: { padding: '4px 16px 16px' } }, kids);
+      const _browseRoot = el('div', { id: 'or-add-options', style: { padding: '4px 16px 16px', scrollMarginTop: '8px' } }, kids);
+      // one-shot: when the add flow was opened from a banner far above (e.g. HOS risk),
+      // bring the options list into view so the user doesn't have to scroll to find it.
+      if (state.orScrollAdd) { state.orScrollAdd = false; setTimeout(function () { const e = document.getElementById('or-add-options'); if (e && e.scrollIntoView) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 40); }
+      return _browseRoot;
     }
     function _segExpansion(row) {
       const key = row.segKey;
@@ -12250,7 +12254,7 @@ export function initApp() {
           const _drv = Math.max(0, Math.min(_mi, _s2.truckMi >= 0 ? _s2.truckMi : 0));
           const _limitMi = Math.min(_mi - 2, _drv + Math.max(25, (_hb.driveLeftH || 0) * 55));
           const _startMi = Math.min(_limitMi - 10, _drv + Math.max(6, (_limitMi - _drv) * 0.12));
-          _orLoadOptions({ orLane: key, orAddType: 'rest', orReplace: null, orCandSel: null, orRestWin: { f0: _startMi / _mi, f1: _limitMi / _mi } });
+          _orLoadOptions({ orLane: key, orAddType: 'rest', orReplace: null, orCandSel: null, orRestWin: { f0: _startMi / _mi, f1: _limitMi / _mi }, orScrollAdd: true });
         };
         const _htitle = _overdue ? 'Break overdue · HOS' : 'HOS risk · drive hours run out early';
         const _hsub = _overdue
