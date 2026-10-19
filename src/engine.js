@@ -11110,7 +11110,7 @@ export function initApp() {
       const d = _orFindDev(routeId, key, devId);
       const items = [
         opt('#47b26b', 'Correct plan automatically', 'Justify the detour with a reason · corrects the plan onto the driver’s route (like the dashboard)', () => _orReasonMenu(anchorEl, routeId, key, devId), true),
-        opt('#6688cc', 'Adjust manually', 'Reshape the route or add a stop by clicking on the map', () => _orEnterEdit(routeId, key, devId)),
+        opt('#6688cc', 'Adjust manually', 'Reshape the route by dragging it toward the driver path', () => _orEnterEdit(routeId, key, devId)),
         opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → exclude the miles from HOS; the segment renders purple', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orDevPC(routeId, key, devId); }, {})),
         opt('#808080', 'Keep plan', 'Keep the current plan — clears the detour from the lane (still flagged on the map)', () => _orRunBusy({ title: 'Keeping plan…', sub: 'Acknowledging the detour and updating the lane.', color: '#808080' }, function () { _orDevKeep(routeId, key, devId); }, {}))
       ];
@@ -12445,42 +12445,14 @@ export function initApp() {
       const _dragIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
       const _plusIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '8px' } }, [
-        _toolBtn('Drag route', _dragIc, tool === 'drag', () => setState({ orEditTool: 'drag', orEditAdd: null })),
-        _toolBtn('Add stop', _plusIc, tool === 'add', () => setState({ orEditTool: 'add', orEditAdd: { mode: 'click' } }))
+        _toolBtn('Drag route', _dragIc, true, () => setState({ orEditTool: 'drag', orEditAdd: null }))
       ]));
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '8px' } }, [
         el('div', { class: 'hoverable', onclick: () => _orCancelEdit(routeId, state.orLane), style: { height: '34px', padding: '0 14px', display: 'flex', alignItems: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' } }, ['Cancel']),
         el('div', { class: 'hoverable', onclick: () => _orSaveEdit(routeId, state.orLane), style: { height: '34px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9px', background: '#2e9975', border: '1px solid #2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Save</span>' })
       ]));
       // hint pill
-      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '58px', left: '14px', zIndex: '1300', padding: '6px 11px', borderRadius: '8px', background: 'rgba(20,20,20,.82)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', font: '600 10.5px ' + F, color: '#b3b3b3' } }, [tool === 'drag' ? 'Drag the blue points — or the line — to reshape the route toward the red driver path' : 'Add a stop by clicking the map']));
-      // add-stop form (bottom-left)
-      if (tool === 'add') {
-        const _inp = (id, ph, w) => el('input', { id: id, placeholder: ph, style: { width: w || '100%', boxSizing: 'border-box', height: '34px', padding: '0 10px', borderRadius: '8px', background: '#141414', border: '1px solid rgba(255,255,255,.14)', color: '#e6e6e6', font: '600 12px ' + F, outline: 'none' } });
-        const pending = eadd && eadd.lat != null;
-        const body = [];
-        // Adjust manually places the stop ONLY by clicking the map (no address / coordinates).
-        if (!pending) {
-          body.push(el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: '#141414', border: '1px dashed rgba(255,255,255,.18)', font: '600 11.5px ' + F, color: '#808080' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Click anywhere on the map to drop the stop</span>' }));
-        } else {
-          const _oldRepl = state.orReplace ? _orStopsGet(routeId, state.orLane).find(s => s.id === state.orReplace) : null;
-          body.push(el('div', { style: { font: '600 10px ' + F, color: '#666666', marginBottom: '7px' }, html: '<span style="color:#7fd4c1">✓</span> ' + (eadd.address || (eadd.lat.toFixed(3) + ', ' + eadd.lng.toFixed(3))) }));
-          if (_oldRepl) {
-            // replacing a specific stop → keep its type/name, just move it to the new location
-            body.push(el('div', { style: { font: '600 10.5px ' + F, color: '#808080', marginBottom: '9px', lineHeight: '1.4' } }, ['Replaces ' + (_oldRepl.name || (_OR_SVC[_oldRepl.type] || {}).label || 'the stop') + ' with this location.']));
-            body.push(el('div', { class: 'hoverable', onclick: () => { _orRunBusy({ title: 'Replacing stop…', sub: 'Moving the stop to the new location.', color: '#2e9975' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: _oldRepl.type, name: _oldRepl.name, load: _oldRepl.load, address: eadd.address } }); _orStopsGet(routeId, state.orLane).push(c); _orRemoveStop(routeId, state.orLane, _oldRepl.id); if (_orStopStatus[routeId] && _orStopStatus[routeId][state.orLane]) delete _orStopStatus[routeId][state.orLane][_oldRepl.id]; if (_orStopStatusManual[routeId] && _orStopStatusManual[routeId][state.orLane]) delete _orStopStatusManual[routeId][state.orLane][_oldRepl.id]; _orLogChange(routeId, state.orLane, { actor: 'Dispatcher', kind: 'edit', text: 'Replaced ' + (_oldRepl.name || 'stop') + ' → ' + (eadd.address || 'new location'), revertible: false }); }, { orEditAdd: null, orReplace: null, orEdit: false, orEditTool: null }); }, style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '36px', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Replace stop here</span>' }));
-          } else {
-            // location chosen → pick a type + optional name, then add
-            const selType = eadd.type || 'fuel';
-            body.push(el('div', { class: 'ef-scroll', style: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px' } }, Object.keys(_OR_SVC).filter(t => !_OR_SVC[t].load && !_OR_SVC[t].hidden).map(t => el('div', { class: 'hoverable', onclick: () => setState({ orEditAdd: Object.assign({}, eadd, { type: t }) }), style: { display: 'flex', alignItems: 'center', gap: '5px', flexShrink: '0', padding: '5px 9px', borderRadius: '999px', cursor: 'pointer', border: '1px solid ' + (selType === t ? _OR_SVC[t].color : 'rgba(255,255,255,.12)'), background: selType === t ? _OR_SVC[t].bg : 'transparent', color: selType === t ? _OR_SVC[t].color : '#b3b3b3', font: '800 10px ' + F }, html: _OR_SVC[t].icon.replace(/width="15" height="15"/, 'width="12" height="12"') + '<span>' + _OR_SVC[t].label + '</span>' }))));
-            body.push(el('div', { style: { display: 'flex', gap: '7px', marginTop: '2px' } }, [
-              _inp('ed-name', 'Name (optional)'),
-              el('div', { class: 'hoverable', onclick: () => { const nm = (document.getElementById('ed-name') || {}).value || _OR_SVC[selType].label; _orRunBusy({ title: 'Adding stop…', sub: 'Placing the stop and updating the route.', color: '#6688cc' }, function () { const c = _orMakePoint(routeId, state.orLane, [eadd.lat, eadd.lng], { a: a, b: b, extra: { type: selType, name: nm, brand: selType === 'fuel' ? nm : undefined, pricePerGal: selType === 'fuel' ? 3.79 : undefined, rating: 4.2, address: eadd.address } }); _orAddCandidate(routeId, state.orLane, c, { manual: true }); }, { orEditAdd: null }); }, style: { flexShrink: '0', padding: '0 14px', height: '34px', display: 'flex', alignItems: 'center', borderRadius: '8px', background: '#2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' } }, ['Add stop'])
-            ]));
-          }
-        }
-        mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '18px', zIndex: '1300', width: '360px', maxWidth: 'calc(100% - 28px)', padding: '12px', borderRadius: '12px', background: 'rgba(20,20,20,.94)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(8px)', boxShadow: '0 16px 40px rgba(0,0,0,.5)' } }, body));
-      }
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '58px', left: '14px', zIndex: '1300', padding: '6px 11px', borderRadius: '8px', background: 'rgba(20,20,20,.82)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', font: '600 10.5px ' + F, color: '#b3b3b3' } }, ['Drag the blue points — or the line — to reshape the route toward the red driver path']));
     } else if (planRouteMode) {
       // ─────────── route-planning overlay: title chip + options legend ───────────
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 13px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
