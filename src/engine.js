@@ -10139,7 +10139,7 @@ export function initApp() {
       if (dv.f0 == null) return;
       const apex = apexOf(dv), clr = DEVCLR[dv.state] || DEVCLR.open;
       if (dv.state === 'pc') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
-      else if (dv.state !== 'corrected') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 4, opacity: .9, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
+      else if (dv.state !== 'corrected') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
       L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414"></div>', iconSize: [12, 12], iconAnchor: [6, 6] }), zIndexOffset: 800 }).addTo(layers);
     });
     // stop markers
@@ -12523,10 +12523,10 @@ export function initApp() {
         const _legSeg = _orSegReg[routeId] && _orSegReg[routeId][state.orLane];
         const _legDH = !!(_legSeg && !_legSeg.isLoad);   // deadhead lane → driven line is red
         const rows = [el('div', { html: _leg(_legDH ? '#cc666f' : '#6688cc', true, _legDH ? 'DH · planned' : 'Planned') }), el('div', { html: _leg(_legDH ? '#cc666f' : '#2e9975', false, _legDH ? 'DH · on-plan driven' : 'On-plan / driven') })];
-        if (_openN) rows.push(el('div', { html: _leg(_OR_OFFPLAN, true, 'Driver off-plan') }));
+        if (_openN) rows.push(el('div', { html: _leg(_OR_OFFPLAN, false, 'Driver off-plan') }));
         if (_hasC) rows.push(el('div', { html: _leg('#47b26b', false, 'Justified detour') }));
         if (_hasP) rows.push(el('div', { html: _leg('#8066cc', false, 'Personal Conveyance') }));
-        if (_hasK) rows.push(el('div', { html: _leg('#808080', true, 'Kept (flagged)') }));
+        if (_hasK) rows.push(el('div', { html: _leg('#808080', false, 'Kept (flagged)') }));
         mapPanel.appendChild(el('div', { style: { position: 'absolute', right: '14px', bottom: '30px', zIndex: '1100', display: 'flex', flexDirection: 'column', gap: '7px', padding: '11px 13px', borderRadius: '12px', background: 'rgba(20,20,20,.92)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
           el('div', { style: { font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: _hdrClr, marginBottom: '2px' } }, [_hdrTxt])
         ].concat(rows)));
@@ -12787,13 +12787,8 @@ export function initApp() {
               // segment purple, not as an off-plan branch.
               L.polyline(_planSeg, { color: '#8066cc', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
             } else if (d.state !== 'corrected') {
-              // open / kept → branch corridor off the plan (red / grey)
-              const dash = '7 7';
-              L.polyline(_planSeg, { color: clr, weight: 4, opacity: .9, dashArray: dash, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
-              if (truckFrac > d.f0) {
-                const ds = Math.min(1, (Math.min(truckFrac, d.f1) - d.f0) / (d.f1 - d.f0));
-                if (ds > 0.01) L.polyline(_pathAt(_planSeg, ds).prefix, { color: clr, weight: 5, opacity: .98, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
-              }
+              // open / kept → the detour the driver ACTUALLY drove → SOLID corridor off the plan
+              L.polyline(_planSeg, { color: clr, weight: 5, opacity: .96, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
             }
             const fg = d.state === 'pc' ? '#f5f5f5' : '#141414';
             const m = L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414;color:' + fg + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer">' + (_devApexIc[d.state] || _devApexIc.open) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 900 }).addTo(layers).bindTooltip(tip, { direction: 'top' });
@@ -12833,7 +12828,7 @@ export function initApp() {
             const de = _orActualFor(routeId, state.orLane);
             if (de) {
               const pf0 = _pathAt(pathPts, de.f0).pt, pf1 = _pathAt(pathPts, de.f1).pt, apx = _orOffset(a, b, (de.f0 + de.f1) / 2, de.side * de.mag);
-              L.polyline([pf0, apx, pf1], { color: _OR_OFFPLAN, weight: 3, opacity: .85, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver actual — drag the plan onto this', { sticky: true });
+              L.polyline([pf0, apx, pf1], { color: _OR_OFFPLAN, weight: 4, opacity: .9, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver actual — drag the plan onto this', { sticky: true });
             }
             if (state.orEditTool === 'drag') {
               // a wide invisible hit area behind a smaller visible dot → easy to grab
@@ -12957,7 +12952,7 @@ export function initApp() {
               const p0 = _orLerp(a, b, Math.max(0, Math.min(1, pr)));
               const p1 = _orOffset(a, b, Math.min(1, pr + 0.16), 0.13);
               const p2 = _orLerp(a, b, Math.min(1, pr + 0.32));
-              L.polyline([p0, p1, p2], { color: _OR_OFFPLAN, weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(layers).bindTooltip('Off optimal route', { direction: 'top' });
+              L.polyline([p0, p1, p2], { color: _OR_OFFPLAN, weight: 4, opacity: .95, lineCap: 'round' }).addTo(layers).bindTooltip('Off optimal route', { direction: 'top' });
             } else if (al.type === 'missed' && al.stopId) {
               const sp = _orStopsGet(routeId, state.orLane).find(s => s.id === al.stopId);
               if (sp) { const t = sp.frac != null ? sp.frac : (laneMiles ? sp.distanceMi / laneMiles : .5); const ll = _orOffset(a, b, t, (0)); L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:36px;height:36px;border-radius:50%;border:2.5px dashed #cc666f;box-sizing:border-box"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1100 }).addTo(layers).bindTooltip('Skipped stop', { direction: 'top' }); }
