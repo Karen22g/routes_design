@@ -272,6 +272,8 @@ export function initApp() {
   };
 
   const ACTIVE = '#2e9975', MUTED = '#808080';
+  // off-plan deviation color (shared by On Road + Report maps, legends, lists, chips). Orange tone.
+  const _OR_OFFPLAN = '#e0853f', _OR_OFFPLAN_BG = 'rgba(224,133,63,.14)', _OR_OFFPLAN_BD = 'rgba(224,133,63,.3)';
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // ---------------------------------------------------------------------
@@ -9119,7 +9121,7 @@ export function initApp() {
   // ── Feasibility alerts (execution goes off-plan → dispatcher must react) ──
   const _OR_ALERT_META = {
     missed:    { label: 'Missed stop',            sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><line x1="9" y1="7" x2="15" y2="13"/><line x1="15" y1="7" x2="9" y2="13"/></svg>' },
-    deviation: { label: 'Off optimal route',      sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L10 8 L15 15 L20 4"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>' },
+    deviation: { label: 'Off optimal route',      sev: 'warn', color: _OR_OFFPLAN, icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L10 8 L15 15 L20 4"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>' },
     fuel:      { label: 'Low fuel',               sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="18" rx="1"/><path d="M13 9h3.5a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M3 11h10"/></svg>' },
     hos:       { label: 'HOS runs out before break', sev: 'crit', color: '#cc666f', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M4.5 4.5l15 15"/></svg>' },
     late:      { label: 'Running late',            sev: 'warn', color: '#b28835', icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' }
@@ -10119,7 +10121,7 @@ export function initApp() {
     const sample = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(planAt(fa + (fb - fa) * i / n)); return o; };
     _reportLanePath = sample(0, 1, 60);   // playback follows the corrected plan
     // base plan (blue) + green driven prefix
-    L.polyline(sample(0, 1, 60), { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
+    L.polyline(sample(0, 1, 60), { color: s.isLoad ? '#6688cc' : '#cc666f', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' }).addTo(layers);
     // green driven — only where the driver was on the plan; open/kept detour windows keep
     // the blue dashed plan underneath (the route the driver didn't take).
     if (frac > 0) {
@@ -10127,12 +10129,12 @@ export function initApp() {
       const _rng = []; let _cur = 0;
       _offW.forEach(function (w) { const s = Math.max(_cur, 0), e = Math.min(w[0], frac); if (e > s) _rng.push([s, e]); _cur = Math.max(_cur, w[1]); });
       if (frac > _cur) _rng.push([_cur, frac]);
-      _rng.forEach(function (r) { if (r[1] - r[0] > 0.001) L.polyline(sample(r[0], r[1], 40), { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); });
+      _rng.forEach(function (r) { if (r[1] - r[0] > 0.001) L.polyline(sample(r[0], r[1], 40), { color: s.isLoad ? '#2e9975' : '#cc666f', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); });
     }
     L.marker(a, { icon: _dot('#47b26b') }).addTo(layers).bindTooltip(s.origin, { direction: 'top' });
     L.marker(b, { icon: _dot('#6688cc') }).addTo(layers).bindTooltip(s.dest, { direction: 'top' });
     // deviation branches (open red / kept grey) + PC purple segment on plan
-    const DEVCLR = { open: '#cc666f', corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
+    const DEVCLR = { open: _OR_OFFPLAN, corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
     devs.forEach((dv) => {
       if (dv.f0 == null) return;
       const apex = apexOf(dv), clr = DEVCLR[dv.state] || DEVCLR.open;
@@ -10765,7 +10767,7 @@ export function initApp() {
     });
     evs.push({ label: done ? 'Arrived' : 'Drop-off', state: done ? 'Completed' : 'Planned', type: done ? 'good' : 'neutral', pos: 1, time: ld.deliveryTime || '—' });
     evs.sort((a, b) => a.pos - b.pos);
-    const _EVC = { neutral: '#6688cc', deviation: '#b28835', bad: '#cc666f', good: '#47b26b' };
+    const _EVC = { neutral: '#6688cc', deviation: _OR_OFFPLAN, bad: '#cc666f', good: '#47b26b' };
     const _EVIC = { neutral: '<circle cx="12" cy="12" r="7"/>', deviation: '<path d="M12 3l9 16H3z"/><path d="M12 10v4"/>', bad: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', good: '<polyline points="20 6 9 17 4 12"/>' };
     const _evSt = { Completed: ['#47b26b', 'rgba(46,153,117,.16)'], Skipped: ['#808080', 'rgba(255,255,255,.06)'], Planned: ['#808080', 'rgba(255,255,255,.05)'] };
     const _completedN = evs.filter(e => e.state === 'Completed').length;
@@ -11122,7 +11124,7 @@ export function initApp() {
     function _orAdherenceChip(adh, onClick) {
       const M = {
         on:       { t: 'On-plan',                                  c: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: IC.check },
-        off:      { t: (adh.open > 1 ? adh.open + ' detours off-plan · +' : 'Off-plan · +') + Math.round(adh.detourMi) + ' mi', c: '#cc666f', bg: 'rgba(204,102,111,.14)', ic: _EX_WARN },
+        off:      { t: (adh.open > 1 ? adh.open + ' detours off-plan · +' : 'Off-plan · +') + Math.round(adh.detourMi) + ' mi', c: _OR_OFFPLAN, bg: _OR_OFFPLAN_BG, ic: _EX_WARN },
         accepted: { t: 'Deviation accepted',                       c: '#b28835', bg: 'rgba(178,136,53,.14)', ic: IC.check },
         pc:       { t: 'Personal Conveyance · +' + Math.round(adh.detourMi) + ' mi', c: '#8066cc', bg: 'rgba(128,102,204,.16)', ic: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' }
       };
@@ -11911,7 +11913,7 @@ export function initApp() {
         (s.detourMi && !combined) ? _lpTag('+' + s.detourMi + ' mi', '#808080') : null,
         (s.added && !s.adjusted && !passed && !s.driverMade) ? _lpTag('Added', '#2e9975') : null,
         (s.adjusted && !s.driverMade) ? _lpTag('Adjusted', '#b28835') : null,
-        s.driverMade ? _lpTag('Driver stop · off-plan', '#b28835') : null,
+        s.driverMade ? _lpTag('Driver stop · off-plan', _OR_OFFPLAN) : null,
         s.driverMatched ? _lpTag('✓ Matches driver stop', '#47b26b') : null
       ]);
       const head = el('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto 16px', gap: '8px', alignItems: 'flex-start' } }, [
@@ -12093,7 +12095,7 @@ export function initApp() {
       // dashboard, mark PC, adjust manually, or keep). A lane can have several.
       const _devs = _orDeviationsFor(routeId, key);
       const _DEV_ST = {
-        open:      { c: '#cc666f', bg: 'rgba(204,102,111,.14)', label: 'Off-plan · needs review', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' },
+        open:      { c: _OR_OFFPLAN, bg: _OR_OFFPLAN_BG, label: 'Off-plan · needs review', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' },
         corrected: { c: '#47b26b', bg: 'rgba(46,153,117,.14)', label: 'Justified', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' },
         pc:        { c: '#8066cc', bg: 'rgba(128,102,204,.16)', label: 'Personal Conveyance', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' },
         kept:      { c: '#808080', bg: 'rgba(255,255,255,.06)', label: 'Kept · flagged', ic: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>' }
@@ -12110,7 +12112,7 @@ export function initApp() {
           const st = _DEV_ST[d.state] || _DEV_ST.open;
           const rz = d.reason && d.reason !== 'pc' ? _orDevReason(d.reason) : null;
           const sub = d.state === 'corrected' ? (st.label + (rz ? ' · ' + rz.label : '')) : st.label;
-          return el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '10px', background: '#1f1f1f', border: '1px solid ' + (d.state === 'open' ? 'rgba(204,102,111,.28)' : 'rgba(255,255,255,.06)') } }, [
+          return el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '10px', background: '#1f1f1f', border: '1px solid ' + (d.state === 'open' ? _OR_OFFPLAN_BD : 'rgba(255,255,255,.06)') } }, [
             el('div', { style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', flexShrink: '0', background: st.bg, color: st.c }, html: st.ic }),
             el('div', { style: { flex: '1', minWidth: '0' } }, [
               el('div', { style: { font: '800 12px ' + F, color: '#e6e6e6' } }, ['Detour ' + d.n + ' · +' + Math.round(d.detourMi) + ' mi']),
@@ -12516,10 +12518,12 @@ export function initApp() {
         const _hasP = _ldevs.some(d => d.state === 'pc');
         const _hasK = _ldevs.some(d => d.state === 'kept');
         const _leg = (col, dash, label) => '<div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:0;border-top:3px ' + (dash ? 'dashed' : 'solid') + ' ' + col + '"></span><span style="font:700 11px ' + F + ';color:#e6e6e6">' + label + '</span></div>';
-        const _hdrClr = _openN ? '#cc666f' : (_hasP ? '#8066cc' : '#47b26b');
+        const _hdrClr = _openN ? _OR_OFFPLAN : (_hasP ? '#8066cc' : '#47b26b');
         const _hdrTxt = _openN ? (_openN + ' detour' + (_openN > 1 ? 's' : '') + ' off-plan') : 'All detours resolved ✓';
-        const rows = [el('div', { html: _leg('#6688cc', true, 'Planned') }), el('div', { html: _leg('#2e9975', false, 'On-plan / driven') })];
-        if (_openN) rows.push(el('div', { html: _leg('#cc666f', true, 'Driver off-plan') }));
+        const _legSeg = _orSegReg[routeId] && _orSegReg[routeId][state.orLane];
+        const _legDH = !!(_legSeg && !_legSeg.isLoad);   // deadhead lane → driven line is red
+        const rows = [el('div', { html: _leg(_legDH ? '#cc666f' : '#6688cc', true, _legDH ? 'DH · planned' : 'Planned') }), el('div', { html: _leg(_legDH ? '#cc666f' : '#2e9975', false, _legDH ? 'DH · on-plan driven' : 'On-plan / driven') })];
+        if (_openN) rows.push(el('div', { html: _leg(_OR_OFFPLAN, true, 'Driver off-plan') }));
         if (_hasC) rows.push(el('div', { html: _leg('#47b26b', false, 'Justified detour') }));
         if (_hasP) rows.push(el('div', { html: _leg('#8066cc', false, 'Personal Conveyance') }));
         if (_hasK) rows.push(el('div', { html: _leg('#808080', true, 'Kept (flagged)') }));
@@ -12725,7 +12729,7 @@ export function initApp() {
           };
           const _planSample = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(planAt(fa + (fb - fa) * i / n)); return o; };
           const _actualAt = (f) => planAt(f);   // truck sits on the (corrected) plan line
-          const _DEVCLR = { open: '#cc666f', corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
+          const _DEVCLR = { open: _OR_OFFPLAN, corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
           const _devApexIc = {
             open: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
             corrected: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -12745,8 +12749,10 @@ export function initApp() {
           // route the driver did NOT take) and the green "driven" line skips it — the
           // driver's actual detour is the red branch drawn below. This prevents the map from
           // showing the driver as having driven both the plan AND the detour.
-          const _blue = { color: '#6688cc', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' };
-          const _green = { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
+          // plan line color also identifies the lane type: blue (LD) / red dashed (DH)
+          const _blue = { color: seg.isLoad ? '#6688cc' : '#cc666f', weight: 4, opacity: .9, dashArray: '2 9', lineCap: 'round', lineJoin: 'round' };
+          // on-plan driven color identifies the lane type: green = loaded (LD), red = deadhead (DH)
+          const _green = { color: seg.isLoad ? '#2e9975' : '#cc666f', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' };
           const _offWins = _devsMap.filter(d => d.f0 != null && (d.state === 'open' || d.state === 'kept')).map(d => [Math.max(0, d.f0), Math.max(d.f0, d.f1)]).sort((p, q) => p[0] - q[0]);
           const _drivenFrac = done ? 1 : (truckFrac > 0 ? Math.min(1, truckFrac) : 0);
           // on-plan driven ranges = [0, driven] minus the off-plan windows
@@ -12827,7 +12833,7 @@ export function initApp() {
             const de = _orActualFor(routeId, state.orLane);
             if (de) {
               const pf0 = _pathAt(pathPts, de.f0).pt, pf1 = _pathAt(pathPts, de.f1).pt, apx = _orOffset(a, b, (de.f0 + de.f1) / 2, de.side * de.mag);
-              L.polyline([pf0, apx, pf1], { color: '#cc666f', weight: 3, opacity: .85, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver actual — drag the plan onto this', { sticky: true });
+              L.polyline([pf0, apx, pf1], { color: _OR_OFFPLAN, weight: 3, opacity: .85, dashArray: '7 7', lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver actual — drag the plan onto this', { sticky: true });
             }
             if (state.orEditTool === 'drag') {
               // a wide invisible hit area behind a smaller visible dot → easy to grab
@@ -12951,7 +12957,7 @@ export function initApp() {
               const p0 = _orLerp(a, b, Math.max(0, Math.min(1, pr)));
               const p1 = _orOffset(a, b, Math.min(1, pr + 0.16), 0.13);
               const p2 = _orLerp(a, b, Math.min(1, pr + 0.32));
-              L.polyline([p0, p1, p2], { color: '#cc666f', weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(layers).bindTooltip('Off optimal route', { direction: 'top' });
+              L.polyline([p0, p1, p2], { color: _OR_OFFPLAN, weight: 3, dashArray: '6 6', opacity: .9, lineCap: 'round' }).addTo(layers).bindTooltip('Off optimal route', { direction: 'top' });
             } else if (al.type === 'missed' && al.stopId) {
               const sp = _orStopsGet(routeId, state.orLane).find(s => s.id === al.stopId);
               if (sp) { const t = sp.frac != null ? sp.frac : (laneMiles ? sp.distanceMi / laneMiles : .5); const ll = _orOffset(a, b, t, (0)); L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:36px;height:36px;border-radius:50%;border:2.5px dashed #cc666f;box-sizing:border-box"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1100 }).addTo(layers).bindTooltip('Skipped stop', { direction: 'top' }); }
