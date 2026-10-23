@@ -10115,7 +10115,7 @@ export function initApp() {
     _reportLanePath = pathPts;
     // deviations incorporated into the plan (corrected/pc) bend the drawn line
     const devs = _orDeviationsFor(routeId, key) || [];
-    const inPlan = devs.filter(dv => (dv.state === 'corrected' || dv.state === 'pc') && dv.f0 != null);
+    const inPlan = devs.filter(dv => (dv.state === 'corrected' || dv.state === 'pc') && dv.f0 != null && !dv.manualVia);
     const apexOf = (dv) => _orOffset(a, b, (dv.f0 + dv.f1) / 2, dv.side * dv.mag);
     const planAt = (f) => { for (let i = 0; i < inPlan.length; i++) { const dv = inPlan[i]; if (f > dv.f0 && f < dv.f1) { const ds = (f - dv.f0) / (dv.f1 - dv.f0); return _orPathAt([_orPathAt(pathPts, dv.f0).pt, apexOf(dv), _orPathAt(pathPts, dv.f1).pt], ds).pt; } } return _orPathAt(pathPts, f).pt; };
     const sample = (fa, fb, n) => { const o = []; for (let i = 0; i <= n; i++) o.push(planAt(fa + (fb - fa) * i / n)); return o; };
@@ -10137,6 +10137,7 @@ export function initApp() {
     const DEVCLR = { open: _OR_OFFPLAN, corrected: '#47b26b', pc: '#8066cc', kept: '#808080' };
     devs.forEach((dv) => {
       if (dv.f0 == null) return;
+      if (dv.manualVia) return;   // resolved via a manually placed stop → plan routes through the via marker
       const apex = apexOf(dv), clr = DEVCLR[dv.state] || DEVCLR.open;
       if (dv.state === 'pc') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
       else if (dv.state !== 'corrected') { L.polyline([_orPathAt(pathPts, dv.f0).pt, apex, _orPathAt(pathPts, dv.f1).pt], { color: clr, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers); }
@@ -11054,7 +11055,7 @@ export function initApp() {
     function _orEnterEdit(routeId, key, devId) {
       _orEditSnap = _orSnap(routeId, key);
       _orEditDevId = devId || null;
-      setState({ orLane: key, orEdit: true, orEditTool: 'drag', orEditAdd: null, orAddType: null, orReplace: null, orCandSel: null });
+      setState({ orLane: key, orEdit: true, orEditTool: 'point', orEditAdd: null, orAddType: null, orReplace: null, orCandSel: null });
     }
     function _orCancelEdit(routeId, key) {
       if (_orEditSnap) _orRestore(routeId, key, _orEditSnap);
@@ -11065,7 +11066,9 @@ export function initApp() {
       const snap = _orEditSnap; _orEditSnap = null;
       const devId = _orEditDevId; _orEditDevId = null;
       _orRunBusy({ title: 'Updating plan…', sub: 'Re-routing and recalculating the plan.', color: '#6688cc' }, function () {
-        if (devId) { const d = _orFindDev(routeId, key, devId); if (d && d.state === 'open') { d.state = 'corrected'; d.reason = 'other'; } }
+        // Resolution happens when the dispatcher clicks the driver's route to drop a stop
+        // (that reconciles the deviation it falls within). Saving just commits those edits —
+        // it no longer auto-justifies the deviation the editor was opened from.
         if (snap) { _orUndo = Object.assign({ routeId: routeId, laneIdx: key, label: 'Route adjusted manually' }, snap); _orToast = 'Route adjusted manually'; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; _orUndo = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 5000); _orLogChange(routeId, key, { actor: 'Dispatcher', kind: 'route', text: 'Adjusted plan manually', revertible: true, snap: snap }); }
       }, { orEdit: false, orEditTool: null, orEditAdd: null }, 900);
     }
@@ -11112,7 +11115,7 @@ export function initApp() {
       const d = _orFindDev(routeId, key, devId);
       const items = [
         opt('#47b26b', 'Correct plan automatically', 'Justify the detour with a reason · corrects the plan onto the driver’s route (like the dashboard)', () => _orReasonMenu(anchorEl, routeId, key, devId), true),
-        opt('#6688cc', 'Adjust manually', 'Reshape the route by dragging it toward the driver path', () => _orEnterEdit(routeId, key, devId)),
+        opt('#6688cc', 'Adjust manually', 'Click a point on the driver’s route to add a stop; the plan reroutes through it', () => _orEnterEdit(routeId, key, devId)),
         opt('#8066cc', 'Mark as Personal Conveyance', 'The detour was off-duty (PC) → exclude the miles from HOS; the segment renders purple', () => _orRunBusy({ title: 'Logging Personal Conveyance…', sub: 'Justifying the detour and updating the plan.', color: '#8066cc' }, function () { _orDevPC(routeId, key, devId); }, {})),
         opt('#808080', 'Keep plan', 'Keep the current plan — clears the detour from the lane (still flagged on the map)', () => _orRunBusy({ title: 'Keeping plan…', sub: 'Acknowledging the detour and updating the lane.', color: '#808080' }, function () { _orDevKeep(routeId, key, devId); }, {}))
       ];
@@ -12446,15 +12449,16 @@ export function initApp() {
       const _toolBtn = (label, icon, active, on) => el('div', { class: 'hoverable', onclick: on, style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: active ? 'rgba(102,136,204,.28)' : 'rgba(20,20,20,.85)', border: '1px solid ' + (active ? 'rgba(102,136,204,.55)' : 'rgba(255,255,255,.1)'), backdropFilter: 'blur(6px)', color: active ? '#8fb0ff' : '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' }, html: icon + '<span>' + label + '</span>' });
       const _dragIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
       const _plusIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      const _pinIc = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '8px' } }, [
-        _toolBtn('Drag route', _dragIc, true, () => setState({ orEditTool: 'drag', orEditAdd: null }))
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: 'rgba(224,133,63,.22)', border: '1px solid rgba(224,133,63,.5)', backdropFilter: 'blur(6px)', color: '#e0a569', font: '800 12px ' + F }, html: _pinIc + '<span>Add stop on driver route</span>' })
       ]));
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1300', display: 'flex', alignItems: 'center', gap: '8px' } }, [
         el('div', { class: 'hoverable', onclick: () => _orCancelEdit(routeId, state.orLane), style: { height: '34px', padding: '0 14px', display: 'flex', alignItems: 'center', borderRadius: '9px', background: 'rgba(20,20,20,.85)', border: '1px solid rgba(255,255,255,.14)', backdropFilter: 'blur(6px)', color: '#b3b3b3', font: '800 12px ' + F, cursor: 'pointer' } }, ['Cancel']),
         el('div', { class: 'hoverable', onclick: () => _orSaveEdit(routeId, state.orLane), style: { height: '34px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9px', background: '#2e9975', border: '1px solid #2e9975', color: '#0d1a13', font: '800 12px ' + F, cursor: 'pointer' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Save</span>' })
       ]));
       // hint pill
-      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '58px', left: '14px', zIndex: '1300', padding: '6px 11px', borderRadius: '8px', background: 'rgba(20,20,20,.82)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', font: '600 10.5px ' + F, color: '#b3b3b3' } }, ['Drag the blue points — or the line — to reshape the route toward the red driver path']));
+      mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '58px', left: '14px', zIndex: '1300', padding: '6px 11px', borderRadius: '8px', background: 'rgba(20,20,20,.82)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)', font: '600 10.5px ' + F, color: '#b3b3b3' } }, ['Click a point on the driver’s executed route (orange / green) to drop a stop — the optimal plan reroutes through it']));
     } else if (planRouteMode) {
       // ─────────── route-planning overlay: title chip + options legend ───────────
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', left: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 13px', borderRadius: '10px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.12)', backdropFilter: 'blur(6px)' } }, [
@@ -12721,7 +12725,7 @@ export function initApp() {
           // and kept detours stay as branches off the plan (red / grey).
           const _devsMap = _orDeviationsFor(routeId, state.orLane);
           const _apexOf = (d) => _orOffset(a, b, (d.f0 + d.f1) / 2, d.side * d.mag);
-          const _inPlan = _devsMap.filter(d => (d.state === 'corrected' || d.state === 'pc') && d.f0 != null);
+          const _inPlan = _devsMap.filter(d => (d.state === 'corrected' || d.state === 'pc') && d.f0 != null && !d.manualVia);
           // a point on the OPTIMAL plan at frac f — bent through any detour incorporated into it
           const planAt = (f) => {
             for (let i = 0; i < _inPlan.length; i++) { const d = _inPlan[i]; if (f > d.f0 && f < d.f1) { const ds = (f - d.f0) / (d.f1 - d.f0); return _pathAt([_pathAt(pathPts, d.f0).pt, _apexOf(d), _pathAt(pathPts, d.f1).pt], ds).pt; } }
@@ -12765,8 +12769,18 @@ export function initApp() {
           }
           L.marker(a, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#47b26b;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.origin, { direction: 'top' });
           L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#6688cc;border:3px solid #141414"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(layers).bindTooltip(seg.dest, { direction: 'top' });
+          // Adjust manually (point mode): click the driver's executed route to drop a stop;
+          // the optimal plan reroutes through it (the clicked point becomes a waypoint).
+          const _pointEdit = state.orEdit && state.orEditTool === 'point';
+          const _addStopAt = function (ll) {
+            const pr = _orProject(a, b, [ll.lat, ll.lng]);
+            _orStopsGet(routeId, state.orLane).push(_orMakePoint(routeId, state.orLane, [ll.lat, ll.lng], { a: a, b: b, extra: { via: true, name: 'Driver stop', added: true, driverMatched: true } }));
+            const d = _devsMap.find(x => x.f0 != null && pr.frac >= x.f0 && pr.frac <= x.f1 && (x.state === 'open' || x.state === 'kept'));
+            if (d) { d.state = 'corrected'; d.reason = 'manual'; d.manualVia = true; }
+            setState({});
+          };
           // traveled (green) — only where the driver was actually on the plan
-          if (_drivenFrac > 0) _onPlan.forEach(function (r) { if (r[1] - r[0] > 0.001) L.polyline(_planSample(r[0], r[1], 48), _green).addTo(layers); });
+          if (_drivenFrac > 0) _onPlan.forEach(function (r) { if (r[1] - r[0] > 0.001) { const _pl = L.polyline(_planSample(r[0], r[1], 48), _pointEdit ? Object.assign({}, _green, { interactive: true }) : _green).addTo(layers); if (_pointEdit) _pl.bindTooltip('Click to add a stop here', { sticky: true }).on('click', function (ev) { if (L.DomEvent) L.DomEvent.stopPropagation(ev); _addStopAt(ev.latlng); }); } });
           // open the resolve menu at a map click point (positions the popover at the cursor)
           const _openDevAt = (ev, d) => { if (ev && ev.originalEvent && L.DomEvent) L.DomEvent.stopPropagation(ev); const oe = ev && ev.originalEvent; const cx = oe ? oe.clientX : window.innerWidth / 2, cy = oe ? oe.clientY : window.innerHeight / 2; const fake = { getBoundingClientRect: () => ({ left: cx, right: cx, top: cy, bottom: cy, width: 0, height: 0 }) }; _orDeviationMenu(fake, routeId, state.orLane, d.id); };
           // each deviation: clickable on the map to open its resolution flow. Open/kept/PC
@@ -12788,11 +12802,12 @@ export function initApp() {
               L.polyline(_planSeg, { color: '#8066cc', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
             } else if (d.state !== 'corrected') {
               // open / kept → the detour the driver ACTUALLY drove → SOLID corridor off the plan
-              L.polyline(_planSeg, { color: clr, weight: 5, opacity: .96, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(tip, { sticky: true }).on('click', function (ev) { _openDevAt(ev, d); });
+              L.polyline(_planSeg, { color: clr, weight: 5, opacity: .96, lineCap: 'round', lineJoin: 'round', interactive: true }).addTo(layers).bindTooltip(_pointEdit ? 'Click to add a stop on this detour' : tip, { sticky: true }).on('click', function (ev) { if (_pointEdit) { if (L.DomEvent) L.DomEvent.stopPropagation(ev); _addStopAt(ev.latlng); } else { _openDevAt(ev, d); } });
             }
+            if (d.manualVia) return;   // resolved via a manually placed stop → the stop marker stands in for the apex
             const fg = d.state === 'pc' ? '#f5f5f5' : '#141414';
-            const m = L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414;color:' + fg + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer">' + (_devApexIc[d.state] || _devApexIc.open) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 900 }).addTo(layers).bindTooltip(tip, { direction: 'top' });
-            m.on('click', function (ev) { _openDevAt(ev, d); });
+            const m = L.marker(apex, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:' + clr + ';border:2.5px solid #141414;color:' + fg + ';box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer">' + (_devApexIc[d.state] || _devApexIc.open) + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 900 }).addTo(layers).bindTooltip(_pointEdit ? 'Click to add a stop here' : tip, { direction: 'top' });
+            m.on('click', function (ev) { if (_pointEdit) { if (L.DomEvent) L.DomEvent.stopPropagation(ev); _addStopAt(ev.latlng); } else { _openDevAt(ev, d); } });
           });
           // stop markers sit ON the routed waypoint positions (replaced by drag handles while dragging)
           const _dragging = state.orEdit && state.orEditTool === 'drag';
@@ -12823,43 +12838,11 @@ export function initApp() {
           });
           // ── manual route-edit layers: driver reference + draggable handles + click-to-place ──
           if (state.orEdit) {
-            // in drag mode disable map panning so a missed grab doesn't pan the map
-            try { if (state.orEditTool === 'drag') map.dragging.disable(); else map.dragging.enable(); } catch (e) {}
-            const de = _orActualFor(routeId, state.orLane);
-            if (de) {
-              const pf0 = _pathAt(pathPts, de.f0).pt, pf1 = _pathAt(pathPts, de.f1).pt, apx = _orOffset(a, b, (de.f0 + de.f1) / 2, de.side * de.mag);
-              L.polyline([pf0, apx, pf1], { color: _OR_OFFPLAN, weight: 4, opacity: .9, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Driver actual — drag the plan onto this', { sticky: true });
-            }
-            if (state.orEditTool === 'drag') {
-              // a wide invisible hit area behind a smaller visible dot → easy to grab
-              const _handle = (visible, hit) => '<div style="display:grid;place-items:center;width:' + hit + 'px;height:' + hit + 'px;cursor:grab">' + visible + '</div>';
-              // draggable handles for existing stops/vias
-              _sorted.forEach((s, i) => {
-                const isV = !!s.via, d = isV ? 16 : 22, hit = 40;
-                const vis = '<div style="width:' + d + 'px;height:' + d + 'px;border-radius:50%;background:' + (isV ? '#6688cc' : '#fff') + ';border:3px solid #6688cc;box-shadow:0 2px 8px rgba(0,0,0,.55)"></div>';
-                const m = L.marker(_sLLs[i], { icon: L.divIcon({ className: '', html: _handle(vis, hit), iconSize: [hit, hit], iconAnchor: [hit / 2, hit / 2] }), draggable: true, zIndexOffset: 1400 }).addTo(layers);
-                m.bindTooltip((isV ? 'Route point' : (s.type === 'fuel' ? s.brand : s.name)) + ' · drag to move', { direction: 'top' });
-                m.on('dragend', function (ev) { const p = ev.target.getLatLng(); const pr = _orProject(a, b, [p.lat, p.lng]); const st = _orStopsGet(routeId, state.orLane).find(x => x.id === s.id); if (st) { st.lat = p.lat; st.lng = p.lng; st.frac = pr.frac; st.distanceMi = Math.round(laneMiles * pr.frac); st.detourMi = pr.detourMi; } setState({}); });
-              });
-              // ghost handles along each segment → grab the line to insert a via (Google-Maps style)
-              for (let i = 1; i < pathPts.length; i++) {
-                [0.34, 0.66].forEach(function (f) {
-                  const mp = [pathPts[i - 1][0] + (pathPts[i][0] - pathPts[i - 1][0]) * f, pathPts[i - 1][1] + (pathPts[i][1] - pathPts[i - 1][1]) * f];
-                  const vis = '<div style="width:15px;height:15px;border-radius:50%;background:rgba(102,136,204,.7);border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5)"></div>';
-                  const g = L.marker(mp, { icon: L.divIcon({ className: '', html: _handle(vis, 34), iconSize: [34, 34], iconAnchor: [17, 17] }), draggable: true, zIndexOffset: 1300 }).addTo(layers);
-                  g.bindTooltip('Drag to bend the route here', { direction: 'top' });
-                  g.on('dragend', function (ev) { const p = ev.target.getLatLng(); _orStopsGet(routeId, state.orLane).push(_orMakePoint(routeId, state.orLane, [p.lat, p.lng], { a: a, b: b, extra: { via: true, name: 'Route point', added: true } })); setState({}); });
-                });
-              }
-            }
-            // pending placement pin (from address/coords/click before choosing a type)
-            if (state.orEditAdd && state.orEditAdd.lat != null) {
-              L.marker([state.orEditAdd.lat, state.orEditAdd.lng], { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#6688cc;border:2.5px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.6)"><div style="transform:rotate(45deg);width:8px;height:8px;border-radius:50%;background:#fff"></div></div>', iconSize: [32, 32], iconAnchor: [16, 30] }), zIndexOffset: 1600 }).addTo(layers);
-            }
-            // click-on-map to place (only in add → click sub-mode)
-            const _clickMode = state.orEditTool === 'add' && state.orEditAdd && state.orEditAdd.mode === 'click' && state.orEditAdd.lat == null;
-            map.getContainer().style.cursor = _clickMode ? 'crosshair' : '';
-            if (_clickMode) map.once('click', function (ev) { setState({ orEditAdd: { mode: 'click', lat: ev.latlng.lat, lng: ev.latlng.lng, address: ev.latlng.lat.toFixed(4) + ', ' + ev.latlng.lng.toFixed(4) } }); });
+            // Adjust manually is point mode: the executed polylines (green on-plan + orange
+            // detours, with their click handlers bound above) are the targets — click one to
+            // drop a stop and reroute the plan through it. No dragging; map stays pannable.
+            try { map.dragging.enable(); } catch (e) {}
+            map.getContainer().style.cursor = _pointEdit ? 'crosshair' : '';
           } else { try { map.dragging.enable(); map.getContainer().style.cursor = ''; } catch (e) {} }
           // ── close-lane mode: detected stops on the executed route + click-to-pick ──
           if (map._orCloseClick) { try { map.off('click', map._orCloseClick); } catch (e) {} map._orCloseClick = null; }
