@@ -10217,6 +10217,9 @@ export function initApp() {
   // the polyline and all lane/route info at once (read-only — it re-fetches, never edits).
   const _orSync = {};   // routeId -> { syncing, tick, lastMs }
   function _orSyncGet(routeId) { if (!_orSync[routeId]) _orSync[routeId] = { syncing: false, tick: 0, lastMs: Date.now() - 135000 }; return _orSync[routeId]; }
+  // a lane is "in progress" (syncable) when its truck is on the lane but hasn't finished it
+  function _orLaneInProgress(routeId, key) { const seg = _orSegReg[routeId] && _orSegReg[routeId][key]; return !!(seg && seg.truckMi >= 0 && seg.truckMi <= seg.miles); }
+  function _orAnyInProgress(routeId) { const reg = _orSegReg[routeId]; return !!(reg && Object.keys(reg).some(k => { const s = reg[k]; return s.truckMi >= 0 && s.truckMi <= s.miles; })); }
   function _orSyncAgo(routeId) {
     const s = _orSyncGet(routeId); if (s.syncing) return 'Syncing…';
     const secs = Math.max(1, Math.round((Date.now() - s.lastMs) / 1000));
@@ -10226,18 +10229,32 @@ export function initApp() {
   // deterministic market fuel rate that ticks a little on every sync (so metrics visibly move)
   function _orFuelRate(routeId) { const t = _orSyncGet(routeId).tick; return 0.52 * (1 + (((t * 37) % 9) - 4) / 100); }  // 0.52 ±4%
   let _orSyncTimer = null;
-  function _orSyncNow(routeId) {
+  // On-demand Sync. With a laneKey → syncs that one in-progress lane; without → syncs every
+  // in-progress lane on the route. Pulls the latest telemetry (advances the truck), refreshes
+  // the market tick (metrics, fuel, polyline) and resets "Updated … ago".
+  function _orSyncNow(routeId, laneKey) {
     const s = _orSyncGet(routeId);
     if (s.syncing) return;
+    const canSync = laneKey ? _orLaneInProgress(routeId, laneKey) : _orAnyInProgress(routeId);
+    if (!canSync) return;   // nothing in progress → nothing to pull (button is disabled anyway)
     s.syncing = true;
     if (_orSyncTimer) clearTimeout(_orSyncTimer);
     setState({});
     _orSyncTimer = setTimeout(function () {
       s.syncing = false; s.tick += 1; s.lastMs = Date.now();
-      // latest telemetry: an in-progress truck has advanced since the last sync
+      // latest telemetry: the in-progress truck(s) have advanced since the last sync
+      const reg = _orSegReg[routeId] || {};
+      const keys = laneKey ? [laneKey] : Object.keys(reg).filter(k => _orLaneInProgress(routeId, k));
+      if (!_orProgress[routeId]) _orProgress[routeId] = {};
+      keys.forEach(function (k) {
+        const seg = reg[k]; if (!seg) return;
+        const cur = (_orProgress[routeId][k] != null) ? _orProgress[routeId][k] : (seg.truckMi >= 0 ? seg.truckMi : seg.miles * 0.5);
+        const step = Math.max(10, Math.round(seg.miles * (0.05 + Math.random() * 0.06)));
+        _orProgress[routeId][k] = Math.min(seg.miles, cur + step);
+      });
       const sim = _ctrlSimGet(routeId);
       if (sim && sim.started && sim.progress < 1) sim.progress = Math.min(1, sim.progress + 0.06);
-      _orToast = 'Synced · latest data pulled';
+      _orToast = laneKey ? 'Lane synced · latest data pulled' : 'Synced · all in-progress lanes updated';
       if (_orToastTimer) clearTimeout(_orToastTimer);
       _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500);
       setState({});
@@ -10249,20 +10266,36 @@ export function initApp() {
     const sz = size || 13;
     return el('span', { style: { display: 'inline-flex', color: '#2e9975', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' });
   }
-  // map-overlay Sync control: "Synchronized ✓ / Sync" (or "Syncing…") + "Updated … ago"
-  function _orSyncOverlay(routeId, dataLabel) {
+  // Standardized Sync control — the single "Synchronized ✓ / Sync" (or "Syncing…") pill pair
+  // used everywhere (On Road + Report, route + lane). Returns { active, syncing, pill, btn }.
+  //   opts.laneKey → lane sync (that one in-progress lane); omitted → route sync (all lanes).
+  // The Sync button is DISABLED when there's nothing in progress to pull.
+  function _orSyncControl(routeId, opts) {
     const F = '"General Sans", Nunito, system-ui';
+    opts = opts || {};
+    const laneKey = opts.laneKey || null;
     const s = _orSyncGet(routeId), syncing = s.syncing;
+    const active = laneKey ? _orLaneInProgress(routeId, laneKey) : _orAnyInProgress(routeId);
     const pill = syncing
       ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: '#d0a038', background: 'rgba(178,136,53,.14)', padding: '5px 10px', borderRadius: '999px' } }, [
           el('span', { style: { display: 'inline-flex', animation: '_efAdaptSpin .8s linear infinite' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>' }),
           el('span', {}, ['Syncing…'])
         ])
       : el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '800 10.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '5px 10px', borderRadius: '999px' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Synchronized</span>' });
-    const syncBtn = el('div', { class: syncing ? '' : 'hoverable', onclick: syncing ? null : () => _orSyncNow(routeId), title: 'Pull the latest available data', style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10.5px ' + F, color: syncing ? '#555' : '#7fd0dd', background: syncing ? 'rgba(255,255,255,.04)' : 'rgba(91,188,203,.14)', padding: '5px 11px', borderRadius: '999px', cursor: syncing ? 'default' : 'pointer' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"' + (syncing ? ' style="animation:_efAdaptSpin .8s linear infinite"' : '') + '><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Sync</span>' });
+    const canClick = active && !syncing;
+    const btn = el('div', { class: canClick ? 'hoverable' : '', onclick: canClick ? () => _orSyncNow(routeId, laneKey) : null, title: !active ? (laneKey ? 'Lane not in progress — nothing to sync' : 'No in-progress lane to sync') : (laneKey ? 'Sync this lane — pull the latest data' : 'Sync all in-progress lanes'), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10.5px ' + F, color: canClick ? '#7fd0dd' : '#4a4a4a', background: canClick ? 'rgba(91,188,203,.14)' : 'rgba(255,255,255,.04)', padding: '5px 11px', borderRadius: '999px', cursor: canClick ? 'pointer' : 'not-allowed', opacity: active ? '1' : '.75' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"' + (syncing ? ' style="animation:_efAdaptSpin .8s linear infinite"' : '') + '><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Sync</span>' });
+    return { active: active, syncing: syncing, pill: pill, btn: btn };
+  }
+  // map-overlay Sync control (bottom-left card): label + "Updated … ago" + the standard pills.
+  //   opts: string label (route sync) OR { label, laneKey } (laneKey → lane sync).
+  function _orSyncOverlay(routeId, opts) {
+    const F = '"General Sans", Nunito, system-ui';
+    if (typeof opts === 'string') opts = { label: opts };
+    opts = opts || {};
+    const c = _orSyncControl(routeId, opts);
     return el('div', { style: { position: 'absolute', left: '12px', bottom: '12px', zIndex: '600', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '11px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
-      el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, [dataLabel || 'Live data']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, [_orSyncAgo(routeId)])]),
-      pill, syncBtn
+      el('div', {}, [el('div', { style: { font: '800 11px ' + F, color: '#e6e6e6' } }, [opts.label || 'Live data']), el('div', { style: { font: '600 9px ' + F, color: '#666666', marginTop: '1px' } }, [_orSyncAgo(routeId)])]),
+      c.pill, c.btn
     ]);
   }
   // small SVG donut: deadhead (blue) vs loaded (green)
@@ -10800,7 +10833,7 @@ export function initApp() {
     // ── right column: live lane map + ELD overlay + playback scrubber ──
     const laneMap = el('div', { style: { position: 'relative', flex: '1', minHeight: '320px', borderRadius: '14px', overflow: 'hidden', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)' } }, [
       el('div', { id: 'ef-report-mapslot', style: { position: 'absolute', inset: '0' } }),
-      _orSyncOverlay(routeId, 'ELD data')
+      _orSyncOverlay(routeId, { label: 'ELD data', laneKey: key })
     ]);
     const scrubber = el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: '12px', background: '#1f1f1f', border: '1px solid rgba(255,255,255,.06)' } }, [
       el('div', { id: 'ef-scrub-btn', class: 'hoverable', onclick: () => _orReportPlayToggle(), title: 'Play the recorded trace', style: { width: '30px', height: '30px', borderRadius: '50%', background: '#292929', color: '#e6e6e6', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: '0' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>' }),
@@ -12490,10 +12523,10 @@ export function initApp() {
           el('div', { class: 'hoverable', onclick: () => _orChangeRoute(routeId, state.orLane), title: 'Pick a different optimal route', style: { display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '999px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(178,136,53,.5)', backdropFilter: 'blur(6px)', color: '#d0a038', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<span>Change route</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7.5 7.5"/><path d="M8 21H3v-5"/><path d="M3 21l7.5-7.5"/><path d="M3 8V3h5"/><path d="M9.5 9.5 3 3"/></svg>' })
         ]));
       }
-      // ── Update (pull latest from driver app) + View (top-right) ──
-      const _laneActive = (function () { const r0 = cd.rows.find(r => r.segKey === state.orLane); return r0 && r0.exec === 'In progress'; })();
+      // ── Lane Sync (standard control, on-demand for an in-progress lane) + View (top-right) ──
+      const _laneSync = _orSyncControl(routeId, { laneKey: state.orLane });
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '14px', right: '14px', zIndex: '1200', display: 'flex', alignItems: 'center', gap: '8px' } }, [
-        _laneActive ? el('div', { class: 'hoverable', onclick: () => _orAdvance(routeId, state.orLane), style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: 'rgba(102,136,204,.2)', border: '1px solid rgba(102,136,204,.4)', backdropFilter: 'blur(6px)', color: '#8fb0ff', font: '800 12.5px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync }) : null,
+        _laneSync.pill, _laneSync.btn,
         el('div', { class: 'hoverable', onclick: () => setState({ orViewOpen: !state.orViewOpen }), style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 12px', borderRadius: '9px', background: state.orViewOpen ? 'rgba(102,136,204,.2)' : 'rgba(20,20,20,.85)', border: '1px solid ' + (state.orViewOpen ? 'rgba(102,136,204,.4)' : 'rgba(255,255,255,.1)'), backdropFilter: 'blur(6px)', color: state.orViewOpen ? '#8fb0ff' : '#b3b3b3', font: '700 12.5px ' + F, cursor: 'pointer' }, html: '<span>View</span>' + IC.chevDown })
       ]));
       // View dropdown: map layer toggles (hub area / stops / planned route)
@@ -12543,10 +12576,12 @@ export function initApp() {
         _mapCtl('<span>View</span>' + IC.chevDown),
         _mapCtl(IC.layout + '<span>Open</span>')
       ]));
-      // top-right controls
+      // top-right controls — route-level Sync (standard control; updates all in-progress lanes,
+      // disabled when none is in progress)
+      const _routeSync = _orSyncControl(routeId, {});
       mapPanel.appendChild(el('div', { style: { position: 'absolute', top: '12px', right: '12px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '8px' } }, [
         _mapCtl('<span>Not started</span><span style="display:flex;color:#b28835">' + IC.info + '</span>'),
-        _mapCtl('<span>Sync</span>' + IC.sync, { background: 'rgba(102,136,204,.14)', border: '1px solid rgba(102,136,204,.3)', color: '#6688cc' })
+        _routeSync.pill, _routeSync.btn
       ]));
       // ELD status overlay (bottom-left)
       mapPanel.appendChild(el('div', { style: { position: 'absolute', left: '14px', bottom: '30px', zIndex: '1000', display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(20,20,20,.9)', border: '1px solid rgba(255,255,255,.1)', backdropFilter: 'blur(6px)' } }, [
@@ -12556,8 +12591,7 @@ export function initApp() {
         ]),
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '6px 11px', borderRadius: '999px', background: 'rgba(46,153,117,.12)', font: '800 11.5px ' + F, color: '#47b26b' } }, [
           el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#2e9975' } }), 'Synced'
-        ]),
-        el('div', { class: 'hoverable', style: { display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 13px', borderRadius: '999px', background: '#6688cc', color: '#141414', font: '800 12px ' + F, cursor: 'pointer' }, html: '<span>Update</span>' + IC.sync })
+        ])
       ]));
     }
     // (add-stop picker/candidate list now live in the modal's left panel; the map
