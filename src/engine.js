@@ -9548,6 +9548,14 @@ export function initApp() {
   }
   const _orDevOpen = (routeId, key) => _orDeviationsFor(routeId, key).filter(d => d.state === 'open');
   const _orDevPCmiles = (routeId, key) => _orDeviationsFor(routeId, key).filter(d => d.state === 'pc').reduce((s, d) => s + (d.detourMi || 0), 0);
+  // Total PC miles on a lane = PC deviations (marked off the executed route) + any stop
+  // flagged Personal Conveyance. These are off-duty (excluded from HOS) and no longer
+  // count as off-plan — see CA-05/CA-06. Centralised so the exec chip, HOS and impact
+  // strip all report the same figure.
+  const _orPCmilesTotal = (routeId, key) => {
+    const stops = _orLaneStopsSorted(routeId, key) || [];
+    return Math.round(stops.reduce((s, x) => s + (x.pc ? (x.pcMiles || x.detourMi || 0) : 0), 0) + _orDevPCmiles(routeId, key));
+  };
   // Back-compat shim: the "primary" deviation = first still-open, else the first.
   function _orActualFor(routeId, key) {
     const devs = _orDeviationsFor(routeId, key);
@@ -10751,7 +10759,9 @@ export function initApp() {
     // Executed = what actually happened (planned distance + off-plan detours); Optimal =
     // the best-case plan. The gap between them is surfaced as "missed savings".
     const _rate = laneMiles ? (costNum / laneMiles) : 2.4;              // $/mi baseline
-    const extraMi = Math.round(devs.reduce((s, dv) => s + (dv.detourMi || 0), 0));
+    // PC detours are off-duty and no longer count as off-plan (CA-06) → they don't drive
+    // "missed savings" in the executed-vs-optimal model; only unjustified off-plan miles do.
+    const extraMi = Math.round(devs.filter(dv => dv.state !== 'pc').reduce((s, dv) => s + (dv.detourMi || 0), 0));
     const optMi = laneMiles;
     const exMi = laneMiles + extraMi;
     const optMilesCost = Math.round(optMi * _rate);                     // == costNum
@@ -11040,14 +11050,17 @@ export function initApp() {
     }
     function _orAdherence(routeId, key) {
       const devs = _orDeviationsFor(routeId, key);
-      if (!devs.length) return { state: 'on', detourMi: 0, open: 0, total: 0, devs: [] };
+      // PC miles are tracked in every state so the chip can surface them even while other
+      // detours are still open (mixed state) — CA-06: the chip reflects the PC miles.
+      const pcMi = _orPCmilesTotal(routeId, key);
+      if (!devs.length) return { state: pcMi ? 'pc' : 'on', detourMi: pcMi, open: 0, total: 0, pcMi: pcMi, devs: [] };
       const open = devs.filter(d => d.state === 'open');
       const openMi = open.reduce((s, d) => s + (d.detourMi || 0), 0);
       // adherence score: share of deviations resolved (justified/PC/kept/adjusted)
       const adhPct = Math.round(100 - (open.length / (devs.length + 1)) * (open.length ? (25 + openMi / 4) : 0));
-      if (open.length) return { state: 'off', detourMi: openMi, open: open.length, total: devs.length, adhPct: adhPct, devs: devs };
-      if (devs.some(d => d.state === 'pc')) return { state: 'pc', detourMi: _orDevPCmiles(routeId, key), open: 0, total: devs.length, devs: devs };
-      return { state: 'on', detourMi: 0, open: 0, total: devs.length, devs: devs };
+      if (open.length) return { state: 'off', detourMi: openMi, open: open.length, total: devs.length, adhPct: adhPct, pcMi: pcMi, devs: devs };
+      if (pcMi || devs.some(d => d.state === 'pc')) return { state: 'pc', detourMi: pcMi, open: 0, total: devs.length, pcMi: pcMi, devs: devs };
+      return { state: 'on', detourMi: 0, open: 0, total: devs.length, pcMi: pcMi, devs: devs };
     }
     // ── Per-deviation resolution (each deviation on a lane is managed independently) ──
     function _orFindDev(routeId, key, devId) { return _orDeviationsFor(routeId, key).find(d => d.id === devId) || _orActualFor(routeId, key); }
@@ -11190,14 +11203,23 @@ export function initApp() {
         cell(IC.clock, (x.active || x.realStop) ? x.eta : '—', x.active ? x.delayTxt : (x.realStop ? 'Arrived (real stop)' : 'ETA'), x.late ? '#cc666f' : (x.realStop ? '#47b26b' : '#6688cc'))
       ]);
       const prog = el('div', { style: { marginTop: '12px' } }, [
-        el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%'])]),
+        el('div', { style: { display: 'flex', justifyContent: 'space-between', font: '700 10px ' + F, color: '#808080', marginBottom: '5px' } }, [el('span', {}, ['Miles driven']), el('span', { style: { color: '#e6e6e6' } }, [
+          x.milesDriven.toLocaleString('en-US') + ' / ' + x.miles.toLocaleString('en-US') + ' mi · ' + x.pct + '%',
+          // PC miles are off-duty but still driven — call out how many of the driven miles
+          // were Personal Conveyance so the figure isn't hidden inside "miles driven".
+          adh.pcMi ? el('span', { style: { color: '#8a79d6', fontWeight: '700' } }, [' · incl. ' + Math.round(adh.pcMi) + ' mi PC']) : null
+        ])]),
         el('div', { style: { position: 'relative', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,.08)' } }, [el('div', { style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: x.pct + '%', borderRadius: '3px', background: x.late ? '#b28835' : '#2e9975' } })])
       ]);
       // Off-plan → informational chip only; each detour is resolved from the list below
-      // (or by clicking it on the map).
+      // (or by clicking it on the map). A separate PC chip is shown whenever there are PC
+      // miles that the main chip doesn't already represent (mixed open + PC state) so the
+      // adherence row always reflects the Personal Conveyance miles (CA-06).
       const offPlan = adh.state === 'off';
-      const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' } }, [
+      const _pcChip = (mi) => el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 10px ' + F, letterSpacing: '.02em', color: '#8066cc', background: 'rgba(128,102,204,.16)', padding: '5px 9px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Personal Conveyance · +' + Math.round(mi) + ' mi</span>' });
+      const adhRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', flexWrap: 'wrap' } }, [
         _orAdherenceChip(adh, null),
+        (adh.state !== 'pc' && adh.pcMi) ? _pcChip(adh.pcMi) : null,
         offPlan ? el('span', { style: { font: '600 10px ' + F, color: '#808080' } }, ['Resolve below or on the map']) : null
       ]);
       const topRow = el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', font: '800 10px ' + F, letterSpacing: '.06em', textTransform: 'uppercase', color: '#808080', marginBottom: '11px' } }, [
