@@ -9448,12 +9448,56 @@ export function initApp() {
     if (meta.filterKind === 'subtype') c.subtype = meta.filters[1 + (i % (meta.filters.length - 1))];
     return c;
   }
+  // FO-parity: brand logos (white well + colored wordmark/monogram). Trademarked art
+  // can't ship in the prototype, so a branded monogram stands in — same role as the
+  // Fuel Optimizer's brandImageUrl circle on cards and the profile header.
+  const _OR_BRAND_LOGO = {
+    "Pilot": { c: '#E4322B', m: 'PILOT' }, "Flying J": { c: '#E4322B', m: 'FJ' },
+    "Love's": { c: '#E21836', m: "LOVE'S" }, "TA Travel": { c: '#C8102E', m: 'TA' },
+    "Chevron": { c: '#1856A7', m: 'CHEVRON' }, "Speedway": { c: '#E4322B', m: 'SPEEDWAY' },
+    "Blue Beacon Truck Wash": { c: '#1763B6', m: 'BB' }, "QuikTrip": { c: '#E4322B', m: 'QT' },
+    "RaceTrac": { c: '#E11B22', m: 'RT' }, "Circle K": { c: '#E4322B', m: 'CK' },
+    "Walmart Supercenter": { c: '#0071CE', m: 'WM' }, "Walmart Neighborhood": { c: '#0071CE', m: 'WM' },
+    "Motel 6": { c: '#E4322B', m: 'M6' }, "Super 8": { c: '#1856A7', m: 'S8' },
+    "Red Roof Inn": { c: '#E4322B', m: 'RR' }, "La Quinta Inn": { c: '#1C7A54', m: 'LQ' }, "Days Inn": { c: '#F0A500', m: 'DI' }
+  };
+  // FO-parity (§12): per-service badge color + short tag label for the Service Tags row.
+  const _OR_TAG = {
+    fuel: { label: 'Fuel', c: '#5bbccb' }, parking: { label: 'Long Term Parking', c: '#5982A6' },
+    rest: { label: 'Short Term Parking', c: '#43B5BF' }, wash: { label: 'Truck Wash', c: '#62BFC7' },
+    weigh: { label: 'Weigh Station', c: '#1fb39a' }, scale: { label: 'Scales', c: '#4bbf8f' },
+    repair: { label: 'Lite Maintenance', c: '#cdcdcc' }, hotel: { label: 'Hotel', c: '#ED593B' },
+    walmart: { label: 'Walmart', c: '#d1a54a' }, driver: { label: 'Driver Services', c: '#8066cc' }
+  };
+  // FO-parity: other services co-located at a place (drives the Service Tags row). The
+  // place's own type is always first; a deterministic subset of the pool is added.
+  const _OR_CO_SERVICES = {
+    fuel: ['rest', 'parking', 'wash', 'driver', 'scale'], parking: ['rest', 'driver', 'fuel'],
+    rest: ['parking', 'driver', 'fuel'], wash: ['fuel', 'scale'], weigh: [], scale: ['fuel', 'weigh'],
+    repair: ['fuel', 'parking'], hotel: ['driver', 'fuel'], walmart: ['driver', 'fuel'], driver: []
+  };
+  function _orCandServices(type, seed) {
+    const pool = _OR_CO_SERVICES[type] || [];
+    const out = [type];
+    for (let j = 0; j < pool.length && out.length < 4; j++) { if ((seed + j * 5) % 3 === 0) out.push(pool[j]); }
+    return out;
+  }
+  // FO-parity (§5.8): detour as time. detourMi is a one-way-ish estimate; the round-trip
+  // off-route time at ~45 mph is ~detourMi * 2.6 min. < 1 min → "Quick stop".
+  function _orDetourMin(detourMi) { return Math.max(0, Math.round((detourMi || 0) * 2.6)); }
+  function _orDetourText(c) {
+    if (c && c.nearby) return (c.radiusMi + ' mi from truck');
+    const m = (c && c.detourMin != null) ? c.detourMin : _orDetourMin(c && c.detourMi);
+    if (m < 1) return 'Quick stop';
+    if (m < 60) return '~' + m + ' min detour';
+    return '~' + Math.floor(m / 60) + ' h ' + (m % 60) + ' min detour';
+  }
   // FO-parity: features shown per stop type in the profile
   const _OR_STOP_FEATURES = {
     fuel:    ['Fuel Service', 'DEF Lanes', 'Diesel'],
     parking: ['Short Term Parking', 'Long Term Parking', 'Overnight Parking'],
     rest:    ['Short Term Parking', 'Restrooms'],
-    wash:    ['Truck Wash'],
+    wash:    ['Truck Wash', 'Trailer Washout', 'Truck Detailing'],
     weigh:   ['Weigh Station'],
     scale:   ['Scale'],
     repair:  ['Reefer Repair', 'Truck Repair', 'Trailer Repair'],
@@ -9737,10 +9781,12 @@ export function initApp() {
         distanceMi: Math.round(miles * frac), frac,
         rating: +(3.2 + ((i * 7) % 10) / 10 * 1.6).toFixed(1),
         detourMi: +(0.3 + (i % 3) * 0.7).toFixed(1),
-        address: _OR_ADDR[(laneIdx + i) % _OR_ADDR.length]
+        address: _OR_ADDR[(_h + i) % _OR_ADDR.length]
       };
       if (isFuel) c.pricePerGal = +(3.55 + ((i * 13) % 10) / 10 * 0.62).toFixed(3);
       _orApplyCandStatus(c, type, i);
+      c.detourMin = _orDetourMin(c.detourMi);
+      c.services = _orCandServices(type, i);
       arr.push(c);
     }
     if (isFuel) {
@@ -9775,12 +9821,14 @@ export function initApp() {
         name: i < names.length ? base : (base + ' #' + (1000 + ((i * 41 + _h) % 8999))), brand: isFuel ? base : undefined,
         distanceMi: Math.max(1, Math.round(truckMi + off)), frac: truckFrac,
         rating: +(3.4 + (i % 4) * 0.4).toFixed(1), detourMi: off, badge: i === 0 ? 'best' : 'ok',
-        address: _OR_ADDR[(laneIdx + i + 3) % _OR_ADDR.length]
+        address: _OR_ADDR[(_h + i + 3) % _OR_ADDR.length]
       };
       if (isFuel) c.pricePerGal = +(3.62 + (i % 6) * 0.06).toFixed(3);
       _orApplyCandStatus(c, type, i + 3);
       if ((_OR_SVC_META[type] || {}).status === 'avail') c.availability = ['High', 'Medium', 'High'][i % 3];
       else if ((_OR_SVC_META[type] || {}).status === 'open') c.open = true;
+      c.detourMin = _orDetourMin(c.detourMi);
+      c.services = _orCandServices(type, i + 3);
       arr.push(c);
     }
     _orCandCache[key] = arr;
@@ -9887,10 +9935,12 @@ export function initApp() {
         distanceMi: Math.round(miles * frac), frac: frac,
         rating: +(3.6 + ((i * 7) % 10) / 10 * 1.3).toFixed(1),
         detourMi: +(0.2 + (i % 3) * 0.5).toFixed(1),
-        address: _OR_ADDR[(laneIdx + i) % _OR_ADDR.length],
+        address: _OR_ADDR[(h + i) % _OR_ADDR.length],
         badge: i === 0 ? 'best' : 'ok'
       };
       _orApplyCandStatus(c, 'rest', i);
+      c.detourMin = _orDetourMin(c.detourMi);
+      c.services = _orCandServices('rest', i);
       arr.push(c);
     }
     return arr;
@@ -9915,11 +9965,13 @@ export function initApp() {
         distanceMi: Math.round(miles * frac), frac: frac,
         rating: +(3.4 + ((i * 7) % 10) / 10 * 1.4).toFixed(1),
         detourMi: +(0.2 + (i % 3) * 0.5).toFixed(1),
-        address: _OR_ADDR[(laneIdx + i) % _OR_ADDR.length],
+        address: _OR_ADDR[(h + i) % _OR_ADDR.length],
         badge: i === 0 ? 'best' : (i === n - 1 ? 'high' : 'ok')
       };
       if (isFuel) c.pricePerGal = +(3.55 + ((i * 13) % 10) / 10 * 0.6).toFixed(3);
       _orApplyCandStatus(c, type, i);
+      c.detourMin = _orDetourMin(c.detourMi);
+      c.services = _orCandServices(type, i);
       arr.push(c);
     }
     return arr;
@@ -11483,6 +11535,37 @@ export function initApp() {
       const s = _OR_SVC[type] || _OR_SVC.fuel;
       return el('div', { style: { width: size + 'px', height: size + 'px', borderRadius: '9px', flexShrink: '0', display: 'grid', placeItems: 'center', background: s.bg || 'rgba(255,255,255,.08)', color: s.color }, html: s.icon });
     }
+    // FO-parity brand logo: a white circular well with the brand's colored wordmark /
+    // monogram (stand-in for the Fuel Optimizer's brandImageUrl). Unbranded services
+    // (weigh/scale/driver) keep their tinted service glyph in a circular well instead.
+    function _brandLogo(c, size) {
+      const svc = _OR_SVC[c.type] || _OR_SVC.fuel;
+      if (c.type === 'weigh' || c.type === 'scale' || c.type === 'driver') {
+        return el('div', { style: { width: size + 'px', height: size + 'px', borderRadius: '50%', flexShrink: '0', display: 'grid', placeItems: 'center', background: svc.bg || 'rgba(255,255,255,.08)', color: svc.color } }, [el('span', { style: { display: 'flex', transform: 'scale(' + (size / 34).toFixed(2) + ')' }, html: svc.icon })]);
+      }
+      const base = (c.brand || c.name || '').replace(/\s*#.*$/, '').replace(/\s+\d+$/, '').trim();
+      const known = _OR_BRAND_LOGO[c.brand] || _OR_BRAND_LOGO[base] || _OR_BRAND_LOGO[c.name];
+      const col = known ? known.c : svc.color;
+      const mono = (known && known.m) ? known.m : (base.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || (svc.short || '•'));
+      const long = mono.length > 3;
+      return el('div', { style: { width: size + 'px', height: size + 'px', borderRadius: '50%', flexShrink: '0', display: 'grid', placeItems: 'center', background: '#f4f5f6', border: '1px solid rgba(0,0,0,.12)', overflow: 'hidden', padding: '0 2px', boxSizing: 'border-box' } }, [
+        el('div', { style: { font: '900 ' + Math.round(size * (long ? 0.2 : 0.36)) + 'px ' + F, color: col, letterSpacing: '-.02em', lineHeight: '1', whiteSpace: 'nowrap' } }, [mono])
+      ]);
+    }
+    // FO-parity Service Tags row (§8): one pill per distinct service available at the
+    // place; the browsed service is moved first; the six driver services collapse into
+    // one "Driver Services" pill; at most 2 pills show, then a "+n" pill.
+    function _serviceTagsRow(c, browsedType) {
+      let list = (c.services && c.services.length) ? c.services.slice() : [c.type];
+      // collapse driver-service variants into one (prototype only models 'driver')
+      list = list.filter((v, i) => list.indexOf(v) === i);
+      if (browsedType && list.indexOf(browsedType) >= 0) { list = [browsedType].concat(list.filter(t => t !== browsedType)); }
+      const vis = list.slice(0, 2), extra = list.length - vis.length;
+      const pill = (t) => { const m = _OR_TAG[t] || { label: (_OR_SVC[t] || {}).label || t, c: '#808080' }; return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '800 9.5px ' + F, color: m.c, background: m.c + '1f', border: '1px solid ' + m.c + '55', padding: '2px 8px', borderRadius: '999px', whiteSpace: 'nowrap' }, html: '<span style="width:5px;height:5px;border-radius:50%;background:' + m.c + '"></span><span>' + m.label + '</span>' }); };
+      const kids = vis.map(pill);
+      if (extra > 0) kids.push(el('span', { style: { font: '800 9.5px ' + F, color: '#808080', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', padding: '2px 7px', borderRadius: '999px', whiteSpace: 'nowrap' } }, ['+' + extra]));
+      return el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '6px' } }, kids);
+    }
     function _miniAction(label, onClick, danger) {
       return el('div', { class: 'hoverable', onclick: onClick, style: { font: '800 11px ' + F, color: danger ? '#cc666f' : '#808080', cursor: 'pointer', padding: '4px 8px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.08)', whiteSpace: 'nowrap' } }, [label]);
     }
@@ -11647,6 +11730,7 @@ export function initApp() {
       const total = browse.route.length + browse.nearby.length;
       const nCombine = browse.route.filter(c => c._match).length;
       const radius = state.orRadius || 10;
+      const _pinXS = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
       const _candRow = (c, num) => {
         const added = existing.indexOf(c.id) >= 0;
         const match = c._match;
@@ -11654,10 +11738,12 @@ export function initApp() {
         const status = match ? null : _candStatusBadge(c);
         const doAdd = () => _orCommitCand(c);
         const sel = state.orCandSel === c.id;
-        return el('div', { style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '11px', background: sel ? 'rgba(102,136,204,.12)' : (match ? 'rgba(46,153,117,.06)' : '#1f1f1f'), border: '1px solid ' + (sel ? 'rgba(102,136,204,.55)' : (match ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.07)')) } }, [
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0' } }, [
+        const isF = c.type === 'fuel';
+        const distTxt = c.nearby ? (c.radiusMi + ' mi from truck') : ('at ' + c.distanceMi.toLocaleString('en-US') + ' mi');
+        return el('div', { style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'flex-start', gap: '10px', padding: '10px 11px', borderRadius: '11px', background: sel ? 'rgba(102,136,204,.12)' : (match ? 'rgba(46,153,117,.06)' : '#1f1f1f'), border: '1px solid ' + (sel ? 'rgba(102,136,204,.55)' : (match ? 'rgba(46,153,117,.3)' : 'rgba(255,255,255,.07)')) } }, [
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0', paddingTop: '1px' } }, [
             el('div', { style: { minWidth: '15px', textAlign: 'right', font: '800 11px ' + F, color: sel ? '#6688cc' : (match ? '#47b26b' : '#808080') } }, [String(num)]),
-            _svcIconBox(c.type, 28)
+            _brandLogo(c, 34)
           ]),
           el('div', { class: 'hoverable', onclick: () => setState({ orCandSel: sel ? null : c.id }), style: { minWidth: '0', cursor: 'pointer' } }, [
             el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
@@ -11666,14 +11752,24 @@ export function initApp() {
                 ? el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', font: '800 9px ' + F, letterSpacing: '.03em', textTransform: 'uppercase', color: '#47b26b', background: 'rgba(46,153,117,.16)', padding: '2px 7px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: '0' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Combine</span>' })
                 : (status || _badgePill(c.badge))
             ]),
+            // price (fuel) + distance + detour (minutes, §5.8)
+            el('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px', minWidth: '0' } }, [
+              (isF && c.pricePerGal != null) ? el('span', { style: { display: 'inline-flex', alignItems: 'baseline', gap: '2px', flexShrink: '0' } }, [
+                el('span', { style: { font: '900 13px ' + F, color: '#e6e6e6' } }, ['$' + c.pricePerGal.toFixed(2)]),
+                el('span', { style: { font: '700 9px ' + F, color: '#808080' } }, ['/gal'])
+              ]) : null,
+              el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '3px', font: '600 10.5px ' + F, color: '#808080', whiteSpace: 'nowrap' }, html: _pinXS + '<span>' + distTxt + '</span>' }),
+              (!c.nearby && c.detourMin != null) ? el('span', { style: { font: '600 10.5px ' + F, color: '#808080', whiteSpace: 'nowrap' } }, ['· ' + _orDetourText(c)]) : null
+            ]),
+            // address
             el('div', { style: { font: '600 9.5px ' + F, color: match ? '#47b26b' : '#666666', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [
-              match
-                ? ('Same location as ' + (match.type === 'fuel' ? match.brand : match.name) + ' · ' + mSvc.label + ' + ' + svc.label)
-                : ((c.type === 'fuel' ? '$' + c.pricePerGal.toFixed(2) + '/gal · ' : '') + (c.nearby ? (c.radiusMi + ' mi from truck') : ('at ' + c.distanceMi.toLocaleString('en-US') + ' mi')) + ' · ' + c.detourMi + ' mi detour · ★ ' + c.rating)
-            ])
+              match ? ('Same location as ' + (match.type === 'fuel' ? match.brand : match.name) + ' · ' + mSvc.label + ' + ' + svc.label) : (c.address || (svc.label + ' along this lane'))
+            ]),
+            // service tags (§8)
+            match ? null : _serviceTagsRow(c, type)
           ]),
           added
-            ? el('div', { style: { font: '800 10.5px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
+            ? el('div', { style: { font: '800 10.5px ' + F, color: '#47b26b', display: 'flex', alignItems: 'center', gap: '5px', paddingTop: '2px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
             : el('div', { class: 'hoverable', onclick: doAdd, style: { font: '800 11px ' + F, color: '#141414', background: match ? '#2e9975' : '#6688cc', padding: '6px 11px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' } }, [match ? 'Combine' : (isReplace ? 'Choose' : 'Add +')])
         ]);
       };
@@ -11695,10 +11791,15 @@ export function initApp() {
         const m2 = selC._match;
         const selAdded = existing.indexOf(selC.id) >= 0;
         const _pinSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+        // per-type secondary action (FO: Update price / Update availability / Call)
+        const selAct = isF ? { label: 'Update price', msg: 'Fuel price update requested' }
+          : (selC.type === 'parking' || selC.type === 'rest') ? { label: 'Update availability', msg: 'Availability update requested' }
+          : (['wash', 'repair', 'hotel'].indexOf(selC.type) >= 0) ? { label: 'Call', msg: 'Calling ' + (selC.name || svc.label) + '…' } : null;
+        const _selToast = (msg) => { _orToast = msg; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2600); setState({}); };
         kids.push(el('div', { style: { position: 'relative', padding: '13px', borderRadius: '12px', background: 'rgba(102,136,204,.09)', border: '1px solid rgba(102,136,204,.5)', marginBottom: '12px' } }, [
           el('div', { class: 'hoverable', onclick: () => setState({ orCandSel: null }), style: { position: 'absolute', top: '9px', right: '10px', color: '#808080', cursor: 'pointer', font: '400 17px ' + F, lineHeight: '1' } }, ['×']),
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', paddingRight: '18px' } }, [
-            _svcIconBox(selC.type, 36),
+            _brandLogo(selC, 40),
             el('div', { style: { minWidth: '0', flex: '1' } }, [
               el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: '0' } }, [
                 el('div', { style: { font: '800 13.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [selC.name]),
@@ -11710,15 +11811,18 @@ export function initApp() {
           el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '11px' } }, [
             isF ? _lpTag('$' + selC.pricePerGal.toFixed(2) + '/gal', '#b28835') : null,
             _lpTag(selC.nearby ? (selC.radiusMi + ' mi from truck') : ('at ' + selC.distanceMi.toLocaleString('en-US') + ' mi'), '#808080'),
-            selC.detourMi ? _lpTag('+' + selC.detourMi + ' mi detour', '#808080') : null,
+            (!selC.nearby && selC.detourMin != null) ? _lpTag(_orDetourText(selC), '#808080') : null,
             selC.rating ? _lpTag('★ ' + selC.rating, '#808080') : null,
             m2 ? _lpTag('Combines with ' + (m2.type === 'fuel' ? m2.brand : m2.name), '#47b26b') : null
           ]),
-          el('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, [
-            el('div', { class: 'hoverable', onclick: () => setState({ orProfile: selC.id }), style: { flex: '1', textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.35)', cursor: 'pointer' } }, ['View full profile']),
+          m2 ? null : _serviceTagsRow(selC, type),
+          // stacked actions (FO expanded-row parity: primary · update · profile)
+          el('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', marginTop: '12px' } }, [
             selAdded
-              ? el('div', { style: { flex: '1', textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added</span>' })
-              : el('div', { class: 'hoverable', onclick: () => _orCommitCand(selC), style: { flex: '1', textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#141414', background: m2 ? '#2e9975' : '#6688cc', cursor: 'pointer' } }, [m2 ? 'Combine' : 'Add Stop'])
+              ? el('div', { style: { textAlign: 'center', padding: '10px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#47b26b', background: 'rgba(46,153,117,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Added to plan</span>' })
+              : el('div', { class: 'hoverable', onclick: () => _orCommitCand(selC), style: { textAlign: 'center', padding: '10px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#141414', background: m2 ? '#2e9975' : '#6688cc', cursor: 'pointer' } }, [m2 ? 'Combine stop' : 'Add Stop']),
+            selAct ? el('div', { class: 'hoverable', onclick: () => _selToast(selAct.msg), style: { textAlign: 'center', padding: '9px', borderRadius: '10px', font: '800 11.5px ' + F, color: '#b3b3b3', background: 'transparent', border: '1px solid rgba(255,255,255,.16)', cursor: 'pointer' } }, [selAct.label]) : null,
+            el('div', { class: 'hoverable', onclick: () => setState({ orProfile: selC.id }), style: { textAlign: 'center', padding: '8px', font: '800 11.5px ' + F, color: '#6688cc', cursor: 'pointer' } }, ['View full profile'])
           ])
         ]));
       }
@@ -13072,6 +13176,15 @@ export function initApp() {
         const svc = _OR_SVC[sp.type] || _OR_SVC.fuel;
         const info = _orStopInfo(sp);
         const rv = _orStopReviews(sp);
+        // FO-parity: deterministic weekly hours, 4-type fuel prices, %-recommend, place id
+        const _ph = String(sp.id || sp.name || sp.type).split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
+        const _week = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const _open24 = (sp.type === 'fuel' || sp.type === 'scale') || (_ph % 3 === 0);
+        const _weekHours = _week.map((d, i) => _open24 ? 'Open 24 hrs' : (i === 0 ? 'Closed' : (i === 6 ? '8:00 AM - 8:00 PM' : '6:00 AM - 10:00 PM')));
+        const _hoursToday = _weekHours[(new Date()).getDay()];
+        const fuelGrid = isFuel ? (function () { const diesel = sp.pricePerGal || 4.09; const reg = Math.max(2.5, +(diesel - 0.86).toFixed(2)); return { regular: reg, midgrade: +(reg + 0.3).toFixed(2), premium: +(reg + 0.6).toFixed(2), diesel: +diesel.toFixed(2) }; })() : null;
+        const recommendPct = 70 + (_ph % 29);
+        const _placeNo = 100000 + (_ph * 73) % 900000;
         const _stars = (n, sz) => { let s = ''; for (let i = 1; i <= 5; i++) s += '<svg width="' + (sz || 12) + '" height="' + (sz || 12) + '" viewBox="0 0 24 24" fill="' + (i <= n ? '#e0b341' : 'none') + '" stroke="' + (i <= n ? '#e0b341' : '#4d4d4d') + '" stroke-width="2"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.7L12 17.3 5.8 20.6l1.6-6.7L2.2 8.9l6.9-.6z"/></svg>'; return '<span style="display:inline-flex;gap:1px;vertical-align:middle">' + s + '</span>'; };
         const close = () => setState({ orProfile: null });
         const _pToast = (msg) => { _orToast = msg; if (_orToastTimer) clearTimeout(_orToastTimer); _orToastTimer = setTimeout(() => { _orToast = null; const t = document.getElementById('or-toast'); if (t) t.remove(); }, 2500); setState({}); };
@@ -13090,16 +13203,29 @@ export function initApp() {
           el('span', { style: { flex: '1', font: '700 12.5px ' + F, color: '#b3b3b3' } }, [label]),
           el('span', { style: { font: '800 12.5px ' + F, color: vColor || '#e6e6e6', whiteSpace: 'nowrap' } }, [value])
         ]);
-        const ratingRow = _dRow('star', 'Rating', (sp.rating != null ? sp.rating : '0.0') + ' · reviews');
+        // Service Hours row — tap to expand to the full week (§5.1 / §9)
+        const hoursRow = (label, value, vColor) => {
+          const openWk = !!state.orProfHours;
+          return el('div', {}, [
+            el('div', { class: 'hoverable', onclick: () => setState({ orProfHours: !openWk }), style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 2px', cursor: 'pointer' } }, [
+              el('span', { style: { color: '#6688cc', display: 'flex', flexShrink: '0' }, html: _DIC.hours }),
+              el('span', { style: { flex: '1', font: '700 12.5px ' + F, color: '#b3b3b3' } }, [label]),
+              el('span', { style: { font: '800 12.5px ' + F, color: vColor || '#e6e6e6', whiteSpace: 'nowrap' } }, [value]),
+              el('span', { style: { color: '#808080', display: 'flex', transition: 'transform .15s', transform: openWk ? 'rotate(180deg)' : 'none' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' })
+            ]),
+            openWk ? el('div', { style: { padding: '2px 2px 8px 25px' } }, _week.map((d, i) => el('div', { style: { display: 'flex', justifyContent: 'space-between', padding: '4px 0', font: '600 11.5px ' + F } }, [el('span', { style: { color: '#808080' } }, [d]), el('span', { style: { color: '#b3b3b3' } }, [_weekHours[i]])]))) : null
+          ]);
+        };
+        const ratingRow = _dRow('star', 'Rating', (sp.rating != null ? sp.rating : '4.0') + ' · ' + rv.count + ' reviews');
         const _openClr = info.open ? '#47b26b' : '#cc666f';
         const rows = [];
-        if (sp.type === 'parking' || sp.type === 'rest') { rows.push(_dRow('hours', 'Service Hours', info.serviceHours)); rows.push(_dRow('truck', 'Truck spots', info.truckSpots + ' Available')); rows.push(ratingRow); }
-        else if (sp.type === 'wash') { rows.push(_dRow('hours', 'Service Hours', info.open ? 'Open now' : 'Closed', _openClr)); rows.push(_dRow('wait', 'Wait time estimate', info.waitTime)); rows.push(ratingRow); }
+        if (sp.type === 'parking' || sp.type === 'rest') { rows.push(hoursRow('Service Hours', _hoursToday)); rows.push(_dRow('truck', 'Truck spots', info.truckSpots + ' Available')); rows.push(ratingRow); }
+        else if (sp.type === 'wash') { rows.push(hoursRow('Service Hours', info.open ? 'Open now' : 'Closed', _openClr)); rows.push(_dRow('wait', 'Wait time estimate', 'Coming soon', '#808080')); rows.push(ratingRow); }
         else if (sp.type === 'weigh') { rows.push(_dRow('hours', 'Status', (info.open ? 'Open' : 'Closed') + (info.lastReportedH ? (' · ' + info.lastReportedH + 'h ago') : ''), _openClr)); rows.push(_dRow('road', 'Road', info.road || '—')); rows.push(ratingRow); }
-        else if (sp.type === 'scale') { rows.push(_dRow('hours', 'Service Hours', info.serviceHours)); rows.push(ratingRow); }
-        else if (sp.type === 'repair') { rows.push(_dRow('hours', 'Service Hours', info.open ? 'Open now' : 'Closed', _openClr)); rows.push(ratingRow); }
-        else if (sp.type === 'hotel') { rows.push(_dRow('hours', 'Service Hours', info.serviceHours)); rows.push(_dRow('truck', 'Truck parking', info.truckParking)); rows.push(ratingRow); }
-        else if (!isFuel) { rows.push(_dRow('hours', 'Service Hours', info.serviceHours)); rows.push(ratingRow); }
+        else if (sp.type === 'scale') { rows.push(hoursRow('Service Hours', _hoursToday)); rows.push(_dRow('wait', 'Queue time', 'Coming soon', '#808080')); rows.push(ratingRow); }
+        else if (sp.type === 'repair') { rows.push(hoursRow('Service Hours', info.open ? 'Open now' : 'Closed', _openClr)); rows.push(ratingRow); }
+        else if (sp.type === 'hotel') { rows.push(hoursRow('Service Hours', _hoursToday)); rows.push(_dRow('truck', 'Truck parking', info.truckParking)); rows.push(ratingRow); }
+        else if (!isFuel) { rows.push(hoursRow('Service Hours', _hoursToday)); rows.push(ratingRow); }
         else { rows.push(ratingRow); }
         // per-type secondary action (FO: Update price / Update Availability / Call)
         const _typeAct = isFuel ? { label: 'Update price', msg: 'Fuel price update requested' }
@@ -13108,23 +13234,37 @@ export function initApp() {
         const bg = el('div', { onclick: close, style: { position: 'absolute', inset: '0', zIndex: '2000', background: 'rgba(10,10,10,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } });
         const modal = el('div', { onclick: e => e.stopPropagation(), style: { width: '440px', maxWidth: '100%', maxHeight: '86%', overflowY: 'auto', borderRadius: '16px', background: '#242424', border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 64px rgba(0,0,0,.6)' } }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 20px', borderBottom: '1px solid rgba(255,255,255,.08)' } }, [
-            _svcIconBox(sp.type, 40),
+            _brandLogo(sp, 48),
             el('div', { style: { flex: '1', minWidth: '0' } }, [
               el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: '0' } }, [
                 el('div', { style: { font: '800 16px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [isFuel ? (sp.brand || sp.name) : sp.name]),
                 statusChip || null
               ]),
-              el('div', { style: { font: '600 11px ' + F, color: '#808080', marginTop: '2px' } }, [svc.label + ' · at ' + (sp.distanceMi != null ? sp.distanceMi.toLocaleString('en-US') : '—') + ' mi'])
+              el('div', { style: { font: '600 11px ' + F, color: '#808080', marginTop: '2px' } }, [svc.label])
             ]),
+            (sp.distanceMi != null) ? el('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: '0' } }, [
+              el('div', { style: { font: '900 16px ' + F, color: '#e6e6e6', lineHeight: '1' } }, [sp.distanceMi.toLocaleString('en-US')]),
+              el('div', { style: { font: '700 9px ' + F, color: '#808080', marginTop: '2px' } }, ['mi'])
+            ]) : null,
             el('div', { class: 'hoverable', onclick: close, style: { width: '28px', height: '28px', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', font: '400 18px ' + F } }, ['×'])
           ]),
-          (isFuel && sp.gallons != null) ? el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1px', margin: '16px 20px 0', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } }, [
-            el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#e6e6e6' } }, ['$' + sp.pricePerGal.toFixed(2)]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Price / gal'])]),
-            el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#6688cc' } }, [sp.gallons + ' gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Optimal fill'])]),
-            el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#47b26b' } }, [money(Math.round(sp.cost))]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Stop cost'])])
-          ]) : ((isFuel && sp.pricePerGal != null) ? el('div', { style: { margin: '16px 20px 0', padding: '12px 14px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px' } }, [el('div', { style: { font: '900 15px ' + F, color: '#b28835' } }, ['$' + sp.pricePerGal.toFixed(2) + ' / gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Pump price'])]) : null),
+          // FS price grid: Regular · Midgrade · Premium · Diesel (§5.7), then the optimal-fill box
+          isFuel ? el('div', { style: { margin: '16px 20px 0' } }, [
+            el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1px', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } }, [['Regular', fuelGrid.regular, false], ['Midgrade', fuelGrid.midgrade, false], ['Premium', fuelGrid.premium, false], ['Diesel', fuelGrid.diesel, true]].map(fc => el('div', { style: { padding: '11px 8px', background: fc[2] ? 'rgba(91,188,203,.12)' : '#1a1a1a', textAlign: 'center' } }, [
+              el('div', { style: { font: '900 15px ' + F, color: fc[2] ? '#7fd4c1' : '#e6e6e6' } }, ['$' + fc[1].toFixed(2)]),
+              el('div', { style: { font: '700 9px ' + F, color: '#808080', marginTop: '3px' } }, [fc[0]])
+            ]))),
+            el('div', { style: { font: '600 9.5px ' + F, color: '#666666', margin: '6px 2px 0' } }, ['Diesel price · updated 2 h ago · tap Update to report']),
+            (sp.gallons != null) ? el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '1px', marginTop: '10px', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px', overflow: 'hidden' } }, [
+              el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#6688cc' } }, [sp.gallons + ' gal']), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Optimal fill'])]),
+              el('div', { style: { padding: '12px 14px', background: '#1a1a1a' } }, [el('div', { style: { font: '900 15px ' + F, color: '#47b26b' } }, [money(Math.round(sp.cost))]), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Stop cost'])])
+            ]) : null
+          ]) : null,
           el('div', { style: { padding: '16px 20px' } }, [
-            el('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#b3b3b3', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + (sp.address || (svc.label + ' stop · along this lane')) + '</span>' }),
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
+              el('div', { style: { flex: '1', minWidth: '0', display: 'flex', alignItems: 'flex-start', gap: '9px', font: '600 12px ' + F, color: '#b3b3b3', lineHeight: '1.5' }, html: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6688cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + (sp.address || (svc.label + ' stop · along this lane')) + '</span>' }),
+              el('div', { class: 'hoverable', title: 'Copy address', onclick: () => { try { navigator.clipboard.writeText((sp.address || svc.label) + (sp.state ? ' ' + sp.state : '')); } catch (e) {} _pToast('Address copied'); }, style: { width: '30px', height: '30px', flexShrink: '0', borderRadius: '8px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#808080', border: '1px solid rgba(255,255,255,.12)' }, html: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' })
+            ]),
             el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '16px 0 4px' } }, ['Details']),
             el('div', { style: { display: 'flex', flexDirection: 'column' } }, rows),
             el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '12px 0 9px' } }, ['Features']),
@@ -13132,7 +13272,7 @@ export function initApp() {
             _typeAct ? el('div', { class: 'hoverable', onclick: () => _pToast(_typeAct.msg), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', marginTop: '14px', padding: '10px', borderRadius: '10px', font: '800 12px ' + F, color: '#6688cc', background: 'rgba(102,136,204,.1)', border: '1px solid rgba(102,136,204,.3)', cursor: 'pointer' } }, [_typeAct.label]) : null,
             // Ratings & Reviews (FO parity)
             el('div', { style: { font: '800 11px ' + F, letterSpacing: '.04em', textTransform: 'uppercase', color: '#666666', margin: '18px 0 8px' } }, ['Ratings & Reviews']),
-            el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '4px' }, html: _stars(Math.round(sp.rating || 4), 14) + '<span style="font:800 12px ' + F + ';color:#e6e6e6">' + (sp.rating != null ? sp.rating : '4.0') + '</span><span style="font:600 11px ' + F + ';color:#808080">· ' + rv.count + ' reviews</span>' }),
+            el('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '4px', flexWrap: 'wrap' }, html: _stars(Math.round(sp.rating || 4), 14) + '<span style="font:800 12px ' + F + ';color:#e6e6e6">' + (sp.rating != null ? sp.rating : '4.0') + '</span><span style="font:600 11px ' + F + ';color:#808080">· ' + rv.count + ' reviews · ' + recommendPct + '% recommend</span>' }),
             el('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '12px' } }, [
               el('span', { style: { font: '700 11px ' + F, color: '#808080' } }, ['Top tags:']),
               el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 10.5px ' + F, color: '#6688cc', border: '1px solid rgba(102,136,204,.35)', padding: '3px 9px', borderRadius: '999px' }, html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span>' + rv.topTag + '</span>' })
@@ -13148,7 +13288,8 @@ export function initApp() {
                 el('div', { style: { font: '600 11.5px ' + F, color: '#b3b3b3', marginTop: '4px', lineHeight: '1.4' } }, [r.text]),
                 el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', font: '700 9.5px ' + F, color: '#808080', border: '1px solid rgba(255,255,255,.12)', padding: '2px 8px', borderRadius: '999px', marginTop: '7px' }, html: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span>' + r.tag + '</span>' })
               ])
-            ])))
+            ]))),
+            el('div', { style: { font: '600 10px "JetBrains Mono", monospace', color: '#4d4d4d', marginTop: '14px', textAlign: 'center' } }, ['#' + _placeNo])
           ]),
           el('div', { style: { display: 'flex', gap: '8px', padding: '4px 20px 20px' } }, isCand
             ? [el('div', { class: 'hoverable', onclick: () => _orCommitCand(sp), style: { flex: '1', textAlign: 'center', padding: '11px', borderRadius: '11px', font: '800 12.5px ' + F, color: '#141414', background: sp._match ? '#2e9975' : '#6688cc', cursor: 'pointer' } }, [sp._match ? 'Combine stop' : 'Add Stop'])]
