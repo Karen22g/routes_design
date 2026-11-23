@@ -609,8 +609,10 @@ export function initApp() {
       const meta = metaEl ? metaEl.textContent : '';
       const miM = meta.match(/(\d+)\s*mi/);
       const miles = miM ? parseInt(miM[1]) : 280;
-      tmsLoads.push({ origin: lOrig, dest: lDest, income, miles });
+      tmsLoads.push({ origin: lOrig, dest: lDest, income, miles, pickup: card.getAttribute('data-pickup') || '07/30/2026', customer: card.getAttribute('data-broker') || '--', loadId: card.getAttribute('data-loadid') || null });
     });
+    // Cards are listed newest first; the plan needs them in cycle (chronological) order
+    tmsLoads.sort(function (a, b) { var pa = a.pickup.split('/'), pb = b.pickup.split('/'); return new Date(+pa[2], +pa[0]-1, +pa[1]) - new Date(+pb[2], +pb[0]-1, +pb[1]); });
 
     CR_ROUTE_COUNTER++;
     const newId = 'R-' + CR_ROUTE_COUNTER;
@@ -622,12 +624,12 @@ export function initApp() {
     // Booked lanes from TMS
     tmsLoads.forEach(function (tl, i) {
       newLoads.push({
-        id: 'ef-' + newId + '-' + i,
+        id: (tl.loadId && !LOADS.some(function (l) { return l.id === tl.loadId; })) ? tl.loadId : ('ef-' + newId + '-' + i),
         route: newId, origin: tl.origin || curCity, dest: tl.dest,
         miles: tl.miles, income: tl.income, status: 'Booked',
-        pickup: '07/30/2026', pickupTime: '08:00 - 12:00',
-        delivery: '07/31/2026', deliveryTime: '12:00 - 16:00',
-        customer: '--', eta: '--', onTime: '--', stops: 1,
+        pickup: tl.pickup, pickupTime: '08:00 - 12:00',
+        delivery: tl.pickup, deliveryTime: '12:00 - 16:00',
+        customer: tl.customer, eta: '--', onTime: '--', stops: 1,
         truck: unit !== 'Unassigned' ? unit : '--', equipment: trailerType
       });
       curCity = tl.dest;
@@ -661,26 +663,8 @@ export function initApp() {
       dispatcher: 'karen', routeDeviation: 0, fuelExcess: 0, planAdherence: 100
     };
 
-    // Capture ignored (unchecked) TMS loads for rebuild cycle button
-    var _ignoredForRebuild = [];
-    document.querySelectorAll('.cr-load-card:not(.cr-on)').forEach(function(card) {
-      var routeTextEl = card.querySelector('.cr-load-route');
-      var priceEl = card.querySelector('.cr-load-price');
-      var metaEl = card.querySelector('.cr-load-meta');
-      if (!routeTextEl || !priceEl) return;
-      var txt = routeTextEl.textContent;
-      var arrow = txt.indexOf('→');
-      var lOrig = arrow >= 0 ? txt.substring(0, arrow).trim() : (originVal || 'Houston, TX');
-      var lDest = arrow >= 0 ? txt.substring(arrow + 1).trim() : 'Dallas, TX';
-      var inc = parseInt(priceEl.textContent.replace(/[$,]/g, '')) || 0;
-      var meta = metaEl ? metaEl.textContent : '';
-      var miM = meta.match(/(\d+)\s*mi/); var miles = miM ? parseInt(miM[1]) : 280;
-      var pkM = meta.match(/Pickup\s+([\d\/]+)/); var pickup = pkM ? pkM[1] : '07/31/2026';
-      var cuM = meta.match(/·\s*([A-Za-z][A-Za-z\s]+?)\s*·/g);
-      var customer = cuM && cuM[1] ? cuM[1].replace(/·/g,'').trim() : '--';
-      _ignoredForRebuild.push({ origin: lOrig, dest: lDest, miles, income: inc, pickup, customer, equipment: trailerType });
-    });
-    if (_ignoredForRebuild.length > 0) _rebuildLoads[newId] = _ignoredForRebuild;
+    // Unchecked cycle loads are not stashed anymore: Auto-rebuild (Plan) re-pulls the whole
+    // truck cycle from My Loads, so anything skipped here can be brought back from there.
 
     ROUTES.unshift(newRoute);
     newLoads.forEach(function (l) { LOADS.push(l); });
@@ -691,7 +675,7 @@ export function initApp() {
     _showCreatingRoute(tmsLoads.length > 0, function () {
       setState({ openRoute: newId, view: 'routes', detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null });
       if (tmsLoads.length === 0 && newLoads.length > 0) {
-        setTimeout(function() { _lmSt.origin = newLoads[0].origin; _doRenderLaneMap(); }, 80);
+        setTimeout(function() { _lmSt.origin = newLoads[0].origin; _lmSt.routeId = newId; _doRenderLaneMap(); }, 80);
       }
     });
   };
@@ -923,26 +907,47 @@ export function initApp() {
       var routeName    = document.getElementById('cr-route-name');
       var driverItem   = window.CR_DRIVER_LIST.find(function(d){return d.id===cabinItem.driverId;});
       var driverLast   = driverItem ? driverItem.name.split(' ')[1] : 'Unassigned';
-      if (routeName) routeName.value = cabinItem.id + '_' + driverLast + '_2026-07-30';
+      // Auto-rebuild parity (prod 23-nov): picking a unit calls /truck-cycle/loads + /user-route/create-defaults.
+      // The cycle block always shows — with the cycle loads (preselected, newest first) or its empty state.
+      // Origin = destination of the most recent load; Departure date comes from create-defaults.
+      var depInput = document.getElementById('cr-departure-date');
+      var depIso = '2026-07-30';
+      var cyCards = document.getElementById('cr-cycle-cards');
+      var cyEmpty = document.getElementById('cr-cycle-empty');
+      var cyCount = document.getElementById('cr-cycle-count');
+      if (tmsBlock) tmsBlock.classList.add('cr-visible');
       if (cabinItem.hasLoads) {
         if (tmsBlock) {
-          tmsBlock.classList.add('cr-visible');
-          tmsBlock.querySelectorAll('.cr-load-card').forEach(function(card) {
+          if (cyCards) cyCards.style.display = '';
+          if (cyEmpty) cyEmpty.style.display = 'none';
+          var cards = tmsBlock.querySelectorAll('.cr-load-card');
+          cards.forEach(function(card) {
             card.classList.add('cr-on');
             var cb = card.querySelector('input[type="checkbox"]'); if (cb) cb.checked = true;
           });
-          var cards = tmsBlock.querySelectorAll('.cr-load-card');
-          var lastCard = cards[cards.length - 1];
-          var lastDest = '';
-          if (lastCard) { var routeEl = lastCard.querySelector('.cr-load-route'); if (routeEl) { var txt = routeEl.textContent; var arrow = txt.indexOf('→'); lastDest = arrow >= 0 ? txt.substring(arrow+1).trim() : ''; } }
-          if (originInput) { originInput.value = lastDest || cabinItem.city; originInput.classList.add('cr-filled'); }
+          if (cyCount) cyCount.textContent = cards.length + (cards.length === 1 ? ' LOAD' : ' LOADS');
+          var newest = cards[0];
+          var newestDest = '';
+          if (newest) {
+            var routeEl = newest.querySelector('.cr-load-route');
+            if (routeEl) { var txt = routeEl.textContent; var arrow = txt.indexOf('→'); newestDest = arrow >= 0 ? txt.substring(arrow+1).trim() : ''; }
+            var pk = (newest.getAttribute('data-pickup') || '').split('/');
+            if (pk.length === 3) { var dd = new Date(+pk[2], +pk[0]-1, +pk[1] + 1); depIso = dd.getFullYear() + '-' + ('0'+(dd.getMonth()+1)).slice(-2) + '-' + ('0'+dd.getDate()).slice(-2); }
+          }
+          if (originInput) { originInput.value = newestDest || cabinItem.city; originInput.classList.add('cr-filled'); }
           if (originSource) originSource.style.display = 'none';
         }
       } else {
-        if (tmsBlock) tmsBlock.classList.remove('cr-visible');
+        // Hidden cards must not leak into the route when switching from a unit that had cycle loads
+        document.querySelectorAll('#cr-root .cr-load-card').forEach(function (card) { card.classList.remove('cr-on'); var cb = card.querySelector('input[type="checkbox"]'); if (cb) cb.checked = false; });
+        if (cyCards) cyCards.style.display = 'none';
+        if (cyEmpty) cyEmpty.style.display = 'flex';
+        if (cyCount) cyCount.textContent = '0 LOADS';
         if (originInput) { originInput.value = cabinItem.city; originInput.classList.add('cr-filled'); }
         if (originSource) originSource.style.display = 'flex';
       }
+      if (depInput) depInput.value = depIso;
+      if (routeName) routeName.value = cabinItem.id + '_' + driverLast + '_' + depIso;
       window.crUpdateForecastVisibility();
     }
 
@@ -1011,6 +1016,7 @@ export function initApp() {
       if (trailerBtn)    trailerBtn.style.display    = '';
     }
     tmsBlock.classList.remove('cr-visible');
+    tmsBlock.querySelectorAll('.cr-load-card').forEach(function (card) { card.classList.remove('cr-on'); var cb = card.querySelector('input[type="checkbox"]'); if (cb) cb.checked = false; });
     originInput.value = '';
     originInput.classList.remove('cr-filled');
     if (originSource) originSource.style.display = 'none';
@@ -1184,29 +1190,36 @@ export function initApp() {
               <svg class="cr-tms-tooltip-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             </span>
           </span>
-          <span class="cr-count">2 loads</span>
+          <span class="cr-count" id="cr-cycle-count">2 LOADS</span>
         </div>
-        <div class="cr-load-card" onclick="crToggleLoad(this)">
-          <input type="checkbox">
-          <div class="cr-load-body">
-            <div class="cr-load-route-row">
-              <div class="cr-load-route">Houston, TX<span class="cr-arr">→</span>Dallas, TX</div>
-              <span class="cr-status-pill" style="background:rgba(46,153,117,.2);color:#66cc77">Delivered</span>
-            </div>
-            <div class="cr-load-meta">Pickup 07/31/2026 · 277 mi · TMS-4412 · FreightQuote · TRK-1042</div>
-          </div>
-          <div class="cr-load-price">$1,240</div>
-        </div>
-        <div class="cr-load-card" onclick="crToggleLoad(this)">
+        <div id="cr-cycle-cards">
+        <div class="cr-load-card" onclick="crToggleLoad(this)" data-pickup="08/01/2026" data-broker="Echo Global" data-loadid="394904">
           <input type="checkbox">
           <div class="cr-load-body">
             <div class="cr-load-route-row">
               <div class="cr-load-route">Dallas, TX<span class="cr-arr">→</span>Memphis, TN</div>
               <span class="cr-status-pill" style="background:rgba(102,136,204,.16);color:#6688cc">In Transit</span>
             </div>
-            <div class="cr-load-meta">Pickup 08/01/2026 · 277 mi · TMS-4398 · Echo Global · TRK-1042</div>
+            <div class="cr-load-meta">Pickup 08/01/2026 · 452 mi · Echo Global · 394904</div>
           </div>
-          <div class="cr-load-price">$980</div>
+          <div class="cr-load-price">$1,980</div>
+        </div>
+        <div class="cr-load-card" onclick="crToggleLoad(this)" data-pickup="07/31/2026" data-broker="ARCBEST" data-loadid="390188">
+          <input type="checkbox">
+          <div class="cr-load-body">
+            <div class="cr-load-route-row">
+              <div class="cr-load-route">Houston, TX<span class="cr-arr">→</span>Dallas, TX</div>
+              <span class="cr-status-pill" style="background:rgba(46,153,117,.2);color:#66cc77">Delivered</span>
+            </div>
+            <div class="cr-load-meta">Pickup 07/31/2026 · 277 mi · ARCBEST · 390188</div>
+          </div>
+          <div class="cr-load-price">$1,240</div>
+        </div>
+        <div class="cr-cycle-foot">Selected loads become <b>Booked</b> lanes at the start of the plan. The cycle comes from <code>/truck-cycle/</code>, the same engine Auto-rebuild uses in the Plan.</div>
+        </div>
+        <div id="cr-cycle-empty" class="cr-cycle-empty" style="display:none">
+          <span class="cr-cycle-empty-ic">i</span>
+          <div><div class="cr-cycle-empty-t">No loads in this truck cycle</div><div class="cr-cycle-empty-s">This unit has no eligible loads to add. You can still create the route.</div></div>
         </div>
       </div>
 
@@ -3538,7 +3551,7 @@ export function initApp() {
       document.body.appendChild(conf);
       conf.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); });
       conf.querySelector('#_ef-lb-conf-map').addEventListener('click', function() {
-        _hideLbConf(); _lmSt.origin = originCity; _doRenderLaneMap();
+        _hideLbConf(); _lmSt.origin = originCity; _lmSt.routeId = null; _doRenderLaneMap();
       });
       conf.querySelector('#_ef-lb-conf-cancel').addEventListener('click', _hideLbConf);
       conf.querySelector('#_ef-lb-conf-start').addEventListener('click', function() {
@@ -3583,7 +3596,7 @@ export function initApp() {
       '</div>';
     document.body.appendChild(notif);
     notif.addEventListener('mouseenter', function() { clearTimeout(_lbTimer); });
-    notif.querySelector('#_ef-lb-notif-map').addEventListener('click', function() { _lmSt.origin = originCity; _doRenderLaneMap(); });
+    notif.querySelector('#_ef-lb-notif-map').addEventListener('click', function() { _lmSt.origin = originCity; _lmSt.routeId = null; _doRenderLaneMap(); });
     notif.querySelector('#_ef-lb-notif-stop').addEventListener('click', function() { _lbSearch[key] = 'idle'; delete _lbCount[key]; _hideLbNotif(); _hideLbBar(); setState({}); });
     notif.querySelector('#_ef-lb-notif-view').addEventListener('click', function() { _openSearchLoads(count, originCity, key); });
     // persistent click-outside
@@ -3902,6 +3915,414 @@ export function initApp() {
     }
     var caseBLastOrigin = (caseB && lastUnbookedIdx >= 0) ? all[lastUnbookedIdx].origin : null;
     return { deadEnd: deadEnd, deadCity: deadCity, caseB: caseB, caseBNaturalDest: caseBNaturalDest, caseBNaturalMiles: caseBNaturalMiles, caseBLastOrigin: caseBLastOrigin };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AUTO-REBUILD (prototype 2026-11-23). Pulls the truck's operating cycle from
+  // My Loads and rebuilds the route with it. Entry points: the Plan of a route
+  // with a unit (casos 6–10) and the screen shown after creating a route without
+  // cycle loads (casos 4–5). Needs at least a unit; the driver is optional (HOS).
+  // ─────────────────────────────────────────────────────────────────────────
+  const _arDone = {};   // rId → { note, dividerId } after a rebuild (plan banner + cycle divider)
+  const _AR_BROKERS = ['C.H. ROBINSON', 'ARCBEST', 'TQL', 'Margin Freight', 'GENPRO INC', 'JBS Swift', 'DSV', 'Echo Global', 'Coyote', 'Landstar'];
+  const _AR_CITIES = ['Salt Lake City, UT', 'Denver, CO', 'Kansas City, MO', 'St. Louis, MO', 'Oklahoma City, OK', 'Little Rock, AR', 'Nashville, TN', 'Louisville, KY', 'Indianapolis, IN', 'Columbus, OH', 'Memphis, TN', 'Dallas, TX', 'Albuquerque, NM', 'Atlanta, GA', 'Chicago, IL', 'Houston, TX', 'San Antonio, TX', 'Phoenix, AZ', 'Charlotte, NC', 'Pittsburgh, PA'];
+  const _AR_PAST = ['Delivered', 'Invoiced', 'Paid'];
+  const _AR_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const _AR_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>';
+  const _AR_LOCK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  function _arHasUnit(r) { return !!(r && r.unit && r.unit !== 'Unassigned' && r.unit !== '--'); }
+  function _arIsReal(l) { return ['Unbooked', 'Offer', 'Canceled'].indexOf(l.status) < 0; }
+  function _arHash(s) { return String(s).split('').reduce(function (a, c) { return (a * 31 + c.charCodeAt(0)) >>> 0; }, 7); }
+  function _arD(s) { var p = String(s || '').split('/'); return new Date(+p[2], +p[0] - 1, +p[1]); }
+  function _arS(d) { return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear(); }
+  function _arAdd(s, n) { var d = _arD(s); d.setDate(d.getDate() + n); return _arS(d); }
+  function _arMD(s) { return String(s || '').slice(0, 5); }
+  function _arPretty(s) { var d = _arD(s); return _AR_MONTHS[d.getMonth()] + ' ' + d.getDate() + ' / ' + d.getFullYear(); }
+  function _arInitials(name) { if (!name || name === 'Unassigned' || name === '--') return '--'; return name.split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase(); }
+  function _arMiles(a, b) {
+    var A = (typeof _OR_COORD !== 'undefined') && _OR_COORD[a], B = (typeof _OR_COORD !== 'undefined') && _OR_COORD[b];
+    if (!A || !B) return 180 + (_arHash(a + b) % 520);
+    var R = 3959, k = Math.PI / 180, dLat = (B[0] - A[0]) * k, dLng = (B[1] - A[1]) * k;
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(A[0] * k) * Math.cos(B[0] * k) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return Math.max(60, Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(h))) * 1.18));
+  }
+  function _arPickCity(seed, avoid) {
+    for (var i = 0; i < _AR_CITIES.length; i++) { var c = _AR_CITIES[(seed + i * 7) % _AR_CITIES.length]; if (avoid.indexOf(c) < 0) return c; }
+    return _AR_CITIES[0];
+  }
+  // A neighbour of `city` one realistic leg away (≈150–650 mi), so synthetic cycle legs are drivable in a day or two
+  function _arNear(city, seed, avoid) {
+    var ok = _AR_CITIES.filter(function (c) { var d = _arMiles(c, city); return avoid.indexOf(c) < 0 && c !== city && d >= 150 && d <= 650; });
+    return ok.length ? ok[seed % ok.length] : _arPickCity(seed, avoid.concat([city]));
+  }
+  // A synthetic My Loads record (TMS numeric id, or ef-… when it's an efRouting-internal load)
+  function _arMk(seed, origin, dest, status, pickup, delivery, ef) {
+    var miles = _arMiles(origin, dest);
+    var rpm = 3.2 + (seed % 15) / 10;
+    return {
+      id: ef ? ('ef-' + (seed % 0xffffff).toString(16).padStart(6, '0')) : String(386000 + (seed % 12000)),
+      origin: origin, dest: dest, miles: miles, income: Math.round(miles * rpm / 10) * 10,
+      status: status, pickup: pickup, delivery: delivery, customer: _AR_BROKERS[seed % _AR_BROKERS.length]
+    };
+  }
+
+  // Cycle model for a route: what Auto-rebuild proposes. Rows keep the cycle order.
+  //   kind 'add'   → missing cycle load (preselected, user can untick)
+  //   kind 'gap'   → load that fills a hole between two route loads
+  //   kind 'route' → already in the route (shown, never duplicated)
+  //   kind 'next'  → in the route but after a 34h reset → likely next cycle (flagged)
+  function _arModel(rId) {
+    var r = routeOf(rId), ls = loadsOf(rId), real = ls.filter(_arIsReal), h = _arHash(rId);
+    var rows = [], i;
+    var variant = real.length ? 'has' : 'empty';
+    if (variant === 'empty') {
+      // Empty route (only plan placeholders): the cycle runs forward from the route's origin + date
+      var o0 = ls.length ? ls[0].origin : 'Denver, CO';
+      var d0 = ls.length ? ls[0].pickup : '07/30/2026';
+      var used = [o0], chain = [o0];
+      for (i = 0; i < 4; i++) { var nx = _arNear(chain[chain.length - 1], h + i * 3 + 1, used); used.push(nx); chain.push(nx); }
+      var st = ['Delivered', 'In Transit', 'Booked', 'Booked'];
+      for (i = 0; i < 4; i++) rows.push({ kind: 'add', sel: true, load: _arMk(h + i * 11, chain[i], chain[i + 1], st[i], _arAdd(d0, i * 2), _arAdd(d0, i * 2 + 1), i >= 2) });
+    } else {
+      // Anchor = the load the truck is on now; a ≥34h break after it starts the next cycle
+      var anchor = real.findIndex(function (l) { return l.status === 'In Transit' || l.status === 'Dispatched'; });
+      if (anchor < 0) anchor = 0;
+      var cycleEnd = real.length;
+      for (i = anchor; i < real.length - 1; i++) {
+        if ((_arD(real[i + 1].pickup) - _arD(real[i].delivery)) / 864e5 >= 2) { cycleEnd = i + 1; break; }
+      }
+      // Earlier cycle loads missing before the route's first load (complete the cycle backward)
+      var first = real[0];
+      var c1 = _arNear(first.origin, h + 5, [first.origin, first.dest]), c2 = _arNear(c1, h + 9, [first.origin, first.dest, c1]);
+      rows.push({ kind: 'add', sel: true, load: _arMk(h + 1, c2, c1, 'Delivered', _arAdd(first.pickup, -4), _arAdd(first.pickup, -3)) });
+      rows.push({ kind: 'add', sel: true, load: _arMk(h + 2, c1, first.origin, 'Delivered', _arAdd(first.pickup, -2), _arAdd(first.pickup, -1)) });
+      for (i = 0; i < real.length; i++) {
+        if (i >= cycleEnd) { rows.push({ kind: 'next', ref: real[i], load: real[i] }); continue; }
+        rows.push({ kind: 'route', ref: real[i], load: real[i] });
+        if (i < cycleEnd - 1 && real[i].dest !== real[i + 1].origin) {
+          rows.push({ kind: 'gap', sel: true, load: _arMk(h + 20 + i, real[i].dest, real[i + 1].origin, 'Booked', real[i].delivery, real[i + 1].pickup, false) });
+        }
+      }
+    }
+    var cyc = rows.filter(function (x) { return x.kind !== 'next'; });
+    var pickupFrom = cyc.reduce(function (m, x) { return _arD(x.load.pickup) < _arD(m) ? x.load.pickup : m; }, cyc[0].load.pickup);
+    var dropUntil = cyc.reduce(function (m, x) { return _arD(x.load.delivery) > _arD(m) ? x.load.delivery : m; }, cyc[0].load.delivery);
+    // Dedup: a load of this unit's cycle that is already assigned to another route (hidden + blocked)
+    var others = ROUTES.filter(function (x) { return x.id !== rId && _arHasUnit(x); });
+    var other = others[h % Math.max(1, others.length)] || { id: 'R-2189' };
+    var hc1 = _arPickCity(h + 13, []), hc2 = _arNear(hc1, h + 17, [hc1]);
+    var hidden = [Object.assign(_arMk(h + 40, hc1, hc2, 'Booked', _arAdd(pickupFrom, 1), _arAdd(pickupFrom, 2)), { otherRoute: other.id })];
+    var divIdx = rows.findIndex(function (x) { return x.kind !== 'next' && _AR_PAST.indexOf(x.load.status) < 0; });
+    return {
+      rId: rId, route: r, variant: variant, rows: rows, hidden: hidden, pickupFrom: pickupFrom, dropUntil: dropUntil, divIdx: divIdx,
+      hasGap: rows.some(function (x) { return x.kind === 'gap'; }), hasNext: rows.some(function (x) { return x.kind === 'next'; })
+    };
+  }
+
+  // Apply the selection to the route: insert the chosen cycle loads in cycle order, keep the
+  // route's own loads untouched (no duplicates), optionally drop the flagged next-cycle load.
+  function _arApply(m, removeNext) {
+    var rId = m.rId, r = routeOf(rId), cur = loadsOf(rId);
+    var mk = function (x) {
+      return Object.assign({}, x.load, {
+        route: rId, pickupTime: '08:00 - 12:00', deliveryTime: '12:00 - 16:00', eta: '--', onTime: '--', stops: 1,
+        truck: r.unit, equipment: r.trailer || '--', equipmentType: r.equipmentType || 'Van', _cycle: true
+      });
+    };
+    var out = [], added = 0, gaps = 0, removed = 0;
+    m.rows.forEach(function (x) {
+      if (x.kind === 'route') out.push(x.ref);
+      else if (x.kind === 'next') { if (removeNext) removed++; else out.push(x.ref); }
+      else if (x.sel) { out.push(mk(x)); added++; if (x.kind === 'gap') gaps++; }
+    });
+    // Plan placeholders (Unbooked/Offer) stay after the cycle on a route that already had loads;
+    // an empty route is rebuilt from the cycle alone.
+    if (m.variant === 'has') cur.forEach(function (l) { if (!_arIsReal(l)) out.push(l); });
+    var at = LOADS.findIndex(function (l) { return l.route === rId; });
+    for (var i = LOADS.length - 1; i >= 0; i--) if (LOADS[i].route === rId) LOADS.splice(i, 1);
+    if (at < 0 || at > LOADS.length) at = LOADS.length;
+    Array.prototype.splice.apply(LOADS, [at, 0].concat(out));
+    // Re-chain trailing Unbooked lanes so they start where the cycle ends
+    var prev = null;
+    loadsOf(rId).forEach(function (l) { if (l.status === 'Unbooked' && prev) l.origin = prev; prev = l.dest; });
+    if (out.some(function (l) { return ['Delivered', 'In Transit', 'Dispatched'].indexOf(l.status) >= 0; }) && r.status === 'Planned') r.status = 'In progress';
+    var firstNow = out.find(function (l) { return _AR_PAST.indexOf(l.status) < 0; });
+    var earlier = m.rows.filter(function (x) { return x.kind === 'add' && x.sel; }).length;
+    var note = m.variant === 'empty'
+      ? '<b>Cycle rebuilt.</b> ' + added + ' cycle load' + (added === 1 ? '' : 's') + ' pulled from My Loads for Unit ' + r.unit + ' — Delivered/in-transit lanes come from the TMS as-is; Booked lanes stay editable.'
+      : '<b>Cycle completed.</b> ' + (earlier ? earlier + ' earlier load' + (earlier === 1 ? ' was' : 's were') + ' prepended' : 'No earlier loads added') +
+        (gaps ? ' and ' + gaps + ' intermediate load' + (gaps === 1 ? '' : 's') + ' filled the gap' : '') +
+        '; the loads already in the route were not duplicated.' +
+        (removed ? ' The next-cycle load was <b>removed from the current plan</b>.' : '');
+    _arDone[rId] = { note: note, dividerId: firstNow ? firstNow.id : null };
+    return added;
+  }
+
+  function _arToast(msg) {
+    var ex = document.getElementById('_ef-ar-toast'); if (ex) ex.remove();
+    var t = document.createElement('div'); t.id = '_ef-ar-toast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9600;display:flex;align-items:center;gap:9px;padding:11px 16px;border-radius:12px;background:#292929;border:1px solid rgba(46,153,117,.45);box-shadow:0 16px 40px rgba(0,0,0,.55);font:800 12.5px \'General Sans\', Nunito, system-ui;color:#e6e6e6';
+    t.innerHTML = '<span style="color:#47b26b;display:flex">' + _AR_ICON + '</span>' + msg;
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 4200);
+  }
+
+  function _arRunBusy(then) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9500;display:flex;align-items:center;justify-content:center;background:rgba(10,10,10,.6)';
+    ov.innerHTML = '<div style="background:#1a1a1a;border:1px solid rgba(46,153,117,.25);border-radius:16px;padding:24px 32px;display:flex;flex-direction:column;align-items:center;gap:14px;box-shadow:0 20px 56px rgba(0,0,0,.8)">' +
+      '<svg style="animation:_efAdaptSpin 1s linear infinite" width="40" height="40" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="rgba(46,153,117,.15)" stroke-width="3"></circle><path d="M24 6 A18 18 0 0 1 42 24" stroke="#2e9975" stroke-width="3" stroke-linecap="round"></path></svg>' +
+      '<div style="text-align:center"><div style="font:800 14px \'General Sans\', Nunito, system-ui;color:#f5f5f5">Rebuilding route…</div>' +
+      '<div style="font:400 11.5px \'General Sans\', Nunito, system-ui;color:#808080;margin-top:4px">Pulling the cycle from My Loads and updating the plan.</div></div></div>';
+    document.body.appendChild(ov);
+    setTimeout(function () { ov.remove(); then(); }, 1100);
+  }
+
+  // Auto-rebuild modal (My Loads picker pre-filtered with the route's unit/driver/period)
+  function _openAutoRebuild(rId, opts) {
+    opts = opts || {};
+    var ex = document.getElementById('_ef-ar'); if (ex) ex.remove();
+    var F = "'General Sans', Nunito, system-ui";
+    var m = _arModel(rId), r = m.route;
+    var removeNext = false, showHidden = false;
+    var title = m.variant === 'empty' ? 'pull cycle from My Loads'
+      : m.hasGap ? 'fill every gap in the cycle'
+      : m.hasNext ? 'complete the cycle (route has a next-cycle load)'
+      : 'complete the cycle (route already has loads)';
+    var ov = document.createElement('div'); ov.id = '_ef-ar';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9400;background:rgba(10,10,10,.66);display:flex;align-items:center;justify-content:center;padding:24px';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'width:1120px;max-width:96vw;max-height:92vh;background:#1a1a1a;border:1px solid rgba(255,255,255,.1);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.85)';
+    ov.appendChild(modal);
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    function close() { ov.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+
+    var COLS = '30px 128px minmax(96px,1fr) minmax(96px,1fr) 64px 84px 112px 50px 54px minmax(90px,1fr) 44px 64px';
+    var cell = function (txt, sub, col) { return '<div style="min-width:0;padding:9px 6px 9px 0"><div style="font:700 11.5px ' + F + ';color:' + (col || '#e6e6e6') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + txt + '</div>' + (sub ? '<div style="font:600 9.5px ' + F + ';color:#808080;margin-top:1px">' + sub + '</div>' : '') + '</div>'; };
+    var pill = function (st) { var c = STATUS[st] || STATUS.Booked; return '<span style="display:inline-block;font:800 10px ' + F + ';padding:3px 9px;border-radius:999px;background:' + c[0] + ';color:' + c[1] + ';white-space:nowrap">' + st + '</span>'; };
+    var src = function (id) { return /^ef-/.test(id) ? '<span title="efRouting internal" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(46,153,117,.18);color:#47b26b;font:900 8.5px ' + F + ';flex-shrink:0">ef</span>' : '<span title="Datatruck (TMS)" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(102,136,204,.18);color:#6688cc;font:900 8.5px ' + F + ';flex-shrink:0">DT</span>'; };
+    var tag = function (t, c) { return '<span style="font:800 8.5px ' + F + ';letter-spacing:.03em;text-transform:uppercase;color:' + c + ';background:' + c + '1f;border:1px solid ' + c + '55;padding:1px 6px;border-radius:999px;white-space:nowrap">' + t + '</span>'; };
+    var rpm = function (l) { return '$' + (l.income / Math.max(1, l.miles)).toFixed(2) + '/mi'; };
+
+    function render() {
+      modal.innerHTML = '';
+      var addRows = m.rows.filter(function (x) { return x.kind === 'add' || x.kind === 'gap'; });
+      var selRows = addRows.filter(function (x) { return x.sel; });
+      var inRoute = m.rows.filter(function (x) { return x.kind === 'route'; }).length;
+      var nextN = m.rows.filter(function (x) { return x.kind === 'next'; }).length;
+      var inc = selRows.reduce(function (s, x) { return s + x.load.income; }, 0);
+      var mi = selRows.reduce(function (s, x) { return s + x.load.miles; }, 0);
+      var drv = r.driver && r.driver !== 'Unassigned' ? r.driver : '—';
+      // ── top bar ──
+      var top = document.createElement('div');
+      top.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);flex:none';
+      top.innerHTML = '<span class="_ar-x" style="cursor:pointer;color:#808080;font:700 16px ' + F + '">←</span>' +
+        '<span style="font:800 15px ' + F + ';color:#f5f5f5;white-space:nowrap">Auto-rebuild <span style="font:600 12px ' + F + ';color:#808080">· ' + title + '</span></span>' +
+        '<div style="display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:9px;background:#242424;border:1px solid rgba(255,255,255,.08);color:#666666;font:600 11.5px ' + F + ';min-width:160px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search loads…</div>' +
+        '<span style="flex:1"></span>' +
+        '<span style="display:flex;align-items:center;gap:6px;font:700 11.5px ' + F + ';color:#808080">' + _AR_ICON + 'Results: ' + (m.rows.length + (showHidden ? m.hidden.length : 0)) + '</span>' +
+        '<span class="_ar-x" style="width:28px;height:28px;display:grid;place-items:center;border-radius:8px;border:1px solid rgba(255,255,255,.1);color:#808080;cursor:pointer">✕</span>';
+      modal.appendChild(top);
+      // ── cycle context (filters applied from the route) ──
+      var ctxF = function (ic, k, v) { return '<div style="display:flex;align-items:center;gap:9px;padding:0 16px;border-left:1px solid rgba(255,255,255,.08)">' + ic + '<div><div style="font:700 9.5px ' + F + ';color:#808080;text-transform:uppercase;letter-spacing:.05em">' + k + '</div><div style="font:800 12.5px ' + F + ';color:#e6e6e6;margin-top:2px">' + v + '</div></div></div>'; };
+      var det = m.variant === 'empty'
+        ? '<span style="color:#47b26b">✓ Filters applied from the route</span><br><b style="color:#e6e6e6">' + m.rows.length + ' cycle loads</b>'
+        : 'Cycle detected → <b style="color:#e6e6e6">' + addRows.length + ' load' + (addRows.length === 1 ? '' : 's') + ' to add</b> · ' + inRoute + ' already in the route' + (nextN ? ' · ' + nextN + ' next-cycle (flagged)' : '') + ' · ' + m.hidden.length + ' hidden (in another route)';
+      var ctx = document.createElement('div');
+      ctx.style.cssText = 'display:flex;align-items:center;padding:12px 18px;background:rgba(46,153,117,.06);border-bottom:1px solid rgba(255,255,255,.07);flex:none;flex-wrap:wrap;row-gap:8px';
+      ctx.innerHTML = '<div style="display:flex;align-items:center;gap:7px;padding-right:16px;font:800 12px ' + F + ';color:#e6e6e6">Cycle <span style="font:900 9px ' + F + ';color:#141414;background:#2e9975;padding:2px 6px;border-radius:5px">AUTO</span></div>' +
+        ctxF('<span style="color:#6688cc;display:flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62L18.3 9.38a1 1 0 0 0-.78-.38H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>', 'Unit', r.unit) +
+        ctxF('<span style="width:22px;height:22px;border-radius:50%;background:#2e5299;color:#e6e6e6;display:grid;place-items:center;font:800 9px ' + F + '">' + _arInitials(r.driver) + '</span>', 'Driver', drv) +
+        ctxF('<span style="font-size:14px">📅</span>', 'Pickup from', _arPretty(m.pickupFrom)) +
+        ctxF('<span style="font-size:14px">🏁</span>', 'Dropoff until', _arPretty(m.dropUntil)) +
+        '<div style="flex:1"></div><div style="font:600 11px ' + F + ';color:#808080;text-align:right;line-height:1.45">' + det + '</div>';
+      modal.appendChild(ctx);
+      // ── status tabs + filter chips (pre-applied from the route) ──
+      var tabs = document.createElement('div');
+      tabs.style.cssText = 'display:flex;align-items:center;gap:2px;padding:0 18px;border-bottom:1px solid rgba(255,255,255,.07);flex:none;overflow-x:auto';
+      tabs.innerHTML = LOAD_TABS.slice(0, 10).map(function (t, i) { return '<div style="padding:10px 9px;font:' + (i ? '600' : '800') + ' 11.5px ' + F + ';color:' + (i ? '#808080' : '#2e9975') + ';box-shadow:' + (i ? 'none' : 'inset 0 -2px 0 0 #2e9975') + ';white-space:nowrap">' + t + '</div>'; }).join('') +
+        '<div style="flex:1;min-width:12px"></div>' +
+        ['Drivers: ' + _arInitials(r.driver), 'Trucks: ' + r.unit, 'Pickup ≥ ' + _arMD(m.pickupFrom), 'Delivery ≤ ' + _arMD(m.dropUntil)].map(function (c) { return '<span style="margin-left:6px;font:700 10.5px ' + F + ';color:#6688cc;background:rgba(102,136,204,.1);border:1px solid rgba(102,136,204,.3);padding:4px 9px;border-radius:999px;white-space:nowrap">' + c + '</span>'; }).join('');
+      modal.appendChild(tabs);
+      // ── source legend + dedup toggle ──
+      var leg = document.createElement('div');
+      leg.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 18px;font:600 11px ' + F + ';color:#808080;flex:none';
+      leg.innerHTML = '<span style="font:800 9.5px ' + F + ';text-transform:uppercase;letter-spacing:.05em;color:#666666">Source</span>' + src('1') + 'Datatruck (TMS)<span style="color:#444">·</span>' + src('ef-') + 'efRouting internal<span style="flex:1"></span>' +
+        '<span class="_ar-hid" style="cursor:pointer;color:#6688cc;font-weight:800">👁 ' + (showHidden ? 'Hide' : 'Show') + ' loads already in another route (' + m.hidden.length + ')</span>';
+      modal.appendChild(leg);
+      // ── table ──
+      var body = document.createElement('div');
+      body.className = 'ef-scroll';
+      body.style.cssText = 'flex:1;min-height:0;overflow:auto;border-top:1px solid rgba(255,255,255,.06)';
+      var head = document.createElement('div');
+      head.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';padding:0 18px;background:#242424;font:800 10.5px ' + F + ';color:#808080;position:sticky;top:0;z-index:1;min-width:1000px';
+      head.innerHTML = ['', 'Load ID', 'Origin', 'Dest', 'Distance', 'Income', 'Status', 'Pickup', 'Delivery', 'Customer', 'Driver', 'Truck'].map(function (h) { return '<div style="padding:9px 6px 9px 0">' + h + '</div>'; }).join('');
+      body.appendChild(head);
+      var divider = function (txt, col, striped) {
+        var d = document.createElement('div');
+        d.style.cssText = 'display:flex;align-items:center;gap:10px;padding:7px 18px;min-width:1000px;' + (striped ? 'background:repeating-linear-gradient(45deg,rgba(204,102,111,.1),rgba(204,102,111,.1) 10px,rgba(204,102,111,.04) 10px,rgba(204,102,111,.04) 20px)' : 'background:rgba(255,255,255,.02)');
+        d.innerHTML = '<span style="font:800 10.5px ' + F + ';color:' + col + ';white-space:nowrap">' + txt + '</span><span style="flex:1;height:1px;background:' + col + ';opacity:.35"></span>';
+        return d;
+      };
+      var rowEl = function (x, ix) {
+        var l = x.load, k = x.kind, el2 = document.createElement('div');
+        var toggleable = k === 'add' || k === 'gap';
+        var on = toggleable ? x.sel : k === 'route' || (k === 'next' && !removeNext);
+        var gone = k === 'next' && removeNext;
+        el2.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';align-items:center;padding:0 18px;min-width:1000px;border-bottom:1px solid rgba(255,255,255,.05);' +
+          (toggleable ? 'cursor:pointer;' : '') + (gone ? 'opacity:.45;text-decoration:line-through;' : '') + (k === 'route' ? 'background:rgba(255,255,255,.015);' : '') + (k === 'next' ? 'background:rgba(178,136,53,.06);' : '') + (toggleable && x.sel ? 'background:rgba(46,153,117,.05);' : '');
+        var ck = k === 'next'
+          ? '<span style="width:16px;height:16px;border-radius:4px;border:1.5px dashed #b28835;display:inline-block"></span>'
+          : '<span style="width:16px;height:16px;border-radius:4px;display:inline-grid;place-items:center;font:900 10px ' + F + ';' + (on ? 'background:' + (k === 'route' ? '#3a3a3a' : '#2e9975') + ';color:' + (k === 'route' ? '#b3b3b3' : '#141414') : 'border:1.5px solid rgba(255,255,255,.25)') + '">' + (on ? '✓' : '') + '</span>';
+        var tg = k === 'route' ? tag('in this route', '#808080') : k === 'gap' ? tag('fills gap', '#5bbccb') : k === 'next' ? tag(removeNext ? 'will be removed' : 'possibly next cycle', '#b28835') : '';
+        el2.innerHTML = '<div>' + ck + '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px;min-width:0;padding:9px 6px 9px 0">' + src(l.id) + '<span style="font:700 11px &quot;JetBrains Mono&quot;, monospace;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + l.id + '</span></div>' +
+          cell(l.origin) + cell(l.dest) + cell(l.miles.toLocaleString('en-US') + ' mi') + cell(money(l.income), rpm(l), '#47b26b') +
+          '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:7px 6px 7px 0">' + pill(l.status) + tg + '</div>' +
+          cell(_arMD(l.pickup)) + cell(_arMD(l.delivery)) + cell(l.customer || '--', null, '#b3b3b3') +
+          '<div><span style="width:22px;height:22px;border-radius:50%;background:#2e5299;color:#e6e6e6;display:inline-grid;place-items:center;font:800 8.5px ' + F + '">' + _arInitials(r.driver) + '</span></div>' + cell(r.unit, null, '#b3b3b3');
+        if (toggleable) el2.addEventListener('click', function () { x.sel = !x.sel; render(); });
+        return el2;
+      };
+      m.rows.forEach(function (x, ix) {
+        if (x.kind === 'next' && (ix === 0 || m.rows[ix - 1].kind !== 'next')) body.appendChild(divider('↻ 34h reset — next cycle (outside this one)', '#b28835'));
+        else if (ix === m.divIdx && ix > 0) body.appendChild(divider('▼ Cycle continues from here (now)', '#2e9975'));
+        body.appendChild(rowEl(x, ix));
+        if (x.kind === 'next' && (ix === m.rows.length - 1 || m.rows[ix + 1].kind !== 'next')) {
+          var nn = document.createElement('div');
+          nn.style.cssText = 'display:flex;align-items:center;gap:10px;margin:8px 18px 10px;padding:10px 12px;border-radius:10px;background:rgba(178,136,53,.08);border:1px solid rgba(178,136,53,.3);font:600 11.5px ' + F + ';color:#b3b3b3;min-width:960px;box-sizing:border-box';
+          nn.innerHTML = '<span style="color:#b28835;font-weight:900">ⓘ</span><span style="flex:1">' + (removeNext
+            ? '<b style="color:#e6e6e6">Will be removed from the current plan</b> on rebuild — it stays available for the next cycle.'
+            : 'This load <b style="color:#e6e6e6">likely belongs to the next cycle</b> (it falls after the 34h reset). By default it stays in the route.') + '</span>' +
+            '<span class="_ar-next" style="cursor:pointer;padding:6px 11px;border-radius:8px;border:1px solid rgba(178,136,53,.45);color:#d0a038;font:800 11px ' + F + ';white-space:nowrap">' + (removeNext ? 'Undo' : 'Remove from current plan') + '</span>';
+          body.appendChild(nn);
+        }
+      });
+      if (showHidden) {
+        body.appendChild(divider('🔒 Loads already assigned to another route of this Unit', '#cc666f', true));
+        m.hidden.forEach(function (l) {
+          var hr = document.createElement('div');
+          hr.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';align-items:center;padding:0 18px;min-width:1000px;border-bottom:1px solid rgba(255,255,255,.05);opacity:.75;cursor:not-allowed';
+          hr.innerHTML = '<div><span style="width:16px;height:16px;border-radius:4px;border:1.5px dashed #cc666f;color:#cc666f;display:inline-grid;place-items:center;font:900 10px ' + F + '">⊘</span></div>' +
+            '<div style="display:flex;align-items:center;gap:6px;padding:9px 6px 9px 0">' + src(l.id) + '<span style="font:700 11px &quot;JetBrains Mono&quot;, monospace;color:#b3b3b3">' + l.id + '</span></div>' +
+            cell(l.origin) + cell(l.dest) + cell(l.miles + ' mi') + cell(money(l.income), rpm(l), '#808080') +
+            '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:7px 6px 7px 0"><span style="font:800 10px ' + F + ';padding:3px 9px;border-radius:999px;background:rgba(204,102,111,.14);color:#cc666f;white-space:nowrap">⊘ In route #' + l.otherRoute + '</span>' + tag('blocked · other route', '#cc666f') + '</div>' +
+            cell(_arMD(l.pickup)) + cell(_arMD(l.delivery)) + cell(l.customer, null, '#b3b3b3') +
+            '<div><span style="width:22px;height:22px;border-radius:50%;background:#2e5299;color:#e6e6e6;display:inline-grid;place-items:center;font:800 8.5px ' + F + '">' + _arInitials(r.driver) + '</span></div>' + cell(r.unit, null, '#b3b3b3');
+          body.appendChild(hr);
+        });
+      }
+      var pager = document.createElement('div');
+      pager.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 18px;font:600 11px ' + F + ';color:#808080;min-width:1000px';
+      pager.innerHTML = '<span>Showing 1-' + m.rows.length + ' of ' + m.rows.length + ' <span style="color:#666666">(Unit ' + r.unit + ' cycle · ' + addRows.length + ' to add' + (inRoute ? ' · ' + inRoute + ' in route' : '') + (nextN ? ' · ' + nextN + ' next-cycle' : '') + ' · ' + m.hidden.length + ' hidden in another route)</span></span><span style="flex:1"></span><span>‹</span><span style="padding:2px 8px;border-radius:6px;background:#2e9975;color:#141414;font-weight:800">1</span><span>›</span><span style="margin-left:8px">Rows: 10 ▾</span>';
+      body.appendChild(pager);
+      modal.appendChild(body);
+      // ── metrics ──
+      var met = function (k, v, c) { return '<div style="flex:1;min-width:0;padding:10px 14px;border-left:1px solid rgba(255,255,255,.07)"><div style="font:700 9.5px ' + F + ';text-transform:uppercase;letter-spacing:.05em;color:#808080">' + k + '</div><div style="font:900 15px ' + F + ';color:' + (c || '#e6e6e6') + ';margin-top:3px">' + v + '</div></div>'; };
+      var mm = document.createElement('div');
+      mm.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,.08);background:#1f1f1f;flex:none';
+      mm.innerHTML = m.variant === 'empty'
+        ? met('Total Loads', selRows.length) + met('Total Income', money(inc), '#47b26b') + met('Avg RPM', mi ? '$' + (inc / mi).toFixed(2) : '--') + met('Total Loaded Miles', mi.toLocaleString('en-US') + ' mi') + met('Avg Income/Load', selRows.length ? money(Math.round(inc / selRows.length)) : '$0')
+        : met('Loads to add', selRows.length) + met('Added income', money(inc), '#47b26b') + met('Avg RPM', mi ? '$' + (inc / mi).toFixed(2) : '--') + met('Added miles', mi.toLocaleString('en-US') + ' mi') + met('Already in route', inRoute) + (nextN ? met('Next cycle', removeNext ? 0 : nextN, '#d0a038') : '') + met('In another route', m.hidden.length, '#cc666f');
+      mm.firstChild.style.borderLeft = 'none';
+      modal.appendChild(mm);
+      // ── CTA ──
+      var note = m.variant === 'empty' ? 'Empty route → no conflicts or duplicates. Delivered/in-transit loads come from the TMS as-is; Booked loads stay editable.'
+        : m.hasNext ? 'The next-cycle load isn’t pre-selected; it stays in the route and you’re informed here.'
+        : m.hasGap ? 'Fills earlier and intermediate gaps; loads already in the route are not duplicated.'
+        : 'Only the missing earlier loads are added; loads already in the route are not duplicated.';
+      var cta = document.createElement('div');
+      cta.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid rgba(255,255,255,.08);flex:none';
+      cta.innerHTML = '<span style="flex:1;font:600 11px ' + F + ';color:#808080">' + note + ' Loads already assigned to another route of this Unit are hidden and blocked — a load can’t be in two routes at once.</span>' +
+        '<button class="_ar-x" style="padding:9px 16px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,.14);color:#b3b3b3;font:800 12px ' + F + ';cursor:pointer">Cancel</button>' +
+        '<button class="_ar-go" style="padding:9px 18px;border-radius:10px;border:none;background:#2e9975;color:#141414;font:800 12.5px ' + F + ';cursor:pointer;white-space:nowrap;' + (selRows.length || removeNext ? '' : 'opacity:.45;pointer-events:none') + '">Rebuild route (' + selRows.length + ') →</button>';
+      modal.appendChild(cta);
+      // wiring
+      modal.querySelectorAll('._ar-x').forEach(function (b) { b.addEventListener('click', close); });
+      var hid = modal.querySelector('._ar-hid'); if (hid) hid.addEventListener('click', function () { showHidden = !showHidden; render(); });
+      var nb = modal.querySelector('._ar-next'); if (nb) nb.addEventListener('click', function () { removeNext = !removeNext; render(); });
+      modal.querySelector('._ar-go').addEventListener('click', function () {
+        close();
+        _arRunBusy(function () {
+          var n = _arApply(m, removeNext);
+          if (opts.onDone) opts.onDone(n);
+          setState({ openRoute: rId, view: 'routes', detailTab: 'plan' });
+          _arToast('Route rebuilt — ' + n + ' lane' + (n === 1 ? '' : 's') + ' pulled from the cycle');
+        });
+      });
+    }
+    render();
+    document.body.appendChild(ov);
+  }
+
+  // Assign driver & equipment (unit required — the minimum Auto-rebuild needs; driver optional,
+  // enables HOS). A resource already assigned to another route in an overlapping period blocks Save.
+  function _arOpenAssign(rId, onSave) {
+    var ex = document.getElementById('_ef-ar-assign'); if (ex) ex.remove();
+    var F = "'General Sans', Nunito, system-ui";
+    var r = routeOf(rId);
+    var busy = 'route #R-2603';
+    var opts = {
+      driver: (window.CR_DRIVER_LIST || []).map(function (d) { return { v: d.name, t: d.name + ' — available' }; }).concat([{ v: 'Dana Ortiz', t: 'Dana Ortiz — busy in another route', busy: busy }]),
+      unit: (window.CR_CABIN_LIST || []).map(function (c) { return { v: c.id, t: 'Unit ' + c.id + ' — available' }; }).concat([{ v: 'UNT-204', t: 'Unit UNT-204 — busy in another route', busy: busy }]),
+      trailer: (window.CR_TRAILER_LIST || []).map(function (t) { return { v: t.id, t: t.id + ' · ' + t.type + ' — available' }; }).concat([{ v: 'TRK-884', t: 'TRK-884 · reefer — busy in another route', busy: busy }])
+    };
+    var val = { driver: '', unit: '', trailer: '' };
+    var ov = document.createElement('div'); ov.id = '_ef-ar-assign';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9450;background:rgba(10,10,10,.66);display:flex;align-items:center;justify-content:center';
+    var box = document.createElement('div');
+    box.style.cssText = 'width:440px;max-width:94vw;background:#1a1a1a;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.8);overflow:hidden';
+    ov.appendChild(box);
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    function render() {
+      var conflicts = ['driver', 'unit', 'trailer'].map(function (k) { var o = opts[k].find(function (x) { return x.v === val[k]; }); return o && o.busy ? { k: k, o: o } : null; }).filter(Boolean);
+      var canSave = !conflicts.length && val.unit && val.trailer;
+      var sel = function (k, label, hint) {
+        return '<div style="margin-bottom:12px"><div style="font:800 11px ' + F + ';color:#b3b3b3;margin-bottom:6px">' + label + ' <span style="font-weight:600;color:#666666">' + hint + '</span></div>' +
+          '<select data-k="' + k + '" style="width:100%;padding:9px 10px;border-radius:9px;background:#242424;color:#e6e6e6;border:1px solid ' + (conflicts.some(function (c) { return c.k === k; }) ? '#cc666f' : 'rgba(255,255,255,.12)') + ';font:600 12px ' + F + '">' +
+          '<option value="">Select ' + (k === 'unit' ? 'a unit' : k === 'driver' ? 'a driver' : 'a trailer') + '</option>' +
+          opts[k].map(function (o) { return '<option value="' + o.v + '"' + (o.v === val[k] ? ' selected' : '') + '>' + o.t + '</option>'; }).join('') + '</select></div>';
+      };
+      box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)"><span style="color:#2e9975;font-weight:900">＋</span><span style="flex:1;font:800 14px ' + F + ';color:#f5f5f5">Assign driver &amp; equipment</span><span class="_ara-x" style="cursor:pointer;color:#808080">✕</span></div>' +
+        '<div style="padding:16px 18px">' +
+        '<div style="font:600 11px ' + F + ';color:#808080;margin-bottom:14px">Planned period of this route: <b style="color:#e6e6e6">' + (r.dateStart || '--') + ' – ' + (r.dateEnd || '--') + '</b></div>' +
+        sel('driver', 'Driver', '(optional — enables HOS)') + sel('unit', 'Unit', '(required)') + sel('trailer', 'Trailer', '(required)') +
+        (conflicts.length ? '<div style="display:flex;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(204,102,111,.1);border:1px solid rgba(204,102,111,.4);font:600 11.5px ' + F + ';color:#e6b3b8;line-height:1.45"><span style="color:#cc666f">⚠</span><div><b style="color:#f5f5f5">Can’t assign this resource.</b> ' +
+          conflicts.map(function (c) { return (c.k[0].toUpperCase() + c.k.slice(1)) + ' <b>' + c.o.v + '</b> is already assigned to ' + c.o.busy + ', which overlaps this route’s planned period (' + (r.dateStart || '--') + ' – ' + (r.dateEnd || '--') + ').'; }).join('<br>') + '</div></div>' : '') +
+        '</div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid rgba(255,255,255,.08)">' +
+        '<button class="_ara-x" style="padding:8px 14px;border-radius:9px;background:transparent;border:1px solid rgba(255,255,255,.14);color:#b3b3b3;font:800 12px ' + F + ';cursor:pointer">Cancel</button>' +
+        '<button class="_ara-save" style="padding:8px 16px;border-radius:9px;border:none;background:#2e9975;color:#141414;font:800 12px ' + F + ';cursor:pointer;' + (canSave ? '' : 'opacity:.4;pointer-events:none') + '">Save</button></div>';
+      box.querySelectorAll('._ara-x').forEach(function (b) { b.addEventListener('click', function () { ov.remove(); }); });
+      box.querySelectorAll('select').forEach(function (s) { s.addEventListener('change', function () { val[s.dataset.k] = s.value; render(); }); });
+      box.querySelector('._ara-save').addEventListener('click', function () {
+        r.unit = val.unit; r.trailer = val.trailer; if (val.driver) r.driver = val.driver;
+        loadsOf(rId).forEach(function (l) { l.truck = val.unit; });
+        ov.remove();
+        if (onSave) onSave();
+      });
+    }
+    render();
+    document.body.appendChild(ov);
+  }
+
+  // Auto-rebuild trigger (pill button). Disabled — with the reason — when the route has no unit.
+  function _arButton(rId, opts) {
+    opts = opts || {};
+    var F = "'General Sans', Nunito, system-ui";
+    var r = routeOf(rId), ok = _arHasUnit(r) && r.status !== 'Completed';
+    var b = document.createElement('div');
+    b.className = ok ? 'hoverable' : '';
+    b.title = ok ? 'Pull the truck cycle from My Loads and rebuild this route'
+      : (r.status === 'Completed' ? 'This route is completed — nothing to rebuild.' : 'Assign a unit first. A unit is the minimum Auto-rebuild needs to reconstruct a cycle; the driver is optional (it lets us pull HOS from the TMS).');
+    b.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:' + (opts.big ? '8px 14px' : '6px 12px') + ';margin:' + (opts.margin || '6px 0') + ';border-radius:999px;font:800 12px ' + F + ';white-space:nowrap;flex-shrink:0;' +
+      (ok ? 'cursor:pointer;color:#141414;background:#2e9975;border:1px solid #2e9975' : 'cursor:not-allowed;color:#666666;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)');
+    b.innerHTML = (ok ? _AR_ICON : _AR_LOCK) + '<span>Auto-rebuild</span>' +
+      '<span style="font:900 8.5px ' + F + ';letter-spacing:.04em;padding:2px 5px;border-radius:5px;' + (ok ? 'background:#141414;color:#47b26b' : 'background:rgba(255,255,255,.08);color:#808080') + '">NEW</span>';
+    if (ok) b.addEventListener('click', function (e) { e.stopPropagation(); _openAutoRebuild(rId, opts); });
+    return b;
   }
 
   function _openRebuildModal(rId) {
@@ -7298,6 +7719,32 @@ export function initApp() {
     });
 
     modal.appendChild(hdr); modal.appendChild(tabs);
+    // Auto-rebuild option (casos 4–5): shown when this screen comes right after Create route.
+    // Enabled with a unit; locked — with the reason and an "Assign unit" shortcut — on Any unit.
+    if (_lmSt.routeId) (function () {
+      var rid = _lmSt.routeId, rr = routeOf(rid), FB = "'General Sans', Nunito, system-ui";
+      var bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 20px;background:#1a1a1a;border-bottom:1px solid rgba(255,255,255,.07);flex:none';
+      var txt = document.createElement('div');
+      txt.style.cssText = 'flex:1;min-width:0;font:600 11.5px ' + FB + ';color:#808080;line-height:1.45';
+      if (_arHasUnit(rr)) {
+        txt.innerHTML = 'Can’t find what you’re looking for? Try these other options — <b style="color:#b3b3b3">Auto-rebuild</b> pulls Unit <b style="color:#e6e6e6">' + rr.unit + '</b>’s cycle from My Loads, independent of the destination you pick.';
+        bar.appendChild(txt);
+        bar.appendChild(_arButton(rid, { margin: '0', onDone: function () {
+          _lmSt.origin = null; _lmSt.routeId = null; var lm = document.getElementById('_ef-lane-map'); if (lm) lm.remove();
+        } }));
+      } else {
+        txt.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;color:#b3b3b3;font-weight:800;margin-right:4px">' + _AR_LOCK + 'Auto-rebuild</span> Assign a unit first. A unit is the minimum Auto-rebuild needs to reconstruct a cycle, and <b style="color:#b3b3b3">Any unit</b> doesn’t assign one. The driver is optional — adding it lets us pull Hours of Service from the TMS.';
+        bar.appendChild(txt);
+        var asg = document.createElement('div');
+        asg.className = 'hoverable';
+        asg.style.cssText = 'padding:7px 13px;border-radius:999px;border:1px solid rgba(102,136,204,.45);color:#6688cc;font:800 12px ' + FB + ';cursor:pointer;white-space:nowrap;flex-shrink:0';
+        asg.textContent = 'Assign unit';
+        asg.addEventListener('click', function () { _arOpenAssign(rid, function () { setState({}); _doRenderLaneMap(); }); });
+        bar.appendChild(asg);
+      }
+      modal.appendChild(bar);
+    })();
     var body = document.createElement('div');
     body.style.cssText = 'flex:1;overflow:hidden;min-height:0;display:flex;flex-direction:column';
 
@@ -8011,7 +8458,7 @@ export function initApp() {
     ov.appendChild(modal);
     document.body.appendChild(ov);
     ov.addEventListener('click', function(e) { if(e.target===ov){ _lmSt.origin=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; _lmSt.rcScale=0; _lmSt.rcTx=0; _lmSt.rcTy=0; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); } });
-    modal.querySelector('#_ef-lm-x').addEventListener('click', function(){ _lmSt.origin=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; _lmSt.rcScale=0; _lmSt.rcTx=0; _lmSt.rcTy=0; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); });
+    modal.querySelector('#_ef-lm-x').addEventListener('click', function(){ _lmSt.origin=null; _lmSt.routeId=null; _lmSt.tab='destinations'; _lmSt.selDest=-1; _lmSt.rcScale=0; _lmSt.rcTx=0; _lmSt.rcTy=0; var m=document.getElementById('_ef-lane-map'); if(m)m.remove(); });
   }
 
   function renderDetail(routeId) {
@@ -8358,9 +8805,13 @@ export function initApp() {
               card.appendChild(info); card.appendChild(addBtn); cycleSection.appendChild(card);
             });
           } else {
+            // Cycle loads now come from Auto-rebuild (pulls the whole truck cycle from My Loads)
             var noCycle = document.createElement('div');
-            noCycle.style.cssText = 'display:flex;align-items:center;gap:7px;color:#666666;font:400 11px '+F;
-            noCycle.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="20 6 9 17 4 12"></polyline></svg>No cycle loads to add.';
+            noCycle.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:8px;color:#808080;font:400 11px '+F+';line-height:1.45';
+            noCycle.textContent = 'Missing loads from this truck’s cycle? Auto-rebuild pulls the whole cycle from My Loads and adds what the route is missing.';
+            var _arDropBtn = _arButton(rId, { margin: '0' });
+            _arDropBtn.addEventListener('click', function () { _closeDrop(); });
+            noCycle.appendChild(_arDropBtn);
             cycleSection.appendChild(noCycle);
           }
           drop.appendChild(cycleSection);
@@ -8397,7 +8848,9 @@ export function initApp() {
       _detailTab('report', ICON.report, 'Report')
     ];
     const _tbStyle = { flex: 'none', display: 'flex', alignItems: 'center', gap: '4px', background: '#1a1a1a', borderBottom: '1px solid rgba(255,255,255,.07)' };
-    const _tbContents = [..._planTabEls, el('div', { style: { flex: '1' } }), _syncPillEl, _editRouteEl, _mapToggleEl];
+    // Auto-rebuild lives in the Plan of a route with a unit (disabled, with the reason, without one)
+    var _arBtnEl = _arButton(routeId);
+    const _tbContents = [..._planTabEls, el('div', { style: { flex: '1' } }), _arBtnEl, _syncPillEl, _editRouteEl, _mapToggleEl];
 
     const laneCols = '40px minmax(200px,1fr) 110px 68px 84px 110px 100px 80px 65px 90px 80px 90px 110px 44px';
     const TABLE_MIN_W = '1264px';
@@ -8719,7 +9172,23 @@ export function initApp() {
       table.appendChild(rowDiv);
     }
 
-    d.rows.forEach(appendRow);
+    // After an Auto-rebuild, mark where the cycle continues (past/present above, upcoming below)
+    var _arDiv = _arDone[routeId] && _arDone[routeId].dividerId;
+    var _arDivAt = -1;
+    if (_arDiv) {
+      var _arLs = loadsOf(routeId);
+      _arDivAt = d.rows.findIndex(function (r) { return r.num !== 'DH' && r.loadIdx != null && _arLs[r.loadIdx] && _arLs[r.loadIdx].id === _arDiv; });
+      if (_arDivAt > 0 && d.rows[_arDivAt - 1].num === 'DH') _arDivAt--;
+    }
+    d.rows.forEach(function (r, i) {
+      if (i === _arDivAt && i > 0) {
+        var _cut = document.createElement('div');
+        _cut.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 14px;min-width:' + TABLE_MIN_W + ';background:rgba(46,153,117,.05);border-bottom:1px solid rgba(255,255,255,.04)';
+        _cut.innerHTML = '<span style="font:800 10.5px \'General Sans\', Nunito, system-ui;color:#47b26b;white-space:nowrap">▼ Cycle continues from here</span><span style="flex:1;height:1px;background:rgba(46,153,117,.35)"></span>';
+        table.appendChild(_cut);
+      }
+      appendRow(r);
+    });
 
     // ── "Add +" row at bottom of lane table ──
     (function() {
@@ -8926,13 +9395,48 @@ export function initApp() {
 
     const moneyTiles = renderPnlOpsCards(d);
 
+    // ── Auto-rebuild banner above the lanes: result of the last rebuild, or an invitation when the
+    //    route has no confirmed loads yet (enabled with a unit; locked → "Assign unit" without one).
+    const _arBanner = (function () {
+      var r = routeOf(routeId), FB = "'General Sans', Nunito, system-ui";
+      var box = function (accent, bg, kids) { return el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', padding: '12px 14px', borderRadius: '12px', background: bg, border: '1px solid ' + accent } }, kids); };
+      if (_arDone[routeId] && _arDone[routeId].note) {
+        return box('rgba(46,153,117,.35)', 'rgba(46,153,117,.07)', [
+          el('span', { style: { color: '#47b26b', display: 'flex', flexShrink: '0' }, html: _AR_ICON }),
+          el('div', { style: { flex: '1', font: '600 12px ' + FB, color: '#b3b3b3', lineHeight: '1.45' }, html: _arDone[routeId].note }),
+          el('div', { class: 'hoverable', onclick: () => { _arDone[routeId].note = null; setState({}); }, style: { color: '#808080', cursor: 'pointer', font: '400 16px ' + FB, lineHeight: '1' } }, ['×'])
+        ]);
+      }
+      if (r.status === 'Completed' || loadsOf(routeId).some(_arIsReal)) return null;
+      var first = loadsOf(routeId)[0];
+      var when = first ? prettyDate(first.pickup) : (r.dateStart || '--');
+      if (_arHasUnit(r)) {
+        var drv = r.driver && r.driver !== 'Unassigned' ? ' · Driver <b style="color:#e6e6e6">' + r.driver + '</b>' : '';
+        return box('rgba(46,153,117,.3)', '#1f1f1f', [
+          el('div', { style: { flex: '1' } }, [
+            el('div', { style: { font: '800 13px ' + FB, color: '#f5f5f5' } }, ['This route has no confirmed loads yet']),
+            el('div', { style: { font: '600 11.5px ' + FB, color: '#808080', marginTop: '3px', lineHeight: '1.45' }, html: 'It has Unit <b style="color:#e6e6e6">' + r.unit + '</b>' + drv + ' assigned and origin date <b style="color:#e6e6e6">' + when + '</b>. Use Auto-rebuild to pull the cycle from the TMS with those filters already applied.' })
+          ]),
+          _arButton(routeId, { margin: '0', big: true })
+        ]);
+      }
+      return box('rgba(255,255,255,.1)', '#1f1f1f', [
+        el('span', { style: { color: '#808080', display: 'flex', flexShrink: '0' }, html: _AR_LOCK }),
+        el('div', { style: { flex: '1' } }, [
+          el('div', { style: { font: '800 13px ' + FB, color: '#e6e6e6' } }, ['Auto-rebuild needs a unit']),
+          el('div', { style: { font: '600 11.5px ' + FB, color: '#808080', marginTop: '3px', lineHeight: '1.45' } }, ['Assign a unit first — it’s the minimum Auto-rebuild needs to reconstruct a cycle, and Any unit doesn’t assign one. The driver is optional; adding it lets us pull Hours of Service from the TMS.'])
+        ]),
+        el('div', { class: 'hoverable', onclick: () => _arOpenAssign(routeId, () => setState({})), style: { padding: '8px 14px', borderRadius: '999px', border: '1px solid rgba(102,136,204,.45)', color: '#6688cc', font: '800 12px ' + FB, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0' } }, ['Assign unit'])
+      ]);
+    })();
+
     if (state.detailMapHidden) {
       const tabsBar = el('div', { style: { ..._tbStyle, padding: '0 20px' } }, _tbContents);
-      const body = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px' } }, [tableOuter]);
+      const body = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px' } }, [_arBanner, tableOuter].filter(Boolean));
       return el('div', { style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } }, [header, tabsBar, body]);
     }
     const leftTabsBar = el('div', { style: { ..._tbStyle, paddingLeft: '20px' } }, _tbContents);
-    const leftTable = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 0 16px 20px' } }, [tableOuter]);
+    const leftTable = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 0 16px 20px' } }, [_arBanner, tableOuter].filter(Boolean));
     const leftCol = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [leftTabsBar, leftTable]);
     const rightWrapper = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', padding: '0 20px 16px 0' } }, [mapPanel, hosPanel, statTiles, moneyTiles]);
     const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);

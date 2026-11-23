@@ -268,6 +268,13 @@ input[type="date"] { color-scheme: dark; }
 #cr-root .cr-status-pill { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800; }
 #cr-root .cr-load-meta { font-size: 10px; color: var(--cr-text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #cr-root .cr-load-price { font-size: 14px; font-weight: 700; color: var(--cr-accent); flex-shrink: 0; margin-top: 1px; }
+/* Auto-rebuild parity: cycle footnote + "no loads in this truck cycle" empty state */
+#cr-root .cr-cycle-foot { font-size: 10px; color: var(--cr-text-muted); margin-top: 8px; line-height: 1.45; }
+#cr-root .cr-cycle-foot code { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--cr-text-dim); }
+#cr-root .cr-cycle-empty { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: rgba(26,26,26,.6); border: 1px dashed var(--cr-border); border-radius: var(--cr-radius); }
+#cr-root .cr-cycle-empty-ic { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--cr-text-muted); color: var(--cr-text-muted); display: grid; place-items: center; font-size: 10px; font-weight: 800; font-style: italic; flex-shrink: 0; }
+#cr-root .cr-cycle-empty-t { font-size: 12.5px; font-weight: 700; }
+#cr-root .cr-cycle-empty-s { font-size: 10.5px; color: var(--cr-text-muted); margin-top: 2px; }
 
 /* ── Tag pickers ── */
 #cr-root .cr-tagpicker { position: relative; }
