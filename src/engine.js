@@ -40,7 +40,7 @@ export function initApp() {
   ];
 
   const LOAD_TABS = ['All Loads', 'On The Road', 'Offer', 'Booked', 'Assigned', 'Dispatched', 'In Transit', 'Delivered', 'Invoiced', 'Paid', 'Canceled'];
-  const ROUTE_TABS = ['All', 'In progress', 'Planned', 'Completed'];
+  const ROUTE_TABS = ['All', 'In progress', 'Planned', 'Completed', 'Auto-rebuild cases'];
 
   // Column catalog: key, label, width(px). Order here is only the DEFAULT order —
   // actual render order/visibility is driven by state.columnOrder / state.hiddenCols.
@@ -383,7 +383,7 @@ export function initApp() {
 
   function visibleLoads() {
     const s = state, q = s.loadQuery.trim().toLowerCase();
-    let out = LOADS.slice();
+    let out = LOADS.filter(l => !routeOf(l.route).arCase);   // test-case loads stay out of My Loads
     if (s.routeFilterIds) out = out.filter(l => s.routeFilterIds.includes(l.route));
     if (s.loadTab === 'On The Road') out = out.filter(l => l.status === 'In Transit' || l.status === 'Dispatched');
     else if (s.loadTab !== 'All Loads') out = out.filter(l => l.status === s.loadTab);
@@ -404,14 +404,17 @@ export function initApp() {
 
   function visibleRoutes() {
     const s = state, q = s.routeQuery.trim().toLowerCase();
-    let out = ROUTES.slice();
-    if (s.routeTab !== 'All') out = out.filter(r => r.status === s.routeTab);
+    // seeded Auto-rebuild test cases only show under their own tab
+    let out = s.routeTab === 'Auto-rebuild cases' ? ROUTES.filter(r => r.arCase) : ROUTES.filter(r => !r.arCase);
+    if (s.routeTab !== 'All' && s.routeTab !== 'Auto-rebuild cases') out = out.filter(r => r.status === s.routeTab);
     if (q) out = out.filter(r => (r.name + ' ' + r.driver + ' ' + r.dispatcher + ' ' + loadsOf(r.id).map(l => l.origin + l.dest).join(' ')).toLowerCase().includes(q));
     s.routeFilters.forEach(f => {
       const field = ROUTE_FIELDS_BY_KEY[f.key], get = ROUTE_FIELD_GETTERS[f.key];
       out = out.filter(r => matchesFilter(field.type, get(r), f));
     });
     const { key, dir } = s.routeSort;
+    // test cases read in order (AR01 → AR14) unless the user sorts by another column
+    if (s.routeTab === 'Auto-rebuild cases' && key === 'dateStart') return out.sort((a, b) => a.arCase.localeCompare(b.arCase));
     out.sort((a, b) => {
       const sa = routeStats(a), sb = routeStats(b);
       if (key === 'income') return cmp(sa.income, sb.income, dir);
@@ -4066,6 +4069,151 @@ export function initApp() {
   // Cycle loads the user skipped in Create route (truck-cycle cards left unchecked): Auto-rebuild
   // offers exactly those back instead of inventing earlier loads. rId → [load]
   const _arSeed = {};
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AUTO-REBUILD TEST CASES — one seeded route per situation Auto-rebuild must solve.
+  // They live under the "Auto-rebuild cases" tab of the Routes list (hidden from the
+  // other tabs and from My Loads). Each case pins exactly what the TMS returns for the
+  // unit: `seed` = cycle loads missing from the route ([] → nothing missing), `hidden`
+  // = cycle loads already in another route (dedup). The Plan shows a case card with the
+  // situation, how to test it and the expected result.
+  // ─────────────────────────────────────────────────────────────────────────
+  const _arCaseHidden = {};   // rId → [load] shown as "already in another route" (overrides the default)
+  const _arCaseCollapsed = {};
+  var _AR_CASES = [];
+  // Runs once _OR_COORD exists (distances), right after its definition below.
+  function _arInitCases() {
+  _AR_CASES = (function () {
+    var n = 0;
+    var ld = function (o, d, st, pk, dl, x) {
+      n++;
+      var mi = _arMiles(o, d), rate = 2.6 + (n % 9) / 10;
+      return Object.assign({ id: String(391000 + n * 37), origin: o, dest: d, miles: mi, income: Math.round(mi * rate / 10) * 10, status: st, pickup: pk, delivery: dl,
+        customer: _AR_BROKERS[n % _AR_BROKERS.length] }, x || {});
+    };
+    var tonu = function (from, at, consignee, st, date, fee, wait) {
+      n++;
+      return { id: String(391000 + n * 37), origin: at, dest: at, miles: 0, income: fee, status: st, pickup: date, delivery: date, customer: _AR_BROKERS[n % _AR_BROKERS.length],
+        tonu: true, tonuFrom: from, tonuDest: consignee, dhMi: _arMiles(from, at), waitH: wait };
+    };
+    var cyc = { _cycle: true };
+    return [
+      { code: 'AR01', name: 'AR01_Missing_history', unit: 'UNT-401', driver: 'Luis Ortega', status: 'In progress',
+        title: 'Loads missing before the route',
+        situation: 'The route starts mid-cycle: the truck already hauled 2 loads (Delivered, Invoiced) that are not in the plan.',
+        test: 'Open Auto-rebuild.',
+        expected: '2 loads to add before the route, divider “Cycle continues from here” above the In Transit load, CTA “Rebuild route (2)”. After: 4 lanes, DH before the past loads Completed, route dates move to Jul 25.',
+        loads: [ld('Dallas, TX', 'Memphis, TN', 'In Transit', '07/29/2026', '07/30/2026'), ld('Memphis, TN', 'Chicago, IL', 'Booked', '07/30/2026', '07/31/2026')],
+        seed: [ld('San Antonio, TX', 'Houston, TX', 'Delivered', '07/25/2026', '07/26/2026'), ld('Houston, TX', 'Dallas, TX', 'Invoiced', '07/27/2026', '07/28/2026')], hidden: [] },
+      { code: 'AR02', name: 'AR02_Empty_route', unit: 'UNT-402', driver: 'Grace Hill', status: 'Planned',
+        title: 'Route with only planned (Unbooked) lanes',
+        situation: 'The route has a unit but no confirmed loads — only 2 Unbooked placeholders.',
+        test: 'Use the banner “This route has no confirmed loads yet” or the Auto-rebuild pill.',
+        expected: 'Empty variant: 4 cycle loads from the route origin. Warning “2 planned (Unbooked) lanes will be replaced”. After: placeholders gone, route In progress, toast with Undo restores them.',
+        loads: [ld('Denver, CO', 'Kansas City, MO', 'Unbooked', '07/30/2026', '07/31/2026'), ld('Kansas City, MO', 'St. Louis, MO', 'Unbooked', '08/01/2026', '08/01/2026')],
+        hidden: [] },
+      { code: 'AR03', name: 'AR03_Empty_with_Offer', unit: 'UNT-403', driver: 'Omar Reyes', status: 'Planned',
+        title: 'No confirmed loads, but an Offer pending',
+        situation: 'One Unbooked placeholder and one Offer (not confirmed yet).',
+        test: 'Run Auto-rebuild.',
+        expected: 'Only the Unbooked lane is replaced (warning says 1). The Offer is kept after the cycle — Auto-rebuild never deletes an Offer.',
+        loads: [ld('Atlanta, GA', 'Charlotte, NC', 'Unbooked', '07/30/2026', '07/30/2026'), ld('Charlotte, NC', 'Pittsburgh, PA', 'Offer', '08/01/2026', '08/01/2026')],
+        hidden: [] },
+      { code: 'AR04', name: 'AR04_Gap_between_lanes', unit: 'UNT-404', driver: 'Nina Park', status: 'In progress',
+        title: 'Hole between two lanes',
+        situation: 'The truck delivers in Memphis but the next load picks up in St. Louis — the TMS has the load that connects them.',
+        test: 'Open Auto-rebuild.',
+        expected: 'Title “fill every gap in the cycle”; 1 row Memphis → St. Louis tagged “fills gap” between the two route loads. After: 3 chained lanes, banner “1 load filled a gap between lanes”.',
+        loads: [ld('Houston, TX', 'Memphis, TN', 'In Transit', '07/28/2026', '07/29/2026', cyc), ld('St. Louis, MO', 'Chicago, IL', 'Booked', '07/30/2026', '07/31/2026')],
+        seed: [], hidden: [] },
+      { code: 'AR05', name: 'AR05_Next_cycle_load', unit: 'UNT-405', driver: 'Tom Becker', status: 'In progress',
+        title: 'Load after a 34h reset (next cycle)',
+        situation: 'The last load picks up 3 days after the current one delivers — the driver will take a 34h reset in between.',
+        test: 'Open Auto-rebuild, then “Remove from current plan”.',
+        expected: 'Cycle up to date; the Denver → Salt Lake City load is flagged “possibly next cycle” (not preselected, stays by default). Removing it → CTA “Update route →”, banner “Plan updated… removed from the current plan”.',
+        loads: [ld('Phoenix, AZ', 'Albuquerque, NM', 'Delivered', '07/25/2026', '07/26/2026', cyc), ld('Albuquerque, NM', 'Denver, CO', 'In Transit', '07/28/2026', '07/29/2026'), ld('Denver, CO', 'Salt Lake City, UT', 'Booked', '08/01/2026', '08/02/2026')],
+        seed: [], hidden: [] },
+      { code: 'AR06', name: 'AR06_Cycle_up_to_date', unit: 'UNT-406', driver: 'Ivy Chen', status: 'In progress',
+        title: 'Nothing missing',
+        situation: 'The route already holds every load of the truck’s cycle.',
+        test: 'Open Auto-rebuild.',
+        expected: '“✓ Cycle up to date → nothing missing”, all rows “in this route”, CTA disabled “Nothing to add”. Running it twice never adds loads.',
+        loads: [ld('Nashville, TN', 'Louisville, KY', 'Delivered', '07/27/2026', '07/27/2026', cyc), ld('Louisville, KY', 'Indianapolis, IN', 'In Transit', '07/29/2026', '07/29/2026'), ld('Indianapolis, IN', 'Columbus, OH', 'Booked', '07/30/2026', '07/30/2026')],
+        seed: [], hidden: [] },
+      { code: 'AR07', name: 'AR07_TONU_missing', unit: 'UNT-407', driver: 'Ray Duarte', status: 'In progress',
+        title: 'TONU in the missing history',
+        situation: 'Before the route the truck deadheaded St. Louis → Oklahoma City for a load that was cancelled at pickup (TONU, Invoiced, $300 fee).',
+        test: 'Open Auto-rebuild.',
+        expected: 'The TONU row shows Invoiced + TONU tag, Origin “DH from St. Louis”, struck consignee, 0 mi / DH mi, “TONU fee”; TONU metric (mi DH · h). After: DH “TO TONU” Completed, TONU lane 0 mi · 3h on site · $300.',
+        loads: [ld('Oklahoma City, OK', 'Dallas, TX', 'In Transit', '07/29/2026', '07/30/2026'), ld('Dallas, TX', 'Houston, TX', 'Booked', '07/30/2026', '07/31/2026')],
+        seed: [ld('Kansas City, MO', 'St. Louis, MO', 'Delivered', '07/25/2026', '07/26/2026'), tonu('St. Louis, MO', 'Oklahoma City, OK', 'Denver, CO', 'Invoiced', '07/27/2026', 300, 3)], hidden: [] },
+      { code: 'AR08', name: 'AR08_TONU_in_route', unit: 'UNT-408', driver: 'Ana Silva', status: 'In progress',
+        title: 'TONU already in the route',
+        situation: 'The route already has a Paid TONU (Laredo) between a Delivered load and the In Transit one.',
+        test: 'Open the Plan, On Road and Auto-rebuild.',
+        expected: 'Plan: DH “TO TONU” Completed + TONU lane (0 mi, on-site hours, fee). On Road: lane status TONU (locked). Auto-rebuild: up to date, TONU kept “in this route”, never flagged next cycle.',
+        loads: [ld('Houston, TX', 'San Antonio, TX', 'Delivered', '07/25/2026', '07/26/2026', cyc), tonu('San Antonio, TX', 'Laredo, TX', 'Dallas, TX', 'Paid', '07/27/2026', 250, 4), ld('Laredo, TX', 'Dallas, TX', 'In Transit', '07/29/2026', '07/30/2026'), ld('Dallas, TX', 'Memphis, TN', 'Booked', '07/31/2026', '07/31/2026')],
+        seed: [], hidden: [] },
+      { code: 'AR09', name: 'AR09_Placeholder_before_load', unit: 'UNT-409', driver: 'Ben Ruiz', status: 'Planned',
+        title: 'Unbooked placeholder before the first confirmed load',
+        situation: 'The plan starts with an Unbooked lane Chicago → Indianapolis, then a Booked load. The TMS has the real load before it and the one that fills that hole.',
+        test: 'Open Auto-rebuild.',
+        expected: '1 earlier load + 1 “fills gap” row; warning “1 planned (Unbooked) lane will be replaced”. After: the placeholder is gone (no reversed lanes), route In progress.',
+        loads: [ld('Chicago, IL', 'Indianapolis, IN', 'Unbooked', '07/28/2026', '07/28/2026'), ld('Indianapolis, IN', 'Columbus, OH', 'Booked', '07/30/2026', '07/31/2026')],
+        seed: [ld('Pittsburgh, PA', 'Chicago, IL', 'Delivered', '07/26/2026', '07/27/2026')], hidden: [] },
+      { code: 'AR10', name: 'AR10_Load_in_other_route', unit: 'UNT-410', driver: 'Kim Novak', status: 'In progress',
+        title: 'Cycle load already assigned to another route',
+        situation: 'One load of this unit’s cycle is already in another route (AR01).',
+        test: 'Open Auto-rebuild → “Show loads already in another route (1)”.',
+        expected: 'The load appears striped, “⊘ In route #R-AR01 · blocked”, can’t be selected; CTA note explains a load can’t be in two routes. Only the free missing load is added.',
+        loads: [ld('Charlotte, NC', 'Atlanta, GA', 'In Transit', '07/29/2026', '07/30/2026'), ld('Atlanta, GA', 'Nashville, TN', 'Booked', '07/31/2026', '07/31/2026')],
+        seed: [ld('Savannah, GA', 'Charlotte, NC', 'Delivered', '07/27/2026', '07/28/2026')],
+        hidden: [Object.assign(ld('Jacksonville, FL', 'Savannah, GA', 'Delivered', '07/25/2026', '07/26/2026'), { otherRoute: 'R-AR01' })] },
+      { code: 'AR11', name: 'AR11_No_unit', unit: 'Unassigned', driver: 'Unassigned', status: 'Planned',
+        title: 'Route without a unit (locked)',
+        situation: 'Created with “Any unit”: it has loads but no unit, so the truck cycle can’t be read.',
+        test: 'Click the gray Auto-rebuild pill (hover it first to read why it’s locked).',
+        expected: 'Pill locked with reason; click opens “Assign driver & equipment” (unit + trailer required, busy units blocked). After saving, the pill turns green and the rebuild works.',
+        loads: [ld('Houston, TX', 'Dallas, TX', 'Booked', '07/30/2026', '07/30/2026'), ld('Dallas, TX', 'Atlanta, GA', 'Unbooked', '07/31/2026', '08/01/2026')],
+        hidden: [] },
+      { code: 'AR12', name: 'AR12_Completed_route', unit: 'UNT-412', driver: 'Joe Park', status: 'Completed',
+        title: 'Completed route',
+        situation: 'Every lane is Paid/Invoiced and the route is closed.',
+        test: 'Hover the Auto-rebuild pill.',
+        expected: 'Pill disabled — a completed route can’t be rebuilt; no Assign path.',
+        loads: [ld('Tampa, FL', 'Jacksonville, FL', 'Paid', '07/20/2026', '07/20/2026', cyc), ld('Jacksonville, FL', 'Savannah, GA', 'Invoiced', '07/21/2026', '07/21/2026')],
+        seed: [], hidden: [] },
+      { code: 'AR13', name: 'AR13_Dispatched', unit: 'UNT-413', driver: 'Sam Ellis', status: 'In progress',
+        title: 'Truck heading to the pickup (Dispatched)',
+        situation: 'The current load is Dispatched (driving empty to the pickup); one delivered load is missing before the route.',
+        test: 'Open Auto-rebuild, then the Plan.',
+        expected: '1 load to add; divider above the Dispatched load. Plan: DH before the Dispatched load “In progress” (cyan DH), DH before delivered loads Completed.',
+        loads: [ld('Columbus, OH', 'Pittsburgh, PA', 'Delivered', '07/27/2026', '07/28/2026'), ld('Pittsburgh, PA', 'Philadelphia, PA', 'Dispatched', '07/29/2026', '07/30/2026'), ld('Philadelphia, PA', 'Newark, NJ', 'Booked', '07/31/2026', '07/31/2026')],
+        seed: [ld('Indianapolis, IN', 'Columbus, OH', 'Delivered', '07/25/2026', '07/26/2026')], hidden: [] },
+      { code: 'AR14', name: 'AR14_Canceled_not_TONU', unit: 'UNT-414', driver: 'Lena Fox', status: 'In progress',
+        title: 'Canceled load (not TONU)',
+        situation: 'A load was cancelled by the broker before dispatch (no TONU fee, the truck never went).',
+        test: 'Open Auto-rebuild.',
+        expected: 'The Canceled load is not part of the cycle (not listed); the missing earlier load is added. After: the Canceled lane stays in the route, moved after the cycle lanes (unlike a TONU, it never counts as driven, its DH stays Upcoming).',
+        loads: [ld('Memphis, TN', 'Nashville, TN', 'Delivered', '07/27/2026', '07/27/2026'), ld('Nashville, TN', 'Atlanta, GA', 'Canceled', '07/28/2026', '07/28/2026'), ld('Nashville, TN', 'Louisville, KY', 'In Transit', '07/29/2026', '07/29/2026')],
+        seed: [ld('Little Rock, AR', 'Memphis, TN', 'Delivered', '07/25/2026', '07/26/2026')], hidden: [] }
+    ];
+  })();
+  _AR_CASES.forEach(function (c) {
+    var rId = 'R-' + c.code;
+    var ls = c.loads;
+    var fmt = function (s) { var d = _arD(s); return _AR_MONTHS[d.getMonth()] + ' ' + ('0' + d.getDate()).slice(-2) + ' / ' + d.getFullYear(); };
+    ROUTES.push({ id: rId, name: c.name, arCase: c.code, dateStart: fmt(ls[0].pickup), dateEnd: fmt(ls[ls.length - 1].delivery), status: c.status, driver: c.driver,
+      trailer: c.unit === 'Unassigned' ? '--' : 'TRK-' + c.unit.slice(4), equipmentType: 'Van', unit: c.unit, dispatcher: 'karen', routeDeviation: 0, fuelExcess: 0, planAdherence: 100 });
+    ls.forEach(function (l) {
+      var live = l.status === 'In Transit' || l.status === 'Dispatched';
+      LOADS.push(Object.assign(l, { route: rId, pickupTime: '08:00 - 12:00', deliveryTime: '12:00 - 16:00', eta: live ? '14:20' : '--', onTime: live ? 'On time' : '--', stops: 1,
+        truck: c.unit === 'Unassigned' ? '--' : c.unit, equipment: 'TRK-' + c.unit.slice(4), equipmentType: 'Van' }));
+    });
+    if (c.seed) _arSeed[rId] = c.seed;
+    if (c.hidden) _arCaseHidden[rId] = c.hidden;
+  });
+  }
   function _arModel(rId) {
     var r = routeOf(rId), ls = loadsOf(rId), real = ls.filter(_arIsReal), h = _arHash(rId);
     var rows = [], i;
@@ -4129,7 +4277,8 @@ export function initApp() {
     // Only when there is another route with a unit to point at.
     var others = ROUTES.filter(function (x) { return x.id !== rId && _arHasUnit(x) && x.status !== 'Completed'; });
     var hidden = [];
-    if (others.length) {
+    if (_arCaseHidden[rId]) hidden = _arCaseHidden[rId].slice();
+    else if (others.length) {
       var hc1 = _arPickCity(h + 13, []), hc2 = _arNear(hc1, h + 17, [hc1]);
       hidden.push(Object.assign(_arMk(h + 40, hc1, hc2, 'Booked', _arAdd(pickupFrom, 1), _arAdd(pickupFrom, 2)), { otherRoute: others[h % others.length].id }));
     }
@@ -9597,6 +9746,24 @@ export function initApp() {
 
     // ── Auto-rebuild banner above the lanes: result of the last rebuild, or an invitation when the
     //    route has no confirmed loads yet (enabled with a unit; locked → "Assign unit" without one).
+    // Auto-rebuild test case card (seeded AR-xx routes): situation, how to test, expected result
+    const _arCaseCard = (function () {
+      var r = routeOf(routeId); if (!r.arCase) return null;
+      var c = _AR_CASES.find(function (x) { return x.code === r.arCase; }); if (!c) return null;
+      var FB = "'General Sans', Nunito, system-ui", open = !_arCaseCollapsed[routeId];
+      var line = function (k, v, col) { return el('div', { style: { display: 'flex', gap: '10px', marginTop: '6px' } }, [
+        el('span', { style: { flex: 'none', width: '68px', font: '800 9.5px ' + FB, letterSpacing: '.06em', textTransform: 'uppercase', color: col || '#808080', paddingTop: '2px' } }, [k]),
+        el('span', { style: { flex: '1', font: '600 11.5px ' + FB, color: '#b3b3b3', lineHeight: '1.45' } }, [v])
+      ]); };
+      return el('div', { style: { marginBottom: '12px', padding: '11px 14px', borderRadius: '12px', background: 'rgba(102,136,204,.06)', border: '1px dashed rgba(102,136,204,.4)' } }, [
+        el('div', { class: 'hoverable', onclick: () => { _arCaseCollapsed[routeId] = open; setState({}); }, style: { display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer' } }, [
+          el('span', { style: { font: '900 9.5px ' + FB, letterSpacing: '.06em', color: '#141414', background: '#6688cc', padding: '3px 7px', borderRadius: '5px' } }, ['TEST CASE ' + c.code]),
+          el('span', { style: { flex: '1', font: '800 12.5px ' + FB, color: '#e6e6e6' } }, [c.title]),
+          el('span', { style: { font: '700 11px ' + FB, color: '#6688cc' } }, [open ? 'Hide ▴' : 'Details ▾'])
+        ]),
+        ...(open ? [line('Situation', c.situation), line('Test', c.test), line('Expected', c.expected, '#47b26b')] : [])
+      ]);
+    })();
     const _arBanner = (function () {
       var r = routeOf(routeId), FB = "'General Sans', Nunito, system-ui";
       var box = function (accent, bg, kids) { return el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', padding: '12px 14px', borderRadius: '12px', background: bg, border: '1px solid ' + accent } }, kids); };
@@ -9632,11 +9799,11 @@ export function initApp() {
 
     if (state.detailMapHidden) {
       const tabsBar = el('div', { style: { ..._tbStyle, padding: '0 20px' } }, _tbContents);
-      const body = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px' } }, [_arBanner, tableOuter].filter(Boolean));
+      const body = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 20px' } }, [_arCaseCard, _arBanner, tableOuter].filter(Boolean));
       return el('div', { style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } }, [header, tabsBar, body]);
     }
     const leftTabsBar = el('div', { style: { ..._tbStyle, paddingLeft: '20px' } }, _tbContents);
-    const leftTable = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 0 16px 20px' } }, [_arBanner, tableOuter].filter(Boolean));
+    const leftTable = el('div', { class: 'ef-scroll', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '16px 0 16px 20px' } }, [_arCaseCard, _arBanner, tableOuter].filter(Boolean));
     const leftCol = el('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' } }, [leftTabsBar, leftTable]);
     const rightWrapper = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', padding: '0 20px 16px 0' } }, [mapPanel, hosPanel, statTiles, moneyTiles]);
     const splitBody = el('div', { style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 520px', columnGap: '16px', overflow: 'hidden' } }, [leftCol, rightWrapper]);
@@ -9663,6 +9830,7 @@ export function initApp() {
     'San Antonio, TX': [29.42, -98.49], 'Savannah, GA': [32.08, -81.09], 'Shreveport, LA': [32.53, -93.75],
     'St. Louis, MO': [38.63, -90.20], 'Tampa, FL': [27.95, -82.46]
   };
+  _arInitCases();   // seed the Auto-rebuild test cases (needs _OR_COORD for distances)
   let _orMap = null;          // persistent Leaflet instance (survives re-renders → no flash)
   let _orMapEl = null;        // persistent map container div (re-parented into the current slot)
   let _orMapLayers = null;    // dynamic layer group (markers/polylines) cleared+redrawn each render
