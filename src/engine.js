@@ -342,7 +342,8 @@ export function initApp() {
   function loadsOf(id) { return LOADS.filter(l => l.route === id); }
   function routeDhMiles(r) {
     const ls = loadsOf(r.id);
-    return ls.reduce((a, _, i) => a + 30 + ((i * 17) % 45), 0);
+    // a TONU's DH leg into its pickup is real (dhMi); other deadheads are estimated
+    return ls.reduce((a, l, i) => a + (l.tonu && l.dhMi ? l.dhMi : 30 + ((i * 17) % 45)), 0);
   }
   function routeStats(r) {
     const ls = loadsOf(r.id);
@@ -355,7 +356,7 @@ export function initApp() {
     const missedSavings = (r.routeDeviation || 0) + (r.fuelExcess || 0);
     const dhPct = totalMiles ? dh / totalMiles * 100 : 0;
     let healthScore;
-    if (effectiveRpm < 1.5 || dhPct > 25 || ls.some(l => l.status === 'Unbooked' || l.status === 'Canceled')) healthScore = 0;
+    if (effectiveRpm < 1.5 || dhPct > 25 || ls.some(l => l.status === 'Unbooked' || (l.status === 'Canceled' && !l.tonu))) healthScore = 0;
     else if (effectiveRpm < 2.0 || dhPct > 15 || ls.some(l => l.status === 'Offer')) healthScore = 1;
     else healthScore = 2;
     const estimatedCost = totalMiles * 2.4;
@@ -567,6 +568,14 @@ export function initApp() {
     // Read mode
     const modeBtn = document.querySelector('.cr-assign-btn.cr-active');
     const mode = modeBtn ? modeBtn.dataset.mode : 'free';
+    // "Assign unit" means a unit is required (it's what the truck cycle / Auto-rebuild run on)
+    if (mode === 'assign' && !(window.CR_PICKER && window.CR_PICKER.cabin)) {
+      var _ub = document.getElementById('cr-cabin-btn');
+      if (_ub) { _ub.style.borderColor = '#cc666f'; _ub.style.boxShadow = '0 0 0 3px rgba(204,102,111,.18)'; }
+      var _ue = document.getElementById('cr-unit-err');
+      if (!_ue && _ub) { _ue = document.createElement('div'); _ue.id = 'cr-unit-err'; _ue.style.cssText = 'font-size:10.5px;color:#cc666f;margin-top:5px'; _ue.textContent = 'Select a unit — or switch to Any unit. The truck cycle and Auto-rebuild need it.'; _ub.parentNode.appendChild(_ue); }
+      return;
+    }
 
     // Form values
     const originVal = (document.getElementById('cr-origin-input') || {}).value || '';
@@ -587,13 +596,24 @@ export function initApp() {
       if (window.CR_PICKER.cabin) {
         unit = window.CR_PICKER.cabin;
         const cabinItem = (window.CR_CABIN_LIST || []).find(function (c) { return c.id === window.CR_PICKER.cabin; });
-        if (cabinItem && cabinItem.driverName) driver = cabinItem.driverName;
+        // the driver the user picked wins over the unit's linked driver
+        const pickedDrv = window.CR_PICKER.driver && (window.CR_DRIVER_LIST || []).find(function (d) { return d.id === window.CR_PICKER.driver; });
+        if (pickedDrv) driver = pickedDrv.name; else if (cabinItem && cabinItem.driverName) driver = cabinItem.driverName;
       } else if (window.CR_PICKER.driver) {
         const driverItem = (window.CR_DRIVER_LIST || []).find(function (d) { return d.id === window.CR_PICKER.driver; });
         if (driverItem) { driver = driverItem.name; if (driverItem.cabinId) unit = driverItem.cabinId; }
       }
     }
 
+    // TONU card → closed at its pickup (0 loaded mi); keeps the DH leg into it and the time on site
+    function _crTonuOf(card) {
+      if (card.getAttribute('data-tonu') !== '1') return {};
+      var t = (card.querySelector('.cr-load-route') || {}).textContent || '', ar = t.indexOf('→');
+      var at = t.substring(0, ar).trim();
+      return { tonu: true, origin: at, dest: at, miles: 0, tonuDest: t.substring(ar + 1).trim(), tonuFrom: card.getAttribute('data-tonu-from') || at,
+        dhMi: parseInt(card.getAttribute('data-dh')) || 0, waitH: parseInt(card.getAttribute('data-wait')) || 0,
+        status: ((card.querySelector('.cr-status-pill') || {}).textContent || 'Invoiced').trim() };
+    }
     // Read selected TMS loads
     const tmsLoads = [];
     document.querySelectorAll('.cr-load-card.cr-on').forEach(function (card) {
@@ -609,7 +629,7 @@ export function initApp() {
       const meta = metaEl ? metaEl.textContent : '';
       const miM = meta.match(/(\d+)\s*mi/);
       const miles = miM ? parseInt(miM[1]) : 280;
-      tmsLoads.push({ origin: lOrig, dest: lDest, income, miles, pickup: card.getAttribute('data-pickup') || '07/30/2026', customer: card.getAttribute('data-broker') || '--', loadId: card.getAttribute('data-loadid') || null });
+      tmsLoads.push(Object.assign({ origin: lOrig, dest: lDest, income, miles, pickup: card.getAttribute('data-pickup') || '07/30/2026', customer: card.getAttribute('data-broker') || '--', loadId: card.getAttribute('data-loadid') || null }, _crTonuOf(card)));
     });
     // Cards are listed newest first; the plan needs them in cycle (chronological) order
     tmsLoads.sort(function (a, b) { var pa = a.pickup.split('/'), pb = b.pickup.split('/'); return new Date(+pa[2], +pa[0]-1, +pa[1]) - new Date(+pb[2], +pb[0]-1, +pb[1]); });
@@ -626,10 +646,11 @@ export function initApp() {
       newLoads.push({
         id: (tl.loadId && !LOADS.some(function (l) { return l.id === tl.loadId; })) ? tl.loadId : ('ef-' + newId + '-' + i),
         route: newId, origin: tl.origin || curCity, dest: tl.dest,
-        miles: tl.miles, income: tl.income, status: 'Booked',
+        miles: tl.miles, income: tl.income, status: tl.tonu ? tl.status : 'Booked',
+        tonu: tl.tonu || undefined, tonuFrom: tl.tonuFrom, tonuDest: tl.tonuDest, dhMi: tl.dhMi, waitH: tl.waitH,
         pickup: tl.pickup, pickupTime: '08:00 - 12:00',
         delivery: tl.pickup, deliveryTime: '12:00 - 16:00',
-        customer: tl.customer, eta: '--', onTime: '--', stops: 1,
+        customer: tl.customer, eta: '--', onTime: '--', stops: 1, _cycle: true,
         truck: unit !== 'Unassigned' ? unit : '--', equipment: trailerType
       });
       curCity = tl.dest;
@@ -663,8 +684,22 @@ export function initApp() {
       dispatcher: 'karen', routeDeviation: 0, fuelExcess: 0, planAdherence: 100
     };
 
-    // Unchecked cycle loads are not stashed anymore: Auto-rebuild (Plan) re-pulls the whole
-    // truck cycle from My Loads, so anything skipped here can be brought back from there.
+    // Cycle loads left unchecked here are what Auto-rebuild (Plan) offers back for this route.
+    // A unit with cycle loads and everything checked → the cycle is already complete.
+    var _cyCardsEl = document.getElementById('cr-cycle-cards');
+    if (mode === 'assign' && _cyCardsEl && _cyCardsEl.style.display !== 'none' && document.getElementById('cr-tms-block').classList.contains('cr-visible')) {
+      var _skipped = [];
+      document.querySelectorAll('.cr-load-card:not(.cr-on)').forEach(function (card) {
+        var t = (card.querySelector('.cr-load-route') || {}).textContent || '', ar = t.indexOf('→');
+        var meta = (card.querySelector('.cr-load-meta') || {}).textContent || '', mi = meta.match(/(\d+)\s*mi/);
+        var pk = card.getAttribute('data-pickup') || '07/30/2026';
+        var st = ((card.querySelector('.cr-status-pill') || {}).textContent || 'Delivered').trim();
+        _skipped.push(Object.assign({ id: card.getAttribute('data-loadid') || ('tms-' + newId), origin: t.substring(0, ar).trim(), dest: t.substring(ar + 1).trim(),
+          miles: mi ? parseInt(mi[1]) : 280, income: parseInt(((card.querySelector('.cr-load-price') || {}).textContent || '0').replace(/[$,]/g, '')) || 0,
+          status: st, pickup: pk, delivery: pk, customer: card.getAttribute('data-broker') || '--' }, _crTonuOf(card)));
+      });
+      _arSeed[newId] = _skipped;
+    }
 
     ROUTES.unshift(newRoute);
     newLoads.forEach(function (l) { LOADS.push(l); });
@@ -951,6 +986,15 @@ export function initApp() {
       window.crUpdateForecastVisibility();
     }
 
+    // Clear the "unit required" error once a unit is set; keep the route name = {unit}_{driver}_{date}
+    if (window.CR_PICKER.cabin) {
+      var _ue2 = document.getElementById('cr-unit-err'); if (_ue2) _ue2.remove();
+      var _ub2 = document.getElementById('cr-cabin-btn'); if (_ub2) { _ub2.style.borderColor = ''; _ub2.style.boxShadow = ''; }
+    }
+    var _rn = document.getElementById('cr-route-name'), _dep = (document.getElementById('cr-departure-date') || {}).value || '2026-07-30';
+    var _drvSel = window.CR_PICKER.driver && window.CR_DRIVER_LIST.find(function (d) { return d.id === window.CR_PICKER.driver; });
+    if (_rn) _rn.value = (window.CR_PICKER.cabin || 'Unassigned') + '_' + (_drvSel ? _drvSel.name.split(' ').slice(-1)[0] : 'Unassigned') + '_' + _dep;
+
     window.crClosePicker();
   };
 
@@ -1021,6 +1065,8 @@ export function initApp() {
     originInput.classList.remove('cr-filled');
     if (originSource) originSource.style.display = 'none';
     routeName.value = 'Unassigned_Unassigned_2026-07-30';
+    var _ue3 = document.getElementById('cr-unit-err'); if (_ue3) _ue3.remove();
+    var _ub3 = document.getElementById('cr-cabin-btn'); if (_ub3) { _ub3.style.borderColor = ''; _ub3.style.boxShadow = ''; }
     window.crResetPickers();
     window.crClosePicker();
     window.crUpdateForecastVisibility();
@@ -1190,7 +1236,7 @@ export function initApp() {
               <svg class="cr-tms-tooltip-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             </span>
           </span>
-          <span class="cr-count" id="cr-cycle-count">2 LOADS</span>
+          <span class="cr-count" id="cr-cycle-count">3 LOADS</span>
         </div>
         <div id="cr-cycle-cards">
         <div class="cr-load-card" onclick="crToggleLoad(this)" data-pickup="08/01/2026" data-broker="Echo Global" data-loadid="394904">
@@ -1215,7 +1261,19 @@ export function initApp() {
           </div>
           <div class="cr-load-price">$1,240</div>
         </div>
-        <div class="cr-cycle-foot">Selected loads become <b>Booked</b> lanes at the start of the plan. The cycle comes from <code>/truck-cycle/</code>, the same engine Auto-rebuild uses in the Plan.</div>
+        <div class="cr-load-card cr-load-tonu" onclick="crToggleLoad(this)" data-pickup="07/30/2026" data-broker="TQL" data-loadid="389770" data-tonu="1" data-tonu-from="San Antonio, TX" data-dh="197" data-wait="3">
+          <input type="checkbox">
+          <div class="cr-load-body">
+            <div class="cr-load-route-row">
+              <div class="cr-load-route">Houston, TX<span class="cr-arr">→</span><s>New Orleans, LA</s></div>
+              <span class="cr-tonu-tag" title="Truck Ordered Not Used — the truck drove empty to the pickup and the load was cancelled there; the TONU fee is billed">TONU</span>
+              <span class="cr-status-pill" style="background:rgba(137,229,137,.12);color:#89e589">Invoiced</span>
+            </div>
+            <div class="cr-load-meta">Pickup 07/30/2026 · DH 197 mi · 3h on site · TQL · 389770</div>
+          </div>
+          <div class="cr-load-price">$300<span class="cr-load-price-sub">TONU fee</span></div>
+        </div>
+        <div class="cr-cycle-foot">Selected loads become <b>Booked</b> lanes at the start of the plan; a <b>TONU</b> stays as is — its DH to the pickup and time on site count in the route. The cycle comes from <code>/truck-cycle/</code>, the same engine Auto-rebuild uses in the Plan.</div>
         </div>
         <div id="cr-cycle-empty" class="cr-cycle-empty" style="display:none">
           <span class="cr-cycle-empty-ic">i</span>
@@ -2423,7 +2481,7 @@ export function initApp() {
     const isPlanned = r && r.status === 'Planned';
     // In-progress: unbooked/canceled = critical. Planned: unbooked = attention. Completed: ignore.
     const unbookedCount = isCompleted ? 0 : st.loads.filter(l => l.status === 'Unbooked').length;
-    const canceledCount = isCompleted ? 0 : st.loads.filter(l => l.status === 'Canceled').length;
+    const canceledCount = isCompleted ? 0 : st.loads.filter(l => l.status === 'Canceled' && !l.tonu).length;
     const offerCount = st.loads.filter(l => l.status === 'Offer').length;
     const fuelRatio = st.income ? st.fuelExcess / st.income : 0;
     const devRatio = st.income ? st.routeDeviation / st.income : 0;
@@ -3055,7 +3113,8 @@ export function initApp() {
     function sm(v) { return (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US'); }
     let dhMiles = 0, dhCost = 0, totalMin = 0, totalFuel = 0, totalOp = 0;
     ls.forEach((l, i) => {
-      const dh = 30 + ((i * 17) % 45);
+      // TONU: the DH into its pickup is the real leg the truck drove empty (dhMi, from tonuFrom)
+      const dh = l.tonu && l.dhMi ? l.dhMi : 30 + ((i * 17) % 45);
       dhMiles += dh; dhCost += Math.round(dh * 2.4); totalMin += Math.round(dh / 55 * 60);
       const dhFuel = Math.round(dh * 0.52), dhOp = Math.round(dh * 1.88);
       totalFuel += dhFuel; totalOp += dhOp;
@@ -3063,9 +3122,9 @@ export function initApp() {
       rows.push({
         num: 'DH', numBg: 'transparent', numFg: '#666666',
         numBorder: '1px solid rgba(255,255,255,.12)', numFontSize: '10px', rowOpacity: dhRowOpacity,
-        origin: i === 0 ? l.origin : ls[i - 1].dest, originDate: 'Est. ' + prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery),
+        origin: i === 0 ? (l.tonuFrom || l.origin) : ls[i - 1].dest, originDate: 'Est. ' + prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery),
         dest: l.origin, destDate: 'Est. ' + prettyDate(l.pickup),
-        textFg: '#808080', weight: 500,
+        textFg: '#808080', weight: 500, tonuDh: !!l.tonu,
         status: 'Upcoming', statusBg: 'transparent', statusFg: '#808080', statusBorder: '1px solid rgba(255,255,255,.1)',
         mileage: dh.toLocaleString('en-US'), driving: drive(dh), income: '$0', incomeFg: '#666666',
         rpm: '--', cost: '-$' + Math.round(dh * 2.4).toLocaleString('en-US'),
@@ -3077,6 +3136,7 @@ export function initApp() {
       const isUnb = l.status === 'Unbooked';
       const lFuel = Math.round(l.miles * 0.52), lOp = Math.round(l.miles * 1.88), lTotal = Math.round(l.miles * 2.4);
       totalFuel += lFuel; totalOp += lOp;
+      if (l.tonu) totalMin += Math.round((l.waitH || 0) * 60);   // time on site counts as operating time
       const incMin = Math.round(l.miles * 2.2), incMax = Math.round(l.miles * 3.4);
       const pftMin = incMin - lTotal, pftMax = incMax - lTotal, actualPft = l.income - lTotal;
       var _lNumBg, _lNumFg, _lNumBorder, _lRowOp;
@@ -3091,15 +3151,15 @@ export function initApp() {
         num: String(i + 1), numBg: _lNumBg, numFg: _lNumFg,
         numBorder: _lNumBorder, numFontSize: '10.5px', rowOpacity: _lRowOp,
         origin: l.origin, originDate: 'Est. ' + prettyDate(l.pickup),
-        dest: l.dest, destDate: 'Est. ' + prettyDate(l.delivery),
-        textFg: '#f5f5f5', weight: 700,
+        dest: l.dest, destDate: l.tonu ? 'TONU · not delivered to ' + String(l.tonuDest || '--').split(',')[0] : 'Est. ' + prettyDate(l.delivery),
+        textFg: '#f5f5f5', weight: 700, tonu: !!l.tonu,
         status: l.status, statusBg: c[0], statusFg: c[1], statusBorder: '1px solid transparent',
-        mileage: l.miles.toLocaleString('en-US'), driving: drive(l.miles),
+        mileage: l.miles.toLocaleString('en-US'), driving: l.tonu ? (l.waitH || 0) + 'h on site' : drive(l.miles),
         income: isUnb ? (money(incMin) + ' – ' + money(incMax)) : money(l.income),
         incomeFg: isUnb ? '#808080' : '#47b26b',
-        rpm: isUnb ? '$2.20 – $3.40' : '$' + (l.miles ? l.income / l.miles : 0).toFixed(2),
-        cost: '-$' + lTotal.toLocaleString('en-US'),
-        fuelCost: '-$' + lFuel.toLocaleString('en-US'), tollCost: '$0', opCost: '-$' + lOp.toLocaleString('en-US'),
+        rpm: isUnb ? '$2.20 – $3.40' : l.tonu ? 'TONU fee' : '$' + (l.miles ? l.income / l.miles : 0).toFixed(2),
+        cost: l.tonu ? '$0' : '-$' + lTotal.toLocaleString('en-US'),
+        fuelCost: l.tonu ? '$0' : '-$' + lFuel.toLocaleString('en-US'), tollCost: '$0', opCost: l.tonu ? '$0' : '-$' + lOp.toLocaleString('en-US'),
         profitStr: isUnb ? (sm(pftMin) + ' – ' + sm(pftMax)) : sm(actualPft),
         profitFg: isUnb ? (pftMax > 0 && pftMin < 0 ? '#808080' : pftMin >= 0 ? '#47b26b' : '#cc666f') : (actualPft >= 0 ? '#47b26b' : '#cc666f'),
         isRange: isUnb, loadIdx: i
@@ -3931,7 +3991,14 @@ export function initApp() {
   const _AR_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>';
   const _AR_LOCK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
   function _arHasUnit(r) { return !!(r && r.unit && r.unit !== 'Unassigned' && r.unit !== '--'); }
-  function _arIsReal(l) { return ['Unbooked', 'Offer', 'Canceled'].indexOf(l.status) < 0; }
+  // TONU (Truck Ordered Not Used): the truck drove empty (DH) to the pickup and the load was cancelled
+  // there. The TMS bills the penalty, so it arrives as Invoiced/Paid with the TONU fee as its income.
+  // It keeps its load ID, fee and consumed time and is part of the cycle (whatever its status). Model: origin = dest = pickup (closed at real drop-off, 0 loaded mi),
+  // tonuFrom/dhMi = the DH leg into the pickup, tonuDest = consignee never reached, waitH = time on site.
+  function _arIsReal(l) { return !!l.tonu || ['Unbooked', 'Offer', 'Canceled'].indexOf(l.status) < 0; }
+  function _arPast(l) { return !!l.tonu || _AR_PAST.indexOf(l.status) >= 0; }
+  const _AR_TONU = '#e8a33d';   // amber outline tag, as in efData's load list
+  function _arTonuTagCss(dh) { return 'font-weight:800;letter-spacing:.05em;color:' + _AR_TONU + ';background:rgba(232,163,61,.1);border:1px ' + (dh ? 'dashed' : 'solid') + ' rgba(232,163,61,.55);border-radius:5px;white-space:nowrap'; }
   function _arHash(s) { return String(s).split('').reduce(function (a, c) { return (a * 31 + c.charCodeAt(0)) >>> 0; }, 7); }
   function _arD(s) { var p = String(s || '').split('/'); return new Date(+p[2], +p[0] - 1, +p[1]); }
   function _arS(d) { return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear(); }
@@ -3966,11 +4033,25 @@ export function initApp() {
     };
   }
 
+  // A synthetic TONU record: the truck deadheaded from `from` to the pickup at `at`, the load (to
+  // `consignee`) was cancelled on site → 0 loaded miles, TONU fee billed (Invoiced/Paid) as income,
+  // waiting time on duty.
+  function _arMkTonu(seed, from, at, consignee, date) {
+    return {
+      id: String(386000 + (seed % 12000)), origin: at, dest: at, miles: 0, income: 200 + (seed % 3) * 50,
+      status: seed % 2 ? 'Paid' : 'Invoiced', pickup: date, delivery: date, customer: _AR_BROKERS[seed % _AR_BROKERS.length],
+      tonu: true, tonuFrom: from, tonuDest: consignee, dhMi: _arMiles(from, at), waitH: 2 + (seed % 3)
+    };
+  }
+
   // Cycle model for a route: what Auto-rebuild proposes. Rows keep the cycle order.
   //   kind 'add'   → missing cycle load (preselected, user can untick)
   //   kind 'gap'   → load that fills a hole between two route loads
   //   kind 'route' → already in the route (shown, never duplicated)
   //   kind 'next'  → in the route but after a 34h reset → likely next cycle (flagged)
+  // Cycle loads the user skipped in Create route (truck-cycle cards left unchecked): Auto-rebuild
+  // offers exactly those back instead of inventing earlier loads. rId → [load]
+  const _arSeed = {};
   function _arModel(rId) {
     var r = routeOf(rId), ls = loadsOf(rId), real = ls.filter(_arIsReal), h = _arHash(rId);
     var rows = [], i;
@@ -3984,87 +4065,163 @@ export function initApp() {
       var st = ['Delivered', 'In Transit', 'Booked', 'Booked'];
       for (i = 0; i < 4; i++) rows.push({ kind: 'add', sel: true, load: _arMk(h + i * 11, chain[i], chain[i + 1], st[i], _arAdd(d0, i * 2), _arAdd(d0, i * 2 + 1), i >= 2) });
     } else {
-      // Anchor = the load the truck is on now; a ≥34h break after it starts the next cycle
-      var anchor = real.findIndex(function (l) { return l.status === 'In Transit' || l.status === 'Dispatched'; });
+      // Anchor = the last load that is done or in progress ("now"). A ≥34h break after it, into a
+      // load that hasn't started yet, starts the next cycle. Delivered history is never flagged.
+      var anchor = -1;
+      real.forEach(function (l, k) { if (_arPast(l) || l.status === 'In Transit' || l.status === 'Dispatched') anchor = k; });
       if (anchor < 0) anchor = 0;
       var cycleEnd = real.length;
       for (i = anchor; i < real.length - 1; i++) {
         if ((_arD(real[i + 1].pickup) - _arD(real[i].delivery)) / 864e5 >= 2) { cycleEnd = i + 1; break; }
       }
-      // Earlier cycle loads missing before the route's first load (complete the cycle backward)
-      var first = real[0];
-      var c1 = _arNear(first.origin, h + 5, [first.origin, first.dest]), c2 = _arNear(c1, h + 9, [first.origin, first.dest, c1]);
-      rows.push({ kind: 'add', sel: true, load: _arMk(h + 1, c2, c1, 'Delivered', _arAdd(first.pickup, -4), _arAdd(first.pickup, -3)) });
-      rows.push({ kind: 'add', sel: true, load: _arMk(h + 2, c1, first.origin, 'Delivered', _arAdd(first.pickup, -2), _arAdd(first.pickup, -1)) });
-      for (i = 0; i < real.length; i++) {
-        if (i >= cycleEnd) { rows.push({ kind: 'next', ref: real[i], load: real[i] }); continue; }
-        rows.push({ kind: 'route', ref: real[i], load: real[i] });
-        if (i < cycleEnd - 1 && real[i].dest !== real[i + 1].origin) {
-          rows.push({ kind: 'gap', sel: true, load: _arMk(h + 20 + i, real[i].dest, real[i + 1].origin, 'Booked', real[i].delivery, real[i + 1].pickup, false) });
+      // Earlier cycle loads missing before the route: the cards skipped in Create route if any;
+      // otherwise the TMS history before the first load — unless that history was already pulled
+      // by a previous rebuild (route starts with a cycle load) → nothing earlier to add.
+      var earlier;
+      if (_arSeed[rId]) {
+        earlier = _arSeed[rId].filter(function (sl) { return !ls.some(function (l) { return l.id === sl.id; }); });
+      } else if (real[0]._cycle) {
+        earlier = [];
+      } else {
+        var first = real[0];
+        // the truck was where the first lane starts — for a TONU, where its DH leg started
+        var start = first.tonu ? (first.tonuFrom || first.origin) : first.origin;
+        var c1 = _arNear(start, h + 5, [start, first.origin, first.dest]), c2 = _arNear(c1, h + 9, [start, first.origin, first.dest, c1]);
+        // History before the route: the truck deadheaded from c2 to a pickup at c1 that ended in a TONU,
+        // then hauled c1 → the route's first origin.
+        earlier = [_arMkTonu(h + 1, c2, c1, _arNear(c1, h + 3, [c1, c2, first.origin]), _arAdd(first.pickup, -3)),
+                   _arMk(h + 2, c1, start, 'Delivered', _arAdd(first.pickup, -2), _arAdd(first.pickup, -1))];
+      }
+      // Merge missing loads with the route's cycle loads by pickup date (stable), then flag the rest
+      var cycle = real.slice(0, cycleEnd).map(function (l) { return { kind: 'route', ref: l, load: l }; });
+      earlier.forEach(function (sl) {
+        var at = cycle.findIndex(function (x) { return _arD(x.load.pickup) > _arD(sl.pickup); });
+        var row = { kind: 'add', sel: true, load: sl };
+        if (at < 0) cycle.push(row); else cycle.splice(at, 0, row);
+      });
+      for (i = 0; i < cycle.length; i++) {
+        rows.push(cycle[i]);
+        // a TONU's own DH leg already covers the way into its pickup → never a gap before it
+        if (i < cycle.length - 1 && !cycle[i + 1].load.tonu && cycle[i].load.dest !== cycle[i + 1].load.origin) {
+          rows.push({ kind: 'gap', sel: true, load: _arMk(h + 20 + i, cycle[i].load.dest, cycle[i + 1].load.origin, 'Booked', cycle[i].load.delivery, cycle[i + 1].load.pickup, false) });
         }
       }
+      for (i = cycleEnd; i < real.length; i++) rows.push({ kind: 'next', ref: real[i], load: real[i] });
     }
     var cyc = rows.filter(function (x) { return x.kind !== 'next'; });
     var pickupFrom = cyc.reduce(function (m, x) { return _arD(x.load.pickup) < _arD(m) ? x.load.pickup : m; }, cyc[0].load.pickup);
     var dropUntil = cyc.reduce(function (m, x) { return _arD(x.load.delivery) > _arD(m) ? x.load.delivery : m; }, cyc[0].load.delivery);
-    // Dedup: a load of this unit's cycle that is already assigned to another route (hidden + blocked)
-    var others = ROUTES.filter(function (x) { return x.id !== rId && _arHasUnit(x); });
-    var other = others[h % Math.max(1, others.length)] || { id: 'R-2189' };
-    var hc1 = _arPickCity(h + 13, []), hc2 = _arNear(hc1, h + 17, [hc1]);
-    var hidden = [Object.assign(_arMk(h + 40, hc1, hc2, 'Booked', _arAdd(pickupFrom, 1), _arAdd(pickupFrom, 2)), { otherRoute: other.id })];
-    var divIdx = rows.findIndex(function (x) { return x.kind !== 'next' && _AR_PAST.indexOf(x.load.status) < 0; });
+    // Dedup: a load of this unit's cycle already assigned to another route of the unit (hidden + blocked).
+    // Only when there is another route with a unit to point at.
+    var others = ROUTES.filter(function (x) { return x.id !== rId && _arHasUnit(x) && x.status !== 'Completed'; });
+    var hidden = [];
+    if (others.length) {
+      var hc1 = _arPickCity(h + 13, []), hc2 = _arNear(hc1, h + 17, [hc1]);
+      hidden.push(Object.assign(_arMk(h + 40, hc1, hc2, 'Booked', _arAdd(pickupFrom, 1), _arAdd(pickupFrom, 2)), { otherRoute: others[h % others.length].id }));
+    }
+    var divIdx = rows.findIndex(function (x) { return x.kind !== 'next' && !_arPast(x.load); });
+    var placeholders = ls.filter(function (l) { return l.status === 'Unbooked'; });
+    var firstRealIdx = ls.findIndex(_arIsReal);
     return {
       rId: rId, route: r, variant: variant, rows: rows, hidden: hidden, pickupFrom: pickupFrom, dropUntil: dropUntil, divIdx: divIdx,
-      hasGap: rows.some(function (x) { return x.kind === 'gap'; }), hasNext: rows.some(function (x) { return x.kind === 'next'; })
+      tonu: rows.filter(function (x) { return x.kind !== 'next' && x.load.tonu; }),
+      hasGap: rows.some(function (x) { return x.kind === 'gap'; }), hasNext: rows.some(function (x) { return x.kind === 'next'; }),
+      upToDate: !rows.some(function (x) { return x.kind === 'add' || x.kind === 'gap'; }),
+      // plan placeholders the rebuild supersedes: all of them on an empty route, the ones before the first confirmed load otherwise
+      replaced: variant === 'empty' ? placeholders.length : ls.slice(0, Math.max(0, firstRealIdx)).filter(function (l) { return l.status === 'Unbooked'; }).length
     };
   }
 
   // Apply the selection to the route: insert the chosen cycle loads in cycle order, keep the
   // route's own loads untouched (no duplicates), optionally drop the flagged next-cycle load.
+  // Plan placeholders (Unbooked) superseded by the cycle are dropped; Offer/Canceled are kept.
+  // Returns { added, snap } — snap restores the route exactly as it was (Undo).
   function _arApply(m, removeNext) {
     var rId = m.rId, r = routeOf(rId), cur = loadsOf(rId);
+    var snap = {
+      rId: rId, at: LOADS.findIndex(function (l) { return l.route === rId; }),
+      loads: cur.map(function (l) { return Object.assign({}, l); }),
+      status: r.status, dateStart: r.dateStart, dateEnd: r.dateEnd, done: _arDone[rId] || null
+    };
     var mk = function (x) {
       return Object.assign({}, x.load, {
         route: rId, pickupTime: '08:00 - 12:00', deliveryTime: '12:00 - 16:00', eta: '--', onTime: '--', stops: 1,
         truck: r.unit, equipment: r.trailer || '--', equipmentType: r.equipmentType || 'Van', _cycle: true
       });
     };
-    var out = [], added = 0, gaps = 0, removed = 0;
+    var out = [], added = 0, gaps = 0, earlier = 0, removed = 0;
     m.rows.forEach(function (x) {
       if (x.kind === 'route') out.push(x.ref);
       else if (x.kind === 'next') { if (removeNext) removed++; else out.push(x.ref); }
-      else if (x.sel) { out.push(mk(x)); added++; if (x.kind === 'gap') gaps++; }
+      else if (x.sel) { out.push(mk(x)); added++; if (x.kind === 'gap') gaps++; else earlier++; }
     });
-    // Plan placeholders (Unbooked/Offer) stay after the cycle on a route that already had loads;
-    // an empty route is rebuilt from the cycle alone.
-    if (m.variant === 'has') cur.forEach(function (l) { if (!_arIsReal(l)) out.push(l); });
-    var at = LOADS.findIndex(function (l) { return l.route === rId; });
+    var firstReal = cur.findIndex(_arIsReal);
+    cur.forEach(function (l, k) {
+      if (_arIsReal(l)) return;
+      if (l.status === 'Unbooked' && (m.variant === 'empty' || k < firstReal)) return;   // superseded by the cycle
+      out.push(l);
+    });
+    var at = snap.at;
     for (var i = LOADS.length - 1; i >= 0; i--) if (LOADS[i].route === rId) LOADS.splice(i, 1);
     if (at < 0 || at > LOADS.length) at = LOADS.length;
     Array.prototype.splice.apply(LOADS, [at, 0].concat(out));
-    // Re-chain trailing Unbooked lanes so they start where the cycle ends
+    // Re-chain trailing Unbooked lanes so they start where the cycle ends; a TONU's DH leg starts
+    // where the truck was before it (the previous lane's destination)
     var prev = null;
-    loadsOf(rId).forEach(function (l) { if (l.status === 'Unbooked' && prev) l.origin = prev; prev = l.dest; });
-    if (out.some(function (l) { return ['Delivered', 'In Transit', 'Dispatched'].indexOf(l.status) >= 0; }) && r.status === 'Planned') r.status = 'In progress';
-    var firstNow = out.find(function (l) { return _AR_PAST.indexOf(l.status) < 0; });
-    var earlier = m.rows.filter(function (x) { return x.kind === 'add' && x.sel; }).length;
-    var note = m.variant === 'empty'
-      ? '<b>Cycle rebuilt.</b> ' + added + ' cycle load' + (added === 1 ? '' : 's') + ' pulled from My Loads for Unit ' + r.unit + ' — Delivered/in-transit lanes come from the TMS as-is; Booked lanes stay editable.'
-      : '<b>Cycle completed.</b> ' + (earlier ? earlier + ' earlier load' + (earlier === 1 ? ' was' : 's were') + ' prepended' : 'No earlier loads added') +
-        (gaps ? ' and ' + gaps + ' intermediate load' + (gaps === 1 ? '' : 's') + ' filled the gap' : '') +
-        '; the loads already in the route were not duplicated.' +
+    loadsOf(rId).forEach(function (l) {
+      if (l.status === 'Unbooked' && prev) l.origin = prev;
+      if (l.tonu && prev && l.tonuFrom !== prev) { l.tonuFrom = prev; l.dhMi = _arMiles(prev, l.origin); }
+      prev = l.dest;
+    });
+    if (out.some(function (l) { return l.tonu || ['Delivered', 'In Transit', 'Dispatched'].indexOf(l.status) >= 0; }) && r.status === 'Planned') r.status = 'In progress';
+    // Keep the route's period in sync with its lanes (route list + header read these)
+    var fmt = function (s) { var d = _arD(s); return _AR_MONTHS[d.getMonth()] + ' ' + ('0' + d.getDate()).slice(-2) + ' / ' + d.getFullYear(); };
+    var all = loadsOf(rId);
+    if (all.length) {
+      r.dateStart = fmt(all.reduce(function (mn, l) { return _arD(l.pickup) < _arD(mn) ? l.pickup : mn; }, all[0].pickup));
+      r.dateEnd = fmt(all.reduce(function (mx, l) { return _arD(l.delivery) > _arD(mx) ? l.delivery : mx; }, all[0].delivery));
+    }
+    var firstNow = out.find(function (l) { return _arIsReal(l) && !_arPast(l); });
+    var tonuAdded = m.rows.filter(function (x) { return (x.kind === 'add' || x.kind === 'gap') && x.sel && x.load.tonu; }).length;
+    var tonuTxt = tonuAdded ? ' Includes ' + tonuAdded + ' <b>TONU</b> lane' + (tonuAdded === 1 ? '' : 's') + ' (DH to the pickup + time on site, TONU fee as income).' : '';
+    var repl = m.replaced ? ' ' + m.replaced + ' planned (Unbooked) lane' + (m.replaced === 1 ? ' was' : 's were') + ' replaced by the cycle.' : '';
+    var note;
+    if (m.variant === 'empty') {
+      note = '<b>Cycle rebuilt.</b> ' + added + ' cycle load' + (added === 1 ? '' : 's') + ' pulled from My Loads for Unit ' + r.unit + '.' + repl + ' Delivered/in-transit lanes come from the TMS as-is; Booked lanes stay editable.' + tonuTxt;
+    } else if (!added) {
+      note = '<b>Plan updated.</b> ' + (m.upToDate ? 'Nothing was missing from the cycle.' : 'No cycle loads were added.') + (removed ? ' The next-cycle load was <b>removed from the current plan</b> — it stays available for the next cycle.' : '');
+    } else {
+      note = '<b>Cycle completed.</b> ' + (earlier ? earlier + ' missing cycle load' + (earlier === 1 ? ' was' : 's were') + ' added' : '') +
+        (gaps ? (earlier ? ' and ' : '') + gaps + ' load' + (gaps === 1 ? '' : 's') + ' filled a gap between lanes' : '') +
+        '; the loads already in the route were not duplicated.' + tonuTxt + repl +
         (removed ? ' The next-cycle load was <b>removed from the current plan</b>.' : '');
+    }
     _arDone[rId] = { note: note, dividerId: firstNow ? firstNow.id : null };
-    return added;
+    return { added: added, removed: removed, snap: snap };
+  }
+  function _arUndo(snap) {
+    var rId = snap.rId, r = routeOf(rId);
+    for (var i = LOADS.length - 1; i >= 0; i--) if (LOADS[i].route === rId) LOADS.splice(i, 1);
+    var at = snap.at < 0 || snap.at > LOADS.length ? LOADS.length : snap.at;
+    Array.prototype.splice.apply(LOADS, [at, 0].concat(snap.loads));
+    r.status = snap.status; r.dateStart = snap.dateStart; r.dateEnd = snap.dateEnd;
+    if (snap.done) _arDone[rId] = snap.done; else delete _arDone[rId];
   }
 
-  function _arToast(msg) {
+  function _arToast(msg, onUndo) {
     var ex = document.getElementById('_ef-ar-toast'); if (ex) ex.remove();
     var t = document.createElement('div'); t.id = '_ef-ar-toast';
     t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9600;display:flex;align-items:center;gap:9px;padding:11px 16px;border-radius:12px;background:#292929;border:1px solid rgba(46,153,117,.45);box-shadow:0 16px 40px rgba(0,0,0,.55);font:800 12.5px \'General Sans\', Nunito, system-ui;color:#e6e6e6';
     t.innerHTML = '<span style="color:#47b26b;display:flex">' + _AR_ICON + '</span>' + msg;
+    if (onUndo) {
+      var u = document.createElement('span');
+      u.style.cssText = 'margin-left:6px;padding:5px 11px;border-radius:8px;border:1px solid rgba(102,136,204,.4);color:#6688cc;cursor:pointer';
+      u.textContent = 'Undo';
+      u.addEventListener('click', function () { t.remove(); onUndo(); });
+      t.appendChild(u);
+    }
     document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, 4200);
+    setTimeout(function () { t.remove(); }, onUndo ? 8000 : 4200);
   }
 
   function _arRunBusy(then) {
@@ -4086,6 +4243,7 @@ export function initApp() {
     var m = _arModel(rId), r = m.route;
     var removeNext = false, showHidden = false;
     var title = m.variant === 'empty' ? 'pull cycle from My Loads'
+      : m.upToDate ? (m.hasNext ? 'cycle is up to date (route has a next-cycle load)' : 'cycle is up to date')
       : m.hasGap ? 'fill every gap in the cycle'
       : m.hasNext ? 'complete the cycle (route has a next-cycle load)'
       : 'complete the cycle (route already has loads)';
@@ -4104,7 +4262,8 @@ export function initApp() {
     var pill = function (st) { var c = STATUS[st] || STATUS.Booked; return '<span style="display:inline-block;font:800 10px ' + F + ';padding:3px 9px;border-radius:999px;background:' + c[0] + ';color:' + c[1] + ';white-space:nowrap">' + st + '</span>'; };
     var src = function (id) { return /^ef-/.test(id) ? '<span title="efRouting internal" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(46,153,117,.18);color:#47b26b;font:900 8.5px ' + F + ';flex-shrink:0">ef</span>' : '<span title="Datatruck (TMS)" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(102,136,204,.18);color:#6688cc;font:900 8.5px ' + F + ';flex-shrink:0">DT</span>'; };
     var tag = function (t, c) { return '<span style="font:800 8.5px ' + F + ';letter-spacing:.03em;text-transform:uppercase;color:' + c + ';background:' + c + '1f;border:1px solid ' + c + '55;padding:1px 6px;border-radius:999px;white-space:nowrap">' + t + '</span>'; };
-    var rpm = function (l) { return '$' + (l.income / Math.max(1, l.miles)).toFixed(2) + '/mi'; };
+    var rpm = function (l) { return l.tonu ? 'TONU fee' : '$' + (l.income / Math.max(1, l.miles)).toFixed(2) + '/mi'; };
+    var tonuTag = function () { return '<span title="Truck Ordered Not Used — the truck drove empty to the pickup and the load was cancelled there; the TONU fee is billed" style="font:800 9px ' + F + ';padding:1px 6px;' + _arTonuTagCss(false) + '">TONU</span>'; };
 
     function render() {
       modal.innerHTML = '';
@@ -4114,6 +4273,9 @@ export function initApp() {
       var nextN = m.rows.filter(function (x) { return x.kind === 'next'; }).length;
       var inc = selRows.reduce(function (s, x) { return s + x.load.income; }, 0);
       var mi = selRows.reduce(function (s, x) { return s + x.load.miles; }, 0);
+      var selTonu = selRows.filter(function (x) { return x.load.tonu; });
+      var tonuDh = selTonu.reduce(function (s, x) { return s + (x.load.dhMi || 0); }, 0);
+      var tonuH = selTonu.reduce(function (s, x) { return s + (x.load.waitH || 0); }, 0);
       var drv = r.driver && r.driver !== 'Unassigned' ? r.driver : '—';
       // ── top bar ──
       var top = document.createElement('div');
@@ -4129,7 +4291,8 @@ export function initApp() {
       var ctxF = function (ic, k, v) { return '<div style="display:flex;align-items:center;gap:9px;padding:0 16px;border-left:1px solid rgba(255,255,255,.08)">' + ic + '<div><div style="font:700 9.5px ' + F + ';color:#808080;text-transform:uppercase;letter-spacing:.05em">' + k + '</div><div style="font:800 12.5px ' + F + ';color:#e6e6e6;margin-top:2px">' + v + '</div></div></div>'; };
       var det = m.variant === 'empty'
         ? '<span style="color:#47b26b">✓ Filters applied from the route</span><br><b style="color:#e6e6e6">' + m.rows.length + ' cycle loads</b>'
-        : 'Cycle detected → <b style="color:#e6e6e6">' + addRows.length + ' load' + (addRows.length === 1 ? '' : 's') + ' to add</b> · ' + inRoute + ' already in the route' + (nextN ? ' · ' + nextN + ' next-cycle (flagged)' : '') + ' · ' + m.hidden.length + ' hidden (in another route)';
+        : (m.upToDate ? '<span style="color:#47b26b">✓ Cycle up to date</span> → <b style="color:#e6e6e6">nothing missing</b>' : 'Cycle detected → <b style="color:#e6e6e6">' + addRows.length + ' load' + (addRows.length === 1 ? '' : 's') + ' to add</b>') +
+          ' · ' + inRoute + ' already in the route' + (m.tonu.length ? ' · <span style="color:' + _AR_TONU + '">' + m.tonu.length + ' TONU</span>' : '') + (nextN ? ' · ' + nextN + ' next-cycle (flagged)' : '') + (m.hidden.length ? ' · ' + m.hidden.length + ' hidden (in another route)' : '');
       var ctx = document.createElement('div');
       ctx.style.cssText = 'display:flex;align-items:center;padding:12px 18px;background:rgba(46,153,117,.06);border-bottom:1px solid rgba(255,255,255,.07);flex:none;flex-wrap:wrap;row-gap:8px';
       ctx.innerHTML = '<div style="display:flex;align-items:center;gap:7px;padding-right:16px;font:800 12px ' + F + ';color:#e6e6e6">Cycle <span style="font:900 9px ' + F + ';color:#141414;background:#2e9975;padding:2px 6px;border-radius:5px">AUTO</span></div>' +
@@ -4150,7 +4313,7 @@ export function initApp() {
       var leg = document.createElement('div');
       leg.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 18px;font:600 11px ' + F + ';color:#808080;flex:none';
       leg.innerHTML = '<span style="font:800 9.5px ' + F + ';text-transform:uppercase;letter-spacing:.05em;color:#666666">Source</span>' + src('1') + 'Datatruck (TMS)<span style="color:#444">·</span>' + src('ef-') + 'efRouting internal<span style="flex:1"></span>' +
-        '<span class="_ar-hid" style="cursor:pointer;color:#6688cc;font-weight:800">👁 ' + (showHidden ? 'Hide' : 'Show') + ' loads already in another route (' + m.hidden.length + ')</span>';
+        (m.hidden.length ? '<span class="_ar-hid" style="cursor:pointer;color:#6688cc;font-weight:800">👁 ' + (showHidden ? 'Hide' : 'Show') + ' loads already in another route (' + m.hidden.length + ')</span>' : '');
       modal.appendChild(leg);
       // ── table ──
       var body = document.createElement('div');
@@ -4179,8 +4342,11 @@ export function initApp() {
         var tg = k === 'route' ? tag('in this route', '#808080') : k === 'gap' ? tag('fills gap', '#5bbccb') : k === 'next' ? tag(removeNext ? 'will be removed' : 'possibly next cycle', '#b28835') : '';
         el2.innerHTML = '<div>' + ck + '</div>' +
           '<div style="display:flex;align-items:center;gap:6px;min-width:0;padding:9px 6px 9px 0">' + src(l.id) + '<span style="font:700 11px &quot;JetBrains Mono&quot;, monospace;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + l.id + '</span></div>' +
-          cell(l.origin) + cell(l.dest) + cell(l.miles.toLocaleString('en-US') + ' mi') + cell(money(l.income), rpm(l), '#47b26b') +
-          '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:7px 6px 7px 0">' + pill(l.status) + tg + '</div>' +
+          (l.tonu
+            ? cell(l.origin, 'DH from ' + String(l.tonuFrom || '--').split(',')[0]) + cell('<s style="color:#808080">' + (l.tonuDest || l.dest) + '</s>', 'not delivered') + cell('0 mi', 'DH ' + (l.dhMi || 0).toLocaleString('en-US') + ' mi', '#808080')
+            : cell(l.origin) + cell(l.dest) + cell(l.miles.toLocaleString('en-US') + ' mi')) +
+          cell(money(l.income), rpm(l), '#47b26b') +
+          '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:7px 6px 7px 0"><span style="display:flex;align-items:center;gap:4px">' + pill(l.status) + (l.tonu ? tonuTag() : '') + '</span>' + tg + '</div>' +
           cell(_arMD(l.pickup)) + cell(_arMD(l.delivery)) + cell(l.customer || '--', null, '#b3b3b3') +
           '<div><span style="width:22px;height:22px;border-radius:50%;background:#2e5299;color:#e6e6e6;display:inline-grid;place-items:center;font:800 8.5px ' + F + '">' + _arInitials(r.driver) + '</span></div>' + cell(r.unit, null, '#b3b3b3');
         if (toggleable) el2.addEventListener('click', function () { x.sel = !x.sel; render(); });
@@ -4216,7 +4382,7 @@ export function initApp() {
       }
       var pager = document.createElement('div');
       pager.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 18px;font:600 11px ' + F + ';color:#808080;min-width:1000px';
-      pager.innerHTML = '<span>Showing 1-' + m.rows.length + ' of ' + m.rows.length + ' <span style="color:#666666">(Unit ' + r.unit + ' cycle · ' + addRows.length + ' to add' + (inRoute ? ' · ' + inRoute + ' in route' : '') + (nextN ? ' · ' + nextN + ' next-cycle' : '') + ' · ' + m.hidden.length + ' hidden in another route)</span></span><span style="flex:1"></span><span>‹</span><span style="padding:2px 8px;border-radius:6px;background:#2e9975;color:#141414;font-weight:800">1</span><span>›</span><span style="margin-left:8px">Rows: 10 ▾</span>';
+      pager.innerHTML = '<span>Showing 1-' + m.rows.length + ' of ' + m.rows.length + ' <span style="color:#666666">(Unit ' + r.unit + ' cycle · ' + addRows.length + ' to add' + (inRoute ? ' · ' + inRoute + ' in route' : '') + (nextN ? ' · ' + nextN + ' next-cycle' : '') + (m.hidden.length ? ' · ' + m.hidden.length + ' hidden in another route' : '') + ')</span></span><span style="flex:1"></span><span>‹</span><span style="padding:2px 8px;border-radius:6px;background:#2e9975;color:#141414;font-weight:800">1</span><span>›</span><span style="margin-left:8px">Rows: 10 ▾</span>';
       body.appendChild(pager);
       modal.appendChild(body);
       // ── metrics ──
@@ -4224,20 +4390,24 @@ export function initApp() {
       var mm = document.createElement('div');
       mm.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,.08);background:#1f1f1f;flex:none';
       mm.innerHTML = m.variant === 'empty'
-        ? met('Total Loads', selRows.length) + met('Total Income', money(inc), '#47b26b') + met('Avg RPM', mi ? '$' + (inc / mi).toFixed(2) : '--') + met('Total Loaded Miles', mi.toLocaleString('en-US') + ' mi') + met('Avg Income/Load', selRows.length ? money(Math.round(inc / selRows.length)) : '$0')
-        : met('Loads to add', selRows.length) + met('Added income', money(inc), '#47b26b') + met('Avg RPM', mi ? '$' + (inc / mi).toFixed(2) : '--') + met('Added miles', mi.toLocaleString('en-US') + ' mi') + met('Already in route', inRoute) + (nextN ? met('Next cycle', removeNext ? 0 : nextN, '#d0a038') : '') + met('In another route', m.hidden.length, '#cc666f');
+        ? met('Total Loads', selRows.length) + met('Total Income', money(inc), '#47b26b') + met('Avg RPM', mi ? '$' + (inc / mi).toFixed(2) : '--') + met('Total Loaded Miles', mi.toLocaleString('en-US') + ' mi') + met('Avg Income/Load', selRows.length ? money(Math.round(inc / selRows.length)) : '$0') + (selTonu.length ? met('TONU', selTonu.length + ' · ' + tonuDh + ' mi DH · ' + tonuH + 'h', _AR_TONU) : '')
+        : met('Loads to add', selRows.length) + met('Added income', money(inc), '#47b26b') + met('Avg RPM', mi ? '$' + (inc / mi).toFixed(2) : '--') + met('Added miles', mi.toLocaleString('en-US') + ' mi') + (selTonu.length ? met('TONU', selTonu.length + ' · ' + tonuDh + ' mi DH · ' + tonuH + 'h', _AR_TONU) : '') + met('Already in route', inRoute) + (nextN ? met('Next cycle', removeNext ? 0 : nextN, '#d0a038') : '') + (m.hidden.length ? met('In another route', m.hidden.length, '#cc666f') : '');
       mm.firstChild.style.borderLeft = 'none';
       modal.appendChild(mm);
       // ── CTA ──
       var note = m.variant === 'empty' ? 'Empty route → no conflicts or duplicates. Delivered/in-transit loads come from the TMS as-is; Booked loads stay editable.'
+        : m.upToDate ? 'This route already holds every load of the truck’s current cycle.' + (m.hasNext ? ' You can still take the next-cycle load out of the current plan.' : '')
         : m.hasNext ? 'The next-cycle load isn’t pre-selected; it stays in the route and you’re informed here.'
         : m.hasGap ? 'Fills earlier and intermediate gaps; loads already in the route are not duplicated.'
         : 'Only the missing earlier loads are added; loads already in the route are not duplicated.';
       var cta = document.createElement('div');
       cta.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid rgba(255,255,255,.08);flex:none';
-      cta.innerHTML = '<span style="flex:1;font:600 11px ' + F + ';color:#808080">' + note + ' Loads already assigned to another route of this Unit are hidden and blocked — a load can’t be in two routes at once.</span>' +
+      var tonuNote = m.tonu.length ? '<div style="margin-top:4px;color:#b3b3b3"><span style="color:' + _AR_TONU + ';font-weight:800">TONU</span> loads (Invoiced/Paid with the TONU fee) stay in the cycle: the truck drove empty (DH) to the pickup and waited on site, so those miles and hours count toward the route and HOS, and the fee is the load’s income.</div>' : '';
+      var warn = m.replaced ? '<div style="margin-top:4px;color:#d0a038;font-weight:700">⚠ ' + m.replaced + ' planned (Unbooked) lane' + (m.replaced === 1 ? '' : 's') + ' of this route will be replaced by the cycle. You can undo right after.</div>' : '';
+      var goLbl = selRows.length ? 'Rebuild route (' + selRows.length + ') →' : (removeNext ? 'Update route →' : (m.upToDate ? 'Nothing to add' : 'Select loads to add'));
+      cta.innerHTML = '<span style="flex:1;font:600 11px ' + F + ';color:#808080">' + note + (m.hidden.length ? ' Loads already assigned to another route of this Unit are hidden and blocked — a load can’t be in two routes at once.' : '') + tonuNote + warn + '</span>' +
         '<button class="_ar-x" style="padding:9px 16px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,.14);color:#b3b3b3;font:800 12px ' + F + ';cursor:pointer">Cancel</button>' +
-        '<button class="_ar-go" style="padding:9px 18px;border-radius:10px;border:none;background:#2e9975;color:#141414;font:800 12.5px ' + F + ';cursor:pointer;white-space:nowrap;' + (selRows.length || removeNext ? '' : 'opacity:.45;pointer-events:none') + '">Rebuild route (' + selRows.length + ') →</button>';
+        '<button class="_ar-go" style="padding:9px 18px;border-radius:10px;border:none;background:#2e9975;color:#141414;font:800 12.5px ' + F + ';cursor:pointer;white-space:nowrap;' + (selRows.length || removeNext ? '' : 'opacity:.45;pointer-events:none') + '">' + goLbl + '</button>';
       modal.appendChild(cta);
       // wiring
       modal.querySelectorAll('._ar-x').forEach(function (b) { b.addEventListener('click', close); });
@@ -4246,10 +4416,12 @@ export function initApp() {
       modal.querySelector('._ar-go').addEventListener('click', function () {
         close();
         _arRunBusy(function () {
-          var n = _arApply(m, removeNext);
+          var res = _arApply(m, removeNext), n = res.added;
           if (opts.onDone) opts.onDone(n);
           setState({ openRoute: rId, view: 'routes', detailTab: 'plan' });
-          _arToast('Route rebuilt — ' + n + ' lane' + (n === 1 ? '' : 's') + ' pulled from the cycle');
+          _arToast(n ? 'Route rebuilt — ' + n + ' lane' + (n === 1 ? '' : 's') + ' pulled from the cycle' : 'Plan updated — next-cycle load removed', function () {
+            _arUndo(res.snap); setState({}); _arToast('Auto-rebuild undone — route restored');
+          });
         });
       });
     }
@@ -4322,6 +4494,12 @@ export function initApp() {
     b.innerHTML = (ok ? _AR_ICON : _AR_LOCK) + '<span>Auto-rebuild</span>' +
       '<span style="font:900 8.5px ' + F + ';letter-spacing:.04em;padding:2px 5px;border-radius:5px;' + (ok ? 'background:#141414;color:#47b26b' : 'background:rgba(255,255,255,.08);color:#808080') + '">NEW</span>';
     if (ok) b.addEventListener('click', function (e) { e.stopPropagation(); _openAutoRebuild(rId, opts); });
+    else if (r.status !== 'Completed') {
+      // No unit: the locked pill is still actionable → assign one, then it unlocks
+      b.style.cursor = 'pointer';
+      b.title += ' Click to assign one.';
+      b.addEventListener('click', function (e) { e.stopPropagation(); _arOpenAssign(rId, function () { setState({}); if (opts.onAssigned) opts.onAssigned(); }); });
+    }
     return b;
   }
 
@@ -9035,6 +9213,14 @@ export function initApp() {
             _badge.textContent = row.status;
           }
           _stCell.appendChild(_badge);
+          if (row.tonu || row.tonuDh) {
+            // TONU: the load row (0 loaded mi, time on site, fee) and the DH that drove empty into its pickup
+            var _tn = document.createElement('span');
+            _tn.title = row.tonu ? 'Truck Ordered Not Used — the load was cancelled at the pickup and the TONU fee billed. Kept in the route: fee as income, time on site as operating time.' : 'Deadhead driven to a pickup that ended in a TONU — real miles, kept in the route';
+            _tn.style.cssText = 'display:inline-block;margin-left:5px;vertical-align:middle;font-family:"General Sans", Nunito, system-ui;font-size:9px;padding:1px 6px;' + _arTonuTagCss(!row.tonu);
+            _tn.textContent = row.tonu ? 'TONU' : 'TO TONU';
+            _stCell.appendChild(_tn);
+          }
           if (row.status === 'In Transit' && row.loadIdx !== null) {
             var _ltt = loadsOf(routeId)[row.loadIdx];
             if (_ltt) {
@@ -9415,7 +9601,7 @@ export function initApp() {
         return box('rgba(46,153,117,.3)', '#1f1f1f', [
           el('div', { style: { flex: '1' } }, [
             el('div', { style: { font: '800 13px ' + FB, color: '#f5f5f5' } }, ['This route has no confirmed loads yet']),
-            el('div', { style: { font: '600 11.5px ' + FB, color: '#808080', marginTop: '3px', lineHeight: '1.45' }, html: 'It has Unit <b style="color:#e6e6e6">' + r.unit + '</b>' + drv + ' assigned and origin date <b style="color:#e6e6e6">' + when + '</b>. Use Auto-rebuild to pull the cycle from the TMS with those filters already applied.' })
+            el('div', { style: { font: '600 11.5px ' + FB, color: '#808080', marginTop: '3px', lineHeight: '1.45' }, html: 'It has Unit <b style="color:#e6e6e6">' + r.unit + '</b>' + drv + ' assigned and origin date <b style="color:#e6e6e6">' + when + '</b>. Use Auto-rebuild to pull the cycle from the TMS with those filters already applied.' + (loadsOf(routeId).some(function (l) { return l.status === 'Unbooked'; }) ? ' Its planned (Unbooked) lanes will be replaced by the cycle — you can undo it.' : '') })
           ]),
           _arButton(routeId, { margin: '0', big: true })
         ]);
@@ -9757,13 +9943,16 @@ export function initApp() {
     'Paid':        { label: 'Paid',        color: '#89e589', bg: 'rgba(46,153,117,.20)', ic: _OR_LST_IC.dollar },
     'Upcoming':    { label: 'Upcoming',    color: '#808080', bg: 'transparent',          ic: _OR_LST_IC.clock },
     'In progress': { label: 'In Progress', color: '#6688cc', bg: 'rgba(102,136,204,.12)', ic: _OR_LST_IC.spin },
-    'Completed':   { label: 'Completed',   color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.check }
+    'Completed':   { label: 'Completed',   color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.check },
+    // TONU: load cancelled at the pickup — closed there, 0 loaded mi (fixed, not part of the lifecycle)
+    'TONU':        { label: 'TONU',        color: '#e8a33d', bg: 'rgba(232,163,61,.12)', ic: _OR_LST_IC.check }
   };
   const _orLaneStatusOverride = {};   // manually-set lifecycle status per lane (maquetado)
   function _orLaneStatusGet(routeId, key, exec) {
     const ov = _orLaneStatusOverride[routeId] && _orLaneStatusOverride[routeId][key];
     if (ov) return ov;
     const isLoad = String(key).charAt(0) === 'L';
+    if (isLoad) { const _tl = loadsOf(routeId)[+String(key).slice(1)]; if (_tl && _tl.tonu) return 'TONU'; }
     if (isLoad) return exec === 'Completed' ? 'Delivered' : exec === 'In progress' ? 'In Transit' : exec === 'Booked' ? 'Booked' : 'Upcoming';
     return exec === 'Completed' ? 'Completed' : exec === 'In progress' ? 'In progress' : 'Upcoming';
   }
@@ -9777,7 +9966,7 @@ export function initApp() {
     const closing = isLoad ? 'Delivered' : 'Completed';
     const active = isLoad ? 'In Transit' : 'In progress';
     const curIdx = flow.indexOf(current);
-    const locked = !isLoad && current === 'Completed';   // deadhead closed → no changes
+    const locked = (!isLoad && current === 'Completed') || current === 'TONU';   // deadhead closed / TONU → no changes
     const ex = document.getElementById('or-lane-menu'); if (ex) ex.remove();
     const rect = anchorEl.getBoundingClientRect();
     const _pick = (s) => {
@@ -13954,7 +14143,7 @@ export function initApp() {
     }
     let loadNum = 0;
     ls.forEach((l, i) => {
-      const prevDest = i === 0 ? l.origin : ls[i - 1].dest;
+      const prevDest = i === 0 ? (l.tonuFrom || l.origin) : ls[i - 1].dest;
       const dhExec = execOf(l.status) === 'In progress' ? 'In progress'
         : execOf(l.status) === 'Completed' ? 'Completed'
         : 'Upcoming';
