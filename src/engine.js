@@ -297,7 +297,7 @@ export function initApp() {
     openRoute: null,
     drawerTab: 'Load',
     columnOrder: LOAD_COLS_DEFS.map(c => c.key),
-    hiddenCols: new Set(),
+    hiddenCols: new Set(['route']),   // «Related route» hidden by default in My Loads (can be re-enabled from Columns)
     routeColumnOrder: ROUTE_COLS_DEFS.map(c => c.key),
     routeHiddenCols: new Set(),
     openPopover: null, // null | 'loadColumns' | 'routeColumns' | 'filter'
@@ -2790,7 +2790,8 @@ export function initApp() {
       const loads = visibleLoads();
       const loadedMiles = loads.reduce((a, l) => a + l.miles, 0);
       const inc = loads.reduce((a, l) => a + l.income, 0);
-      const routeIds = [...new Set(loads.map(l => l.route))];
+      // DH only of real routes — free loads (no route) aren't a route and have no deadhead chain
+      const routeIds = [...new Set(loads.map(l => l.route))].filter(id => id && routeOf(id).id);
       const dhMiles = routeIds.reduce((a, id) => a + routeDhMiles(routeOf(id)), 0);
       const totalMiles = loadedMiles + dhMiles;
       const effectiveRpm = totalMiles ? inc / totalMiles : 0;
@@ -4482,46 +4483,32 @@ export function initApp() {
       render();
     }, 1400));
 
-    var COLS = '28px 122px minmax(170px,1.3fr) 138px 138px 64px 84px 104px minmax(170px,1.25fr) 92px 30px';
-    var MINW = 'min-width:1150px';
-    var pill = function (s) { var c = STATUS[s] || STATUS.Booked; return '<span style="display:inline-block;font:800 10px ' + F + ';padding:3px 8px;border-radius:999px;background:' + c[0] + ';color:' + c[1] + ';white-space:nowrap">' + s + '</span>'; };
-    var src = function (id) { return /^ef-/.test(id) ? '<span title="efRouting manual load" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(46,153,117,.18);color:#47b26b;font:900 8.5px ' + F + ';flex-shrink:0">ef</span>' : '<span title="Datatruck (TMS)" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(102,136,204,.18);color:#6688cc;font:900 8.5px ' + F + ';flex-shrink:0">DT</span>'; };
-    var tag = function (t, c, title) { return '<span' + (title ? ' title="' + title + '"' : '') + ' style="font:800 8.5px ' + F + ';letter-spacing:.03em;text-transform:uppercase;color:' + c + ';background:' + c + '1f;border:1px solid ' + c + '55;padding:1px 6px;border-radius:999px;white-space:nowrap">' + t + '</span>'; };
-    var act = function (cls, txt, c, extra) { return '<span class="' + cls + '"' + (extra || '') + ' style="cursor:pointer;font:800 10.5px ' + F + ';color:' + c + ';border:1px solid ' + c + '66;padding:3px 8px;border-radius:7px;white-space:nowrap">' + txt + '</span>'; };
-    var stopCell = function (s, partial) { return '<div style="min-width:0;padding:8px 6px 8px 0"><div style="font:700 11px ' + F + ';color:#e6e6e6;white-space:nowrap">' + _arStopTxt(s) + '</div><div style="display:flex;gap:4px;margin-top:3px">' + _arSrcTag(s.src) + (partial ? tag('partial', '#d0a038', 'No ELD and no transactions: miles and dates are estimated') : '') + '</div></div>'; };
-    var marker = function (kind, html, col) {
+    // Prototype layout: context chips, status tabs + filter chips, one table (tag under the Load ID),
+    // a single «Cycle continues from here» line, metrics in one row. The engine logic stays out of sight.
+    var COLS = '30px minmax(118px,1fr) minmax(108px,1fr) minmax(108px,1fr) 72px 84px 96px 104px 104px minmax(96px,1fr) 46px 56px';
+    var MINW = 'min-width:1120px';
+    var pill = function (s) { var c = STATUS[s] || STATUS.Booked; return '<span style="display:inline-block;font:700 10.5px ' + F + ';padding:3px 8px;border-radius:6px;background:' + c[0] + ';color:' + c[1] + ';white-space:nowrap">' + s + '</span>'; };
+    var src = function (id) { return /^ef-/.test(id) ? '<span title="efRouting internal" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(46,153,117,.18);color:#47b26b;font:900 8.5px ' + F + ';flex-shrink:0">ef</span>' : '<span title="Datatruck (TMS)" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:rgba(102,136,204,.16);color:#6688cc;font:900 8.5px ' + F + ';flex-shrink:0">DT</span>'; };
+    var SRC_DOT = { real: '#47b26b', planned: '#6688cc', estimated: '#d0a038' };
+    var when = function (s, partial) {   // B1–B5: local time + zone, source as a dot (legend in the source row)
+      var d = _arD(s.date), tz = _arTz(s.city, s.date).abbr;
+      return '<div title="' + (s.src === 'real' ? 'Real stop' : s.src === 'planned' ? 'Planned' : 'Estimated') + (partial ? ' · partial load' : '') + '" style="padding:10px 6px 10px 0;white-space:nowrap">' +
+        '<div style="font:700 12px ' + F + ';color:#e6e6e6">' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '</div>' +
+        '<div style="display:flex;align-items:center;gap:5px;font:600 10px ' + F + ';color:#808080;margin-top:2px"><span style="width:6px;height:6px;border-radius:50%;background:' + (SRC_DOT[s.src] || '#808080') + '"></span>' + s.time + ' ' + tz + (partial || s.src === 'estimated' ? ' est.' : '') + '</div></div>';
+    };
+    var thin = function (txt, col, dashed) {
       var d = document.createElement('div');
-      d.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 18px;' + MINW + ';background:' + col + '14;border-top:1px solid ' + col + '40;border-bottom:1px solid ' + col + '40';
-      d.innerHTML = '<span style="font:900 9.5px ' + F + ';letter-spacing:.06em;color:#141414;background:' + col + ';padding:2px 7px;border-radius:5px;white-space:nowrap">' + kind + '</span><span style="font:700 11.5px ' + F + ';color:#e6e6e6">' + html + '</span>';
+      d.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 18px;' + MINW + ';background:' + (dashed ? 'repeating-linear-gradient(135deg,rgba(255,255,255,.025),rgba(255,255,255,.025) 8px,transparent 8px,transparent 16px)' : 'transparent');
+      d.innerHTML = '<span style="font:800 10px ' + F + ';letter-spacing:.05em;text-transform:uppercase;color:' + col + ';white-space:nowrap">' + txt + '</span><span style="flex:1;height:1px;background:' + col + ';opacity:.3"></span>';
       return d;
     };
-    var divider = function (txt, col, striped) {
-      var d = document.createElement('div');
-      d.style.cssText = 'display:flex;align-items:center;gap:10px;padding:7px 18px;' + MINW + ';' + (striped ? 'background:repeating-linear-gradient(45deg,rgba(204,102,111,.1),rgba(204,102,111,.1) 10px,rgba(204,102,111,.04) 10px,rgba(204,102,111,.04) 20px)' : 'background:rgba(255,255,255,.02)');
-      d.innerHTML = '<span style="font:800 10.5px ' + F + ';color:' + col + ';white-space:nowrap">' + txt + '</span><span style="flex:1;height:1px;background:' + col + ';opacity:.35"></span>';
-      return d;
-    };
-    function startTxt() {
-      var s = e.start;
-      if (s.method === 'hos_reset') return 'HOS reset — ' + Math.round(s.hours) + ' h off duty before ' + _arUtcTxt(s.at, e.cycleLoads[0].origin) + ' (same driver on every load of the window)';
-      if (s.method === 'gap') return 'Gap of ' + Math.round(s.hours * 10) / 10 + ' h ≥ 34 h before ' + _arUtcTxt(s.at, e.cycleLoads[0].origin) + (st.hosOn ? '' : ' · calculated without HOS');
-      if (s.method === 'reset_in_load') return 'HOS reset during load #' + s.load.id + ' → that load stays in the cycle of its pickup';
-      if (s.method === 'no_reset_window') return 'No reset in 10 days → window starts ' + _arUtcTxt(s.fromUtc, e.cycleLoads[0].origin);
-      return 'First load the TMS has for this unit';
-    }
-    function endTxt() {
-      var n = e.end;
-      if (n.method === 'hos') return 'Next HOS reset due ' + _arUtcTxt(n.at, n.city || e.cycleLoads[e.cycleLoads.length - 1].dest) + ' · ' + n.leftH + ' h left in ' + (e.driverNow || 'the driver') + '’s cycle' + (n.movedOut && n.movedOut.length ? ' · ' + n.movedOut.length + ' load(s) after it go to the next cycle' : '');
-      if (n.method === 'gap') return 'Gap of ' + Math.round(n.hours * 10) / 10 + ' h ≥ 34 h after ' + _arUtcTxt(n.at, e.cycleLoads[e.cycleLoads.length - 1].dest);
-      if (n.method === 'reset_in_load') return 'HOS reset during load #' + n.load.id + ' (it stays in this cycle — its pickup is here)';
-      return 'Open — no rest detected after the last load yet';
-    }
-    function hosChip() {
-      if (st.phase === 'eld') return '<span style="display:inline-flex;align-items:center;gap:6px;color:#6688cc"><svg style="animation:_efAdaptSpin 1s linear infinite" width="12" height="12" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="rgba(102,136,204,.25)" stroke-width="5"></circle><path d="M24 6 A18 18 0 0 1 42 24" stroke="#6688cc" stroke-width="5" stroke-linecap="round"></path></svg>Checking ELD…</span>';
-      if (st.hosOn) return '<span style="color:#47b26b">HOS ok' + (e.hosData && e.hosData.leftH != null ? ' · ' + e.hosData.leftH + ' h left' : '') + '</span>';
-      if (hosCfg === 'slow') return '<span style="color:#d0a038">Calculated without HOS · retrying ELD in background</span>';
-      if (hosCfg === 'down') return '<span style="color:#d0a038">ELD unavailable · calculated without HOS</span>';
-      return '<span style="color:#808080">' + (driver ? 'No ELD for this driver' : 'No driver') + ' → no HOS (edges by gaps)</span>';
+    function edgeTxt(n, isEnd) {   // C1–C9: terse edge label (method only)
+      if (n.method === 'hos_reset') return 'HOS reset';
+      if (n.method === 'gap') return Math.round(n.hours) + ' h rest';
+      if (n.method === 'reset_in_load') return 'HOS reset during #' + n.load.id;
+      if (n.method === 'no_reset_window') return 'no reset in 10 days';
+      if (n.method === 'hos') return 'next HOS reset ' + _arUtcTxt(n.at, n.city || 'Dallas, TX');
+      return isEnd ? 'open' : '';
     }
     function render() {
       modal.innerHTML = '';
@@ -4530,113 +4517,125 @@ export function initApp() {
       var moveRows = e.rows.filter(function (x) { return x.cls === 'other_route' && st.move[x.load.id]; });
       var remN = Object.keys(st.remove).length, tmsN = Object.keys(st.tms).length;
       var mt = e.empty ? null : _arMetrics(e, function (x) { return selRow(x) || (x.cls === 'other_route' && st.move[x.load.id]); });
-      // ── top bar: title + freshness/Sync (H2) ──
+      var missing = e.rows.filter(function (x) { return x.cls === 'cycle' || x.cls === 'fills_gap'; }).length;
+      var inRoute = e.rows.filter(function (x) { return x.cls === 'in_this_route'; }).length;
+      var nShown = e.rows.length + (st.widen ? e.outside.length : 0) + (st.showHidden ? e.hidden.length : 0) + e.gone.length;
+      var sub = e.empty ? 'empty cycle' : mode === 'create' ? 'cycle for the new route' : !missing && !e.rows.some(function (x) { return x.cls === 'other_route' && x.other.movable; }) ? 'cycle up to date'
+        : e.rows.some(function (x) { return x.cls === 'fills_gap'; }) ? 'fill every gap in the cycle' : 'complete the cycle';
+      // ── top bar ──
       var top = document.createElement('div');
-      top.style.cssText = 'display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,.08);flex:none';
-      var title = e.empty ? 'empty cycle' : mode === 'create' ? 'cycle for the new route' : (!addRows.length && !e.rows.some(function (x) { return x.cls === 'other_route' && x.other.movable; }) ? 'nothing to add' : 'complete the cycle');
+      top.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);flex:none';
       top.innerHTML = '<span class="_ar-x" style="cursor:pointer;color:#808080;font:700 16px ' + F + '">←</span>' +
-        '<span style="font:800 15px ' + F + ';color:#f5f5f5;white-space:nowrap">Auto-rebuild <span style="font:600 12px ' + F + ';color:#808080">· ' + title + '</span></span><span style="flex:1"></span>' +
-        '<span style="font:600 11px ' + F + ';color:#808080">' + (st.sync === 'syncing' ? 'Syncing with the TMS…' : 'Last TMS sync: ' + (st.syncMin ? st.syncMin + ' min ago' : 'just now')) + '</span>' +
-        '<span class="_ar-sync" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;border:1px solid rgba(102,136,204,.4);color:#6688cc;font:800 11px ' + F + ';cursor:pointer">' + _AR_ICON + 'Sync</span>' +
-        '<span class="_ar-x" style="width:28px;height:28px;display:grid;place-items:center;border-radius:8px;border:1px solid rgba(255,255,255,.1);color:#808080;cursor:pointer">✕</span>';
+        '<span style="font:800 16px ' + F + ';color:#f5f5f5;white-space:nowrap">Auto-rebuild <span style="font:600 12.5px ' + F + ';color:#5bbccb">· ' + sub + '</span></span>' +
+        '<div style="flex:1;max-width:420px;display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;background:#242424;border:1px solid rgba(255,255,255,.08);color:#666666;font:600 12px ' + F + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search loads…</div>' +
+        '<span style="flex:1"></span>' +
+        '<span class="_ar-sync" title="Last TMS sync: ' + (st.syncMin ? st.syncMin + ' min ago' : 'just now') + ' — click to sync now" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;background:#242424;border:1px solid rgba(255,255,255,.08);color:#b3b3b3;font:700 11.5px ' + F + ';cursor:pointer;white-space:nowrap">' + _AR_ICON + (st.sync === 'syncing' ? 'Syncing…' : 'Synced ' + (st.syncMin ? st.syncMin + ' min ago' : 'now')) + '</span>' +
+        '<span style="padding:6px 11px;border-radius:9px;background:#242424;border:1px solid rgba(255,255,255,.08);color:#b3b3b3;font:700 11.5px ' + F + ';white-space:nowrap">Results: ' + nShown + '</span>' +
+        '<span class="_ar-x" style="width:28px;height:28px;display:grid;place-items:center;color:#808080;cursor:pointer;font-size:15px">✕</span>';
       modal.appendChild(top);
-      // ── context: unit / cabins / driver (info) / anchor / window / origin / HOS ──
-      var ctxF = function (k, v, sub) { return '<div style="padding:0 14px;border-left:1px solid rgba(255,255,255,.08);min-width:0"><div style="font:700 9.5px ' + F + ';color:#808080;text-transform:uppercase;letter-spacing:.05em">' + k + '</div><div style="font:800 12px ' + F + ';color:#e6e6e6;margin-top:2px;white-space:nowrap">' + v + '</div>' + (sub ? '<div style="font:600 10px ' + F + ';color:#808080;margin-top:1px;white-space:nowrap">' + sub + '</div>' : '') + '</div>'; };
-      var ctx = document.createElement('div');
-      ctx.style.cssText = 'display:flex;align-items:flex-start;padding:11px 18px;background:rgba(46,153,117,.06);border-bottom:1px solid rgba(255,255,255,.07);flex:none;overflow-x:auto;row-gap:8px';
+      // ── cycle context (chips) + summary ──
+      var chip = function (ic, k, v, title) { return '<div' + (title ? ' title="' + title + '"' : '') + ' style="display:flex;align-items:center;gap:9px;padding:8px 13px;border-radius:10px;background:#1f1f1f;border:1px solid rgba(255,255,255,.1)">' + ic + '<div><div style="font:800 9px ' + F + ';letter-spacing:.06em;color:#808080;text-transform:uppercase">' + k + '</div><div style="font:800 13px ' + F + ';color:#f5f5f5;margin-top:1px;white-space:nowrap">' + v + '</div></div></div>'; };
       var cab = opts.cabin || (r && r.cabin) || (e.cabins && e.cabins[0]) || unit;
-      ctx.innerHTML = '<div style="display:flex;align-items:center;gap:7px;padding-right:14px;font:800 12px ' + F + ';color:#e6e6e6">Cycle <span style="font:900 9px ' + F + ';color:#141414;background:#2e9975;padding:2px 6px;border-radius:5px">AUTO</span></div>' +
-        ctxF('Unit', _arUnitKey(unit), e.cabins && e.cabins.length > 1 ? 'Cabins: ' + e.cabins.map(function (c) { return c === cab ? c + ' (selected · ELD)' : c; }).join(' · ') : 'Cabin ' + cab) +
-        ctxF('Driver', driver || '—', '<span title="The driver never filters loads — it only brings HOS">info only · doesn’t filter</span>') +
-        ctxF('Anchor', e.anchor ? e.anchor.type : '—', e.anchor ? e.anchor.label : '') +
-        (e.empty ? '' : ctxF('Cycle window', _arUtcTxt(_arPuUtc(e.cycleLoads[0]), e.cycleLoads[0].origin), '→ ' + (e.end.method === 'open' ? 'open' : _arUtcTxt(e.end.at, e.cycleLoads[e.cycleLoads.length - 1].dest)))) +
-        (e.empty || mode === 'create' && !e.origin ? '' : ctxF('Origin after rebuild', e.origin.city, e.origin.how)) +
-        ctxF('HOS', hosChip(), '');
+      var hosC = st.phase === 'eld' ? chip('<svg style="animation:_efAdaptSpin 1s linear infinite" width="14" height="14" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="rgba(102,136,204,.25)" stroke-width="5"></circle><path d="M24 6 A18 18 0 0 1 42 24" stroke="#6688cc" stroke-width="5" stroke-linecap="round"></path></svg>', 'HOS', 'Checking ELD…')
+        : st.hosOn && e.hosData && e.hosData.leftH != null ? chip('<span style="color:#47b26b;font-size:14px">⏱</span>', 'HOS left', e.hosData.leftH + ' h')
+        : (hosCfg === 'slow' || hosCfg === 'down') ? chip('<span style="color:#d0a038;font-size:14px">⏱</span>', 'HOS', hosCfg === 'slow' ? 'Retrying…' : 'Unavailable', 'Cycle calculated without HOS') : '';
+      var w0 = e.empty ? null : _arFromUtc(_arPuUtc(e.cycleLoads[0]), e.cycleLoads[0].origin, 'planned');
+      var w1 = e.empty ? null : (e.end.method === 'open' ? null : _arFromUtc(e.end.at, e.cycleLoads[e.cycleLoads.length - 1].dest, 'planned'));
+      var lastDo = e.empty ? null : _arStops(e.cycleLoads[e.cycleLoads.length - 1]).do;
+      var ctx = document.createElement('div');
+      ctx.style.cssText = 'display:flex;align-items:center;gap:10px;padding:13px 18px;background:rgba(91,188,203,.05);border-bottom:1px solid rgba(255,255,255,.07);flex:none;flex-wrap:wrap';
+      ctx.innerHTML = '<span style="font:900 12px ' + F + ';letter-spacing:.06em;color:#5bbccb;margin-right:2px">CYCLE</span><span style="font:900 9px ' + F + ';color:#141414;background:#5bbccb;padding:2px 6px;border-radius:5px;margin-right:6px">AUTO</span>' +
+        chip('<span style="color:#b3b3b3;display:flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62L18.3 9.38a1 1 0 0 0-.78-.38H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>', 'Unit', _arUnitKey(unit), e.cabins && e.cabins.length > 1 ? 'Cabins: ' + e.cabins.join(', ') + ' — real stops from ' + cab : '') +
+        chip('<span style="width:22px;height:22px;border-radius:50%;background:#7a4f99;color:#f5f5f5;display:grid;place-items:center;font:800 9px ' + F + '">' + _arInitials(driver) + '</span>', 'Driver', driver ? driver.split(' ')[0] : '—', 'Info only — the driver never filters loads (it brings HOS)') +
+        (e.empty ? '' : chip('<span style="font-size:14px">📅</span>', 'Pickup from', _arPretty(w0.date)) + chip('<span style="font-size:14px">🏁</span>', 'Dropoff until', _arPretty((w1 || lastDo).date))) + hosC +
+        '<div style="flex:1"></div><div style="text-align:right;font:600 12px ' + F + ';color:#b3b3b3;line-height:1.5">' +
+        (st.phase === 'eld' ? 'Reading the truck cycle…' : e.empty ? '<b style="color:#e6e6e6">No loads</b> in this unit’s cycle'
+          : '<span style="color:#5bbccb">Full cycle computed →</span><br><b style="color:#f5f5f5">' + missing + ' missing load' + (missing === 1 ? '' : 's') + '</b> to fill · ' + inRoute + ' already in the route') + '</div>';
       modal.appendChild(ctx);
-      // ── banners: ELD arrived, sync changes, conflict, warnings, E9 ──
+      // ── only the notices that need a decision ──
       var bans = [];
-      if (st.hosArrived && !st.hosOn) bans.push(['#6688cc', '<b>HOS data available.</b> The cycle was calculated without HOS; with them the edges may change.', '<span class="_ar-hos" style="cursor:pointer;font-weight:800;color:#6688cc">Update cycle →</span>']);
-      if (st.sync === 'changes') bans.push(['#6688cc', '<b>The TMS has changes</b> for this unit since the cycle was calculated.', '<span class="_ar-upd" style="cursor:pointer;font-weight:800;color:#6688cc">Update cycle →</span>']);
-      if (st.sync === 'none') bans.push(['#47b26b', 'Synced — no changes in the TMS.', '']);
-      if (st.conflict) bans.push(['#cc666f', '<b>The cycle changed while you were reviewing it</b> (the route or a neighbor route was modified). Nothing was built — the cycle was reloaded, review it and confirm again.', '']);
-      e.warnings.forEach(function (w) { bans.push(['#d0a038', w.t, '']); });
+      if (st.hosArrived && !st.hosOn) bans.push(['#6688cc', 'HOS data available — the cycle may change.', '<span class="_ar-hos" style="cursor:pointer;font-weight:800;color:#6688cc;white-space:nowrap">Update cycle →</span>']);
+      if (st.sync === 'changes') bans.push(['#6688cc', 'The TMS has changes for this unit.', '<span class="_ar-upd" style="cursor:pointer;font-weight:800;color:#6688cc;white-space:nowrap">Update cycle →</span>']);
+      if (st.conflict) bans.push(['#cc666f', 'The cycle changed while you were reviewing it — nothing was built. Review it and confirm again.', '']);
+      e.warnings.filter(function (w) { return w.k !== 'anchor'; }).forEach(function (w) {
+        bans.push(['#d0a038', w.k === 'discrepancy' ? 'Truck stopped ≥ 34 h but the driver’s HOS show no reset — HOS rule applied.' : w.k === 'driver' ? 'Driver change in this cycle — edges by the truck’s rests and the current driver’s HOS.' : 'No reset found in 10 days — using the last 10 days.', '']);
+      });
       if (st.gapWarn) bans.push(['#d0a038', st.gapWarn, '']);
-      if (e.excluded && e.excluded.length) bans.push(['#808080', e.excluded.length + ' load' + (e.excluded.length === 1 ? '' : 's') + ' of this unit left out by status (' + e.excluded.map(function (l) { return l.status; }).filter(function (s, i, a) { return a.indexOf(s) === i; }).join(', ') + '). Only Delivered, Invoiced, Paid, Dispatched, In Transit, Booked and Assigned enter a cycle.', '']);
+      bans = bans.filter(function (b, i, a) { return a.findIndex(function (y) { return y[1] === b[1]; }) === i; });
       if (bans.length) {
-        var bw = document.createElement('div'); bw.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:9px 18px;border-bottom:1px solid rgba(255,255,255,.07);flex:none;max-height:120px;overflow:auto';
-        bw.innerHTML = bans.map(function (b) { return '<div style="display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:9px;background:' + b[0] + '14;border:1px solid ' + b[0] + '55;font:600 11.5px ' + F + ';color:#b3b3b3;line-height:1.4"><span style="color:' + b[0] + ';font-weight:900">ⓘ</span><span style="flex:1">' + b[1] + '</span>' + b[2] + '</div>'; }).join('');
+        var bw = document.createElement('div'); bw.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:9px 18px 0;flex:none';
+        bw.innerHTML = bans.map(function (b) { return '<div style="display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:9px;background:' + b[0] + '12;border:1px solid ' + b[0] + '44;font:600 11.5px ' + F + ';color:#b3b3b3"><span style="width:6px;height:6px;border-radius:50%;background:' + b[0] + ';flex:none"></span><span style="flex:1">' + b[1] + '</span>' + b[2] + '</div>'; }).join('');
         modal.appendChild(bw);
       }
-      // ── filters (editable; they never move the edges — E8) ──
-      var fl = document.createElement('div');
-      fl.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 18px;flex:none;font:600 11px ' + F + ';color:#808080;flex-wrap:wrap';
-      var chip = function (t, cls, on) { return '<span class="' + (cls || '') + '" style="font:700 10.5px ' + F + ';color:' + (on ? '#141414' : '#6688cc') + ';background:' + (on ? '#6688cc' : 'rgba(102,136,204,.1)') + ';border:1px solid rgba(102,136,204,.3);padding:4px 9px;border-radius:999px;white-space:nowrap;' + (cls ? 'cursor:pointer' : '') + '">' + t + '</span>'; };
-      var w0 = e.empty ? null : _arFromUtc(_arPuUtc(e.cycleLoads[0]) - (st.widen ? 3 * 864e5 : 0), e.cycleLoads[0].origin, 'planned');
-      fl.innerHTML = '<span style="font:800 9.5px ' + F + ';text-transform:uppercase;letter-spacing:.05em;color:#666666">Filters</span>' + chip('Unit: ' + _arUnitKey(unit)) + chip('Driver: ' + (_arInitials(driver)) + ' · info') +
-        (e.empty ? '' : chip('Pickup ≥ ' + _arMD(w0.date) + (st.widen ? ' (widened ✕)' : ' · widen ±3 d'), '_ar-widen', st.widen)) +
-        '<span style="margin-left:6px">Widening the filters never moves the cycle edges — extra loads go to “Outside the detected cycle”.</span><span style="flex:1"></span>' +
-        '<span style="font:800 9.5px ' + F + ';text-transform:uppercase;letter-spacing:.05em;color:#666666">Source</span>' + src('1') + 'TMS' + src('ef-') + 'efRouting' +
-        (e.hidden && e.hidden.length ? '<span class="_ar-hid" style="margin-left:8px;cursor:pointer;color:#6688cc;font-weight:800">👁 ' + (st.showHidden ? 'Hide' : 'Show') + ' loads in other routes (' + e.hidden.length + ')</span>' : '');
-      modal.appendChild(fl);
+      // ── status tabs + filter chips (Pickup ≥ widens the search, E8) ──
+      var tabs = document.createElement('div');
+      tabs.style.cssText = 'display:flex;align-items:center;gap:4px;padding:10px 18px 4px;flex:none;overflow-x:auto';
+      var fchip = function (t, cls, on, title) { return '<span' + (cls ? ' class="' + cls + '"' : '') + (title ? ' title="' + title + '"' : '') + ' style="font:700 11px ' + F + ';color:' + (on ? '#141414' : '#5bbccb') + ';background:' + (on ? '#5bbccb' : 'transparent') + ';border:1px solid rgba(91,188,203,.45);padding:5px 10px;border-radius:7px;white-space:nowrap;' + (cls ? 'cursor:pointer' : '') + '">' + t + '</span>'; };
+      tabs.innerHTML = ['All Loads', 'On The Road', 'Offer', 'Booked', 'Assigned', 'Dispatched', 'In Transit', 'Delivered', 'Invoiced', 'Paid'].map(function (t, i) { return '<span style="padding:6px 10px;border-radius:7px;font:' + (i ? '600' : '800') + ' 12px ' + F + ';color:' + (i ? '#b3b3b3' : '#f5f5f5') + ';background:' + (i ? 'transparent' : '#2a2a2a') + ';white-space:nowrap">' + t + '</span>'; }).join('') +
+        '<span style="flex:1;min-width:10px"></span>' +
+        (e.empty ? '' : fchip('Trucks: ' + _arUnitKey(unit)) + fchip('Pickup ≥ ' + _arMD(_arFromUtc(_arPuUtc(e.cycleLoads[0]) - (st.widen ? 3 * 864e5 : 0), e.cycleLoads[0].origin, 'planned').date) + (st.widen ? ' ✕' : ''), '_ar-widen', st.widen, st.widen ? 'Back to the detected cycle' : 'Widen by 3 days — extra loads aren’t preselected') + fchip('Delivery ≤ ' + _arMD((w1 || lastDo).date)));
+      modal.appendChild(tabs);
+      var leg = document.createElement('div');
+      leg.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 18px 10px;font:600 11px ' + F + ';color:#808080;flex:none';
+      leg.innerHTML = '<span style="font:800 10px ' + F + ';letter-spacing:.06em;color:#666666">SOURCE</span>' + src('1') + 'Datatruck (TMS)<span style="color:#444">·</span>' + src('ef-') + 'efRouting internal' +
+        '<span style="color:#444;margin:0 4px">|</span>' + ['real', 'planned', 'estimated'].map(function (k) { return '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:' + SRC_DOT[k] + '"></span>' + k + '</span>'; }).join('') +
+        '<span style="flex:1"></span>' + (e.hidden && e.hidden.length ? '<span class="_ar-hid" style="cursor:pointer;color:#6688cc;font-weight:700">' + (st.showHidden ? 'Hide' : 'Show') + ' loads in other routes (' + e.hidden.length + ')</span>' : '');
+      modal.appendChild(leg);
       // ── table ──
       var body = document.createElement('div');
       body.className = 'ef-scroll';
       body.style.cssText = 'flex:1;min-height:0;overflow:auto;border-top:1px solid rgba(255,255,255,.06)';
-      if (st.phase === 'eld') {
-        body.innerHTML = '<div style="padding:60px 18px;text-align:center;font:600 12.5px ' + F + ';color:#808080"><svg style="animation:_efAdaptSpin 1s linear infinite;margin-bottom:12px" width="34" height="34" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="rgba(102,136,204,.2)" stroke-width="3"></circle><path d="M24 6 A18 18 0 0 1 42 24" stroke="#6688cc" stroke-width="3" stroke-linecap="round"></path></svg><div style="font:800 14px ' + F + ';color:#e6e6e6">Checking ELD…</div><div style="margin-top:4px">Reading HOS and real stops of cabin ' + cab + '. If the ELD doesn’t answer in ~5 s the cycle is calculated without HOS and retried in the background.</div></div>';
-        modal.appendChild(body); appendFooter(mt, addRows, outsideSel, moveRows, remN, tmsN); wire(); return;
-      }
-      if (e.empty) {
-        body.innerHTML = '<div style="padding:56px 18px;text-align:center"><div style="font:800 14px ' + F + ';color:#e6e6e6">Empty cycle</div><div style="font:600 12px ' + F + ';color:#808080;margin-top:6px;line-height:1.5">Unit ' + _arUnitKey(unit) + ' has no eligible loads in the window around the anchor (' + (e.anchor ? e.anchor.label : 'now') + ').<br>' + (mode === 'route' ? 'Use “Complete with Easy routes” in the Plan to search loads.' : 'You can still create the route.') + '</div></div>';
+      if (st.phase === 'eld' || e.empty) {
+        body.innerHTML = '<div style="padding:64px 18px;text-align:center;font:600 12.5px ' + F + ';color:#808080">' + (st.phase === 'eld'
+          ? '<svg style="animation:_efAdaptSpin 1s linear infinite;margin-bottom:10px" width="30" height="30" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="rgba(102,136,204,.2)" stroke-width="3"></circle><path d="M24 6 A18 18 0 0 1 42 24" stroke="#6688cc" stroke-width="3" stroke-linecap="round"></path></svg><div style="font:800 13px ' + F + ';color:#e6e6e6">Checking ELD…</div>'
+          : '<div style="font:800 14px ' + F + ';color:#e6e6e6">No loads in this cycle</div><div style="margin-top:6px">Unit ' + _arUnitKey(unit) + ' has no loads around ' + (e.anchor ? e.anchor.label : 'now') + '.</div>') + '</div>';
         modal.appendChild(body); appendFooter(mt, addRows, outsideSel, moveRows, remN, tmsN); wire(); return;
       }
       var head = document.createElement('div');
-      head.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';padding:0 18px;background:#242424;font:800 10.5px ' + F + ';color:#808080;position:sticky;top:0;z-index:1;' + MINW;
-      head.innerHTML = ['', 'Load ID', 'Origin → Dest', 'Pickup (local)', 'Dropoff (local)', 'Miles', 'Income', 'Status', 'In the cycle', 'Customer', 'Drv'].map(function (h) { return '<div style="padding:9px 6px 9px 0">' + h + '</div>'; }).join('');
+      head.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';padding:0 18px;background:#1f1f1f;font:800 10px ' + F + ';letter-spacing:.06em;color:#808080;position:sticky;top:0;z-index:1;' + MINW;
+      head.innerHTML = ['', 'LOAD ID', 'ORIGIN', 'DEST', 'DISTANCE', 'INCOME', 'STATUS', 'PICKUP', 'DELIVERY', 'CUSTOMER', 'DRIVER', 'TRUCK'].map(function (h) { return '<div style="padding:10px 6px 10px 0">' + h + '</div>'; }).join('');
       body.appendChild(head);
+      var link = function (cls, txt, id, col) { return ' · <span class="' + cls + '" data-id="' + id + '" style="cursor:pointer;color:' + col + ';text-decoration:underline;text-underline-offset:2px">' + txt + '</span>'; };
       var rowEl = function (x) {
         var l = x.load, k = x.cls, d = document.createElement('div');
         var toggle = k === 'cycle' || k === 'fills_gap' || k === 'outside_cycle';
         var removing = (k === 'next_cycle' || k === 'previous_cycle' || k === 'gone') && st.remove[l.id];
         var moving = k === 'other_route' && st.move[l.id];
         var on = toggle ? x.sel : (k === 'in_this_route' || ((k === 'next_cycle' || k === 'previous_cycle' || k === 'gone') && !removing) || moving);
-        var bg = k === 'in_this_route' ? 'rgba(255,255,255,.015)' : (k === 'next_cycle' || k === 'previous_cycle') ? 'rgba(178,136,53,.06)' : k === 'gone' ? 'rgba(204,102,111,.06)' : k === 'other_route' ? 'rgba(102,136,204,.05)' : k === 'outside_cycle' ? 'rgba(255,255,255,.01)' : (x.sel ? 'rgba(46,153,117,.05)' : 'transparent');
-        d.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';align-items:center;padding:0 18px;' + MINW + ';border-bottom:1px solid rgba(255,255,255,.05);background:' + bg + ';' + (toggle ? 'cursor:pointer;' : '') + (removing ? 'opacity:.45;' : '');
-        var ck = (k === 'next_cycle' || k === 'previous_cycle') ? '<span style="width:16px;height:16px;border-radius:4px;border:1.5px dashed #b28835;display:inline-block' + (removing ? '' : ';background:rgba(178,136,53,.25)') + '"></span>'
-          : k === 'other_route' && !x.other.movable ? '<span style="width:16px;height:16px;border-radius:4px;border:1.5px dashed #cc666f;color:#cc666f;display:inline-grid;place-items:center;font:900 10px ' + F + '">⊘</span>'
-          : '<span style="width:16px;height:16px;border-radius:4px;display:inline-grid;place-items:center;font:900 10px ' + F + ';' + (on ? 'background:' + (k === 'in_this_route' || k === 'gone' ? '#3a3a3a' : '#2e9975') + ';color:' + (k === 'in_this_route' || k === 'gone' ? '#b3b3b3' : '#141414') : 'border:1.5px solid rgba(255,255,255,.25)') + '">' + (on ? '✓' : '') + '</span>';
-        var info = '';
-        if (k === 'in_this_route') info = tag('in this route · read-only', '#808080');
-        else if (k === 'cycle') info = tag(mode === 'create' ? 'cycle' : 'missing · preselected', '#47b26b');
-        else if (k === 'fills_gap') info = tag('fills gap', '#5bbccb');
-        else if (k === 'outside_cycle') info = tag('outside the detected cycle', '#808080');
-        else if (k === 'next_cycle' || k === 'previous_cycle') info = '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">' + tag(removing ? 'will be removed' : 'possibly ' + (k === 'next_cycle' ? 'next' : 'previous') + ' cycle', '#b28835') + act('_ar-rm', removing ? 'Undo' : 'Remove from current plan', '#d0a038', ' data-id="' + l.id + '"') + '</div>';
-        else if (k === 'gone') info = '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">' + tag('no longer on this unit', '#cc666f', x.why) + '<span style="font:600 9.5px ' + F + ';color:#808080">' + x.why + '</span>' + act('_ar-rm', removing ? 'Undo' : 'Remove from route', '#cc666f', ' data-id="' + l.id + '"') + '</div>';
-        else if (k === 'other_route') info = '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">' + tag((x.other.neighbor === 'prev' ? 'previous' : x.other.neighbor === 'next' ? 'next' : 'other') + ' route · ' + x.other.name, x.other.movable ? '#6688cc' : '#cc666f') +
-          (x.other.movable ? act('_ar-mv', moving ? 'Will move here · Undo' : 'Move to this route', '#6688cc', ' data-id="' + l.id + '"') : '<span style="font:600 9.5px ' + F + ';color:#cc666f">⊘ ' + x.other.reason + ' · <span class="_ar-open" data-r="' + x.other.id + '" style="cursor:pointer;text-decoration:underline">open route ↗</span></span>') + '</div>';
-        if (x.tms) info += '<div style="margin-top:4px;display:flex;flex-direction:column;gap:3px;align-items:flex-start">' + tag('changed in the TMS', '#d0a038', x.tms.detail) + '<span style="font:600 9.5px ' + F + ';color:#b3b3b3">' + x.tms.detail + '</span>' + act('_ar-tms', st.tms[l.id] ? '✓ Will update · Undo' : 'Update from TMS', '#d0a038', ' data-id="' + l.id + '"') + '</div>';
-        var cabTag = e.cabins && e.cabins.length > 1 && _arCabinOf(l) && _arCabinOf(l) !== cab ? ' ' + tag('cabin ' + _arCabinOf(l), '#9a7fd1', 'Other cabin with the same unit number — its loads come with planned hours (real stops only from the selected cabin’s ELD)') : '';
-        var od = l.tonu ? '<div style="font:700 11.5px ' + F + ';color:#e6e6e6">' + l.origin + '</div><div style="font:600 10px ' + F + ';color:#808080">DH from ' + String(l.tonuFrom || '').split(',')[0] + ' · <s>' + (l.tonuDest || '') + '</s></div>'
-          : '<div style="font:700 11.5px ' + F + ';color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + l.origin + '</div><div style="font:600 10.5px ' + F + ';color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ ' + l.dest + '</div>';
-        d.innerHTML = '<div>' + ck + '</div>' +
-          '<div style="display:flex;flex-direction:column;gap:3px;min-width:0;padding:8px 6px 8px 0"><div style="display:flex;align-items:center;gap:5px">' + src(l.id) + '<span style="font:700 10.5px &quot;JetBrains Mono&quot;, monospace;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + l.id + '</span></div>' + cabTag + '</div>' +
-          '<div style="min-width:0;padding:8px 6px 8px 0">' + od + '</div>' +
-          stopCell(x.st.pu, l.partial) + stopCell(x.st.do, l.partial) +
-          '<div style="padding:8px 6px 8px 0;font:700 11px ' + F + ';color:#e6e6e6">' + (l.tonu ? '0 mi<div style="font:600 9.5px ' + F + ';color:#808080">DH ' + (l.dhMi || 0) + '</div>' : l.miles.toLocaleString('en-US') + (l.partial ? ' <span style="color:#d0a038">est.</span>' : '')) + '</div>' +
-          '<div style="padding:8px 6px 8px 0;font:800 11px ' + F + ';color:#47b26b">' + money(l.income) + '<div style="font:600 9.5px ' + F + ';color:#808080">' + (l.tonu ? 'TONU fee' : '$' + (l.income / Math.max(1, l.miles)).toFixed(2) + '/mi') + '</div></div>' +
-          '<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start;padding:8px 6px 8px 0">' + pill(l.status) + (l.tonu ? '<span style="font-size:9px;padding:1px 6px;' + _arTonuTagCss(false) + '">TONU</span>' : '') + '</div>' +
-          '<div style="padding:8px 6px 8px 0;min-width:0">' + info + '</div>' +
-          '<div style="padding:8px 6px 8px 0;font:600 10.5px ' + F + ';color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (l.customer || '--') + '</div>' +
-          '<div title="' + (l.driverName || driver || '') + '"><span style="width:22px;height:22px;border-radius:50%;background:' + ((l.driverName && l.driverName !== driver) ? '#7a4f99' : '#2e5299') + ';color:#e6e6e6;display:inline-grid;place-items:center;font:800 8.5px ' + F + '">' + _arInitials(l.driverName || driver) + '</span></div>';
+        var hl = (toggle && x.sel) || moving;
+        d.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';align-items:center;padding:0 18px;' + MINW + ';border-bottom:1px solid rgba(255,255,255,.05);' +
+          'background:' + (hl ? 'rgba(46,153,117,.09)' : 'transparent') + ';box-shadow:' + (k === 'fills_gap' ? 'inset 3px 0 0 #d0a038' : k === 'next_cycle' || k === 'previous_cycle' ? 'inset 3px 0 0 #b28835' : 'none') + ';' + (toggle ? 'cursor:pointer;' : '') + (removing ? 'opacity:.45;' : '');
+        var box = k === 'other_route' && !x.other.movable
+          ? '<span title="' + x.other.reason + '" style="width:18px;height:18px;border-radius:5px;border:1.5px dashed #cc666f;color:#cc666f;display:inline-grid;place-items:center;font:900 10px ' + F + '">⊘</span>'
+          : '<span style="width:18px;height:18px;border-radius:5px;display:inline-grid;place-items:center;font:900 11px ' + F + ';' + (on ? (hl ? 'background:#5bbccb;color:#141414' : 'background:#2e2e2e;color:#808080;border:1px solid rgba(255,255,255,.12)') : 'border:1.5px solid rgba(255,255,255,.25)') + '">' + (on ? '✓' : '') + '</span>';
+        var tg = '';
+        if (k === 'in_this_route') tg = '<span style="color:#5bbccb">in this route</span>';
+        else if (k === 'fills_gap') tg = '<span style="color:#d0a038">fills gap</span>';
+        else if (k === 'outside_cycle') tg = '<span style="color:#808080">outside the cycle</span>';
+        else if (k === 'next_cycle' || k === 'previous_cycle') tg = '<span style="color:#b28835">' + (removing ? 'will be removed' : (k === 'next_cycle' ? 'next cycle' : 'previous cycle')) + '</span>' + link('_ar-rm', removing ? 'undo' : 'remove', l.id, '#d0a038');
+        else if (k === 'gone') tg = '<span title="' + x.why + '" style="color:#cc666f">not on this unit</span>' + link('_ar-rm', removing ? 'undo' : 'remove', l.id, '#cc666f');
+        else if (k === 'other_route') tg = '<span title="' + x.other.name + '" style="color:' + (x.other.movable ? '#6688cc' : '#cc666f') + '">in ' + (x.other.neighbor === 'prev' ? 'previous' : x.other.neighbor === 'next' ? 'next' : 'other') + ' route</span>' +
+          (x.other.movable ? link('_ar-mv', moving ? 'undo' : 'move here', l.id, '#6688cc') : ' · <span class="_ar-open" data-r="' + x.other.id + '" title="' + x.other.reason + '" style="cursor:pointer;color:#cc666f;text-decoration:underline;text-underline-offset:2px">open</span>');
+        if (x.tms) tg += (tg ? '<br>' : '') + '<span title="' + x.tms.detail + '" style="color:#d0a038">changed in TMS</span>' + link('_ar-tms', st.tms[l.id] ? 'undo' : 'update', l.id, '#d0a038');
+        var cabTag = e.cabins && e.cabins.length > 1 && _arCabinOf(l) && _arCabinOf(l) !== cab ? ' <span title="Other cabin of unit ' + _arUnitKey(unit) + '" style="font:800 9px ' + F + ';color:#9a7fd1;background:rgba(154,127,209,.14);padding:1px 5px;border-radius:4px">' + _arCabinOf(l) + '</span>' : '';
+        d.innerHTML = '<div>' + box + '</div>' +
+          '<div style="display:flex;align-items:flex-start;gap:7px;min-width:0;padding:10px 6px 10px 0">' + src(l.id) + '<div style="min-width:0"><div style="font:700 12px ' + F + ';color:#e6e6e6;white-space:nowrap">' + l.id + cabTag + '</div>' + (tg ? '<div style="font:700 11px ' + F + ';margin-top:2px;line-height:1.35">' + tg + '</div>' : '') + '</div></div>' +
+          '<div style="padding:10px 6px 10px 0;font:600 12px ' + F + ';color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + l.origin + '</div>' +
+          '<div style="padding:10px 6px 10px 0;font:600 12px ' + F + ';color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (l.tonu ? '<s style="color:#808080">' + l.tonuDest + '</s>' : l.dest) + '</div>' +
+          '<div style="padding:10px 6px 10px 0;font:600 12px ' + F + ';color:#e6e6e6;white-space:nowrap">' + (l.tonu ? 'DH ' + (l.dhMi || 0) : l.miles.toLocaleString('en-US')) + ' mi' + (l.partial ? ' <span style="color:#d0a038">est.</span>' : '') + '</div>' +
+          '<div style="padding:10px 6px 10px 0"><div style="font:700 12px ' + F + ';color:#e6e6e6">' + money(l.income) + '</div><div style="font:600 10px ' + F + ';color:#808080;margin-top:2px">' + (l.tonu ? 'TONU fee' : '$' + (l.income / Math.max(1, l.miles)).toFixed(2) + '/mi') + '</div></div>' +
+          '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:10px 6px 10px 0">' + pill(l.status) + (l.tonu ? '<span style="font-size:9px;padding:1px 6px;' + _arTonuTagCss(false) + '">TONU</span>' : '') + '</div>' +
+          when(x.st.pu, l.partial) + when(x.st.do, l.partial) +
+          '<div style="padding:10px 6px 10px 0;font:600 12px ' + F + ';color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (l.customer || '--') + '</div>' +
+          '<div title="' + (l.driverName || driver || '') + '"><span style="width:24px;height:24px;border-radius:50%;background:#2a2a2a;border:1px solid rgba(255,255,255,.12);color:#b3b3b3;display:inline-grid;place-items:center;font:800 9px ' + F + '">' + _arInitials(l.driverName || driver) + '</span></div>' +
+          '<div style="font:600 12px ' + F + ';color:#e6e6e6">' + (_arCabinOf(l) || _arUnitKey(unit)) + '</div>';
         if (toggle) d.addEventListener('click', function (ev) {
           if (ev.target.closest('._ar-rm,._ar-mv,._ar-tms,._ar-open')) return;
           x.sel = !x.sel; st.sel[l.id] = x.sel;
-          // E9: unchecking a load in the middle leaves a hole (non-blocking)
-          if (!x.sel && x.cls !== 'outside_cycle') {
+          if (!x.sel && x.cls !== 'outside_cycle') {   // E9
             var ordered = e.rows.filter(function (y) { return y.cls !== 'next_cycle' && y.cls !== 'previous_cycle'; });
             var ix = ordered.indexOf(x), kept = function (y) { return y.cls === 'in_this_route' || ((y.cls === 'cycle' || y.cls === 'fills_gap') && y.sel); };
-            var before = ordered.slice(0, ix).some(kept), after = ordered.slice(ix + 1).some(kept);
-            st.gapWarn = before && after ? 'Unchecking #' + l.id + ' (' + l.origin + ' → ' + l.dest + ') leaves a hole in the cycle — the route will need a deadhead there. You can still continue.' : null;
+            st.gapWarn = ordered.slice(0, ix).some(kept) && ordered.slice(ix + 1).some(kept) ? 'Unchecking #' + l.id + ' leaves a gap in the cycle.' : null;
           } else st.gapWarn = null;
           render();
         });
@@ -4645,63 +4644,52 @@ export function initApp() {
       var order = e.rows.slice().sort(function (a, b) { return _arPuUtc(a.load) - _arPuUtc(b.load); });
       var prevRows = order.filter(function (x) { return x.cls === 'previous_cycle'; }), nextRows = order.filter(function (x) { return x.cls === 'next_cycle'; });
       var cyc = order.filter(function (x) { return x.cls !== 'previous_cycle' && x.cls !== 'next_cycle'; });
-      if (prevRows.length) { body.appendChild(divider('↺ Possibly previous cycle — in the route, kept by default, outside the metrics', '#b28835')); prevRows.forEach(function (x) { body.appendChild(rowEl(x)); }); }
-      body.appendChild(marker('CYCLE START', startTxt(), '#2e9975'));
+      prevRows.forEach(function (x) { body.appendChild(rowEl(x)); });
+      var sTxt = edgeTxt(e.start, false);
+      if (prevRows.length || sTxt) body.appendChild(thin('Cycle start' + (sTxt ? ' · ' + sTxt : ''), '#808080'));
       var lineDone = false;
-      cyc.forEach(function (x, ix) {
-        if (ix > 0) {
-          var pz = (e.pauses || []).find(function (p) { return p.toUtc === _arPuUtc(x.load); });
-          if (pz) body.appendChild(divider(pz.onDuty ? '⏸ Stop of ' + Math.round(pz.gapH * 10) / 10 + ' h — doesn’t cut: the driver’s HOS show on duty, no 34 h reset' : '⏸ Pause of ' + Math.round(pz.gapH * 10) / 10 + ' h — doesn’t cut the cycle (< 34 h)', pz.onDuty ? '#d0a038' : '#808080'));
-        }
-        if (!lineDone && _AR_MOVING.indexOf(x.load.status) >= 0) { body.appendChild(divider('▼ Cycle continues from here (now) — load in motion', '#2e9975')); lineDone = true; }   // F11
+      cyc.forEach(function (x) {
+        if (!lineDone && _AR_MOVING.indexOf(x.load.status) >= 0) { body.appendChild(thin('▼ Cycle continues from here (now)', '#5bbccb', true)); lineDone = true; }   // F11
         body.appendChild(rowEl(x));
       });
-      body.appendChild(marker('CYCLE END', endTxt(), '#2e9975'));
-      if (nextRows.length) {
-        body.appendChild(divider('↻ Next cycle — in the route, not preselected, outside the metrics', '#b28835'));
-        nextRows.forEach(function (x) { body.appendChild(rowEl(x)); });
-      }
-      if (e.gone.length) { body.appendChild(divider('⚠ Route lanes the TMS no longer gives to this unit', '#cc666f')); e.gone.forEach(function (x) { body.appendChild(rowEl(x)); }); }
-      if (st.widen) {
-        body.appendChild(divider('Outside the detected cycle — from the widened filters, not preselected, add by hand', '#808080'));
-        if (!e.outside.length) body.appendChild(divider('(no loads of this unit in the widened range)', '#666666'));
-        e.outside.forEach(function (x) { body.appendChild(rowEl(x)); });
-      }
-      if (st.showHidden) { body.appendChild(divider('🔒 In other routes of this unit — not at the border of a neighbor route: blocked', '#cc666f', true)); e.hidden.forEach(function (x) { body.appendChild(rowEl(x)); }); }
+      if (e.end.method !== 'open' || nextRows.length) body.appendChild(thin('Cycle end · ' + edgeTxt(e.end, true), '#808080'));
+      nextRows.forEach(function (x) { body.appendChild(rowEl(x)); });
+      e.gone.forEach(function (x) { body.appendChild(rowEl(x)); });
+      if (st.widen) { if (e.outside.length) body.appendChild(thin('Outside the detected cycle', '#808080')); e.outside.forEach(function (x) { body.appendChild(rowEl(x)); }); }
+      if (st.showHidden) { body.appendChild(thin('In other routes · locked', '#cc666f')); e.hidden.forEach(function (x) { body.appendChild(rowEl(x)); }); }
+      var pager = document.createElement('div');
+      pager.style.cssText = 'display:flex;align-items:center;gap:8px;padding:12px 18px;font:600 11.5px ' + F + ';color:#b3b3b3;' + MINW;
+      pager.innerHTML = '<span>Showing 1-' + nShown + ' of ' + nShown + ' <span style="color:#808080">(Unit ' + _arUnitKey(unit) + ' cycle · ' + missing + ' to add · ' + inRoute + ' already in route)</span></span><span style="flex:1"></span><span style="color:#666666">‹</span><span style="padding:3px 9px;border-radius:6px;background:#2a2a2a;color:#e6e6e6;font-weight:800">1</span><span style="color:#666666">›</span><span style="margin-left:10px;color:#808080">Rows: 10 ▾</span>';
+      body.appendChild(pager);
       modal.appendChild(body);
       appendFooter(mt, addRows, outsideSel, moveRows, remN, tmsN);
       wire();
     }
     function appendFooter(mt, addRows, outsideSel, moveRows, remN, tmsN) {
-      // ── metrics (H3/H4) ──
+      // ── metrics in one row (H3): what's added + the resulting cycle (+ HOS when there is a driver with HOS) ──
       if (mt) {
-        var met = function (k, v, c) { return '<div style="min-width:0;padding:9px 12px"><div style="font:700 9px ' + F + ';text-transform:uppercase;letter-spacing:.05em;color:#808080">' + k + '</div><div style="font:900 14px ' + F + ';color:' + (c || '#e6e6e6') + ';margin-top:2px;white-space:nowrap">' + v + '</div></div>'; };
-        var grp = function (t, html, extra) { return '<div style="display:flex;flex-direction:column;border-left:1px solid rgba(255,255,255,.07);' + (extra || '') + '"><div style="padding:7px 12px 0;font:900 9px ' + F + ';letter-spacing:.07em;color:#666666">' + t + '</div><div style="display:flex">' + html + '</div></div>'; };
-        var hosH = '';
-        if (st.hosOn && e.hosData && e.hosData.leftH != null) {
-          var over = mt.needH > e.hosData.leftH;
-          hosH = grp('HOS (' + (e.driverNow || 'driver') + ')', met('Hours left', e.hosData.leftH + ' h', over ? '#d0a038' : '#47b26b') + met('Plan needs', '~' + mt.needH + ' h', over ? '#d0a038' : '#e6e6e6') + (over ? '<div style="padding:9px 12px;font:700 10.5px ' + F + ';color:#d0a038;max-width:160px;line-height:1.35">⚠ Exceeds the driver’s hours by ~' + (mt.needH - e.hosData.leftH) + ' h</div>' : ''));
-        }
+        var cell = function (k, v, sub2, c) { return '<div style="flex:1;min-width:120px;padding:12px 14px;text-align:center;border-left:1px solid rgba(255,255,255,.07)"><div style="font:700 10px ' + F + ';letter-spacing:.07em;color:#808080;text-transform:uppercase">' + k + '</div><div style="font:800 18px ' + F + ';color:' + (c || '#f5f5f5') + ';margin-top:4px;white-space:nowrap">' + v + '</div>' + (sub2 ? '<div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px;white-space:nowrap">' + sub2 + '</div>' : '') + '</div>'; };
+        var over = st.hosOn && e.hosData && e.hosData.leftH != null && mt.needH > e.hosData.leftH;
         var mm = document.createElement('div');
-        mm.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,.08);background:#1f1f1f;flex:none;overflow-x:auto';
-        mm.innerHTML = grp(mode === 'create' ? 'SELECTED' : 'WILL BE ADDED', met('Loads', mt.add.n) + met('Income', money(mt.add.inc), '#47b26b') + met('Loaded mi', mt.add.mi.toLocaleString('en-US')), 'border-left:none') +
-          grp('RESULTING CYCLE', met('Loads', mt.res.n) + met('Income', money(mt.res.inc), '#47b26b') + met('Loaded mi', mt.res.mi.toLocaleString('en-US')) + met('DH mi', Math.round(mt.res.dh).toLocaleString('en-US')) + met('RPM', '$' + mt.res.rpm.toFixed(2)) + met('Days', mt.res.days)) + hosH;
+        mm.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,.08);background:#1c1c1c;flex:none;overflow-x:auto';
+        mm.innerHTML = cell(mode === 'create' ? 'Loads selected' : 'Loads to add', mt.add.n) + cell('Added income', money(mt.add.inc)) + cell('Avg RPM', mt.add.mi ? '$' + (mt.add.inc / mt.add.mi).toFixed(2) : '--') + cell('Added miles', mt.add.mi.toLocaleString('en-US') + ' mi') +
+          cell('Resulting cycle', mt.res.n + ' loads', money(mt.res.inc) + ' · ' + mt.res.days + ' d · $' + mt.res.rpm.toFixed(2) + '/mi') +
+          (st.hosOn && e.hosData && e.hosData.leftH != null ? cell('HOS left', e.hosData.leftH + ' h', over ? '⚠ plan needs ~' + mt.needH + ' h' : 'plan needs ~' + mt.needH + ' h', over ? '#d0a038' : '#f5f5f5') : '');
+        mm.firstChild.style.borderLeft = 'none';
         modal.appendChild(mm);
       }
-      // ── CTA ──
       var nAdd = addRows.length + outsideSel.length;
       var any = nAdd || moveRows.length || remN || tmsN;
       var cta = document.createElement('div');
-      cta.style.cssText = 'display:flex;align-items:center;gap:10px;padding:11px 18px;border-top:1px solid rgba(255,255,255,.08);flex:none';
-      var note = st.phase === 'eld' ? 'Waiting for the ELD…' : e.empty ? 'Nothing to add for this unit right now.'
-        : mode === 'create' ? 'The selection goes back to the Create route block; the route is built when you continue there.'
-        : (!any ? 'Nothing to add — this route already holds the whole detected cycle.' : 'Loads already in the route are never duplicated; executed lanes stay read-only.');
-      var warn = !e.empty && mode === 'route' && any && (e.covered.length || e.rechained.length) ? '<div style="margin-top:3px;color:#d0a038;font-weight:700">⚠ ' + (e.covered.length ? e.covered.length + ' planned (Unbooked) lane' + (e.covered.length === 1 ? '' : 's') + ' covered by real loads will be removed' : '') + (e.covered.length && e.rechained.length ? '; ' : '') + (e.rechained.length ? e.rechained.length + ' later Unbooked lane' + (e.rechained.length === 1 ? '' : 's') + ' will be re-chained from the last load' : '') + '. Undo is available right after.</div>' : '';
+      cta.style.cssText = 'display:flex;align-items:center;gap:10px;padding:13px 18px;border-top:1px solid rgba(255,255,255,.08);flex:none';
+      var note = st.phase === 'eld' ? '' : e.empty ? 'Nothing to add for this unit.' : mode === 'create' ? 'Your selection goes back to Create route.'
+        : !any ? 'This route already holds the whole cycle.' : 'Fills the cycle; loads already in the route are not duplicated.' +
+          (e.covered.length ? ' ' + e.covered.length + ' planned (Unbooked) lane' + (e.covered.length === 1 ? '' : 's') + ' will be replaced.' : '');
       var lbl = st.phase === 'eld' ? 'Checking ELD…' : e.empty ? 'Nothing to add' : mode === 'create' ? 'Use selection (' + nAdd + ') →' : nAdd || moveRows.length ? 'Rebuild route (' + (nAdd + moveRows.length) + ') →' : remN || tmsN ? 'Update route →' : 'Nothing to add';
       var enabled = st.phase !== 'eld' && !e.empty && (mode === 'create' || any);
-      cta.innerHTML = '<span style="flex:1;font:600 11px ' + F + ';color:#808080;line-height:1.45">' + note + warn + '</span>' +
-        '<button class="_ar-x" style="padding:9px 16px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,.14);color:#b3b3b3;font:800 12px ' + F + ';cursor:pointer">Cancel</button>' +
-        '<button class="_ar-go" style="padding:9px 18px;border-radius:10px;border:none;background:#2e9975;color:#141414;font:800 12.5px ' + F + ';cursor:pointer;white-space:nowrap;' + (enabled ? '' : 'opacity:.45;pointer-events:none') + '">' + lbl + '</button>';
+      cta.innerHTML = '<span style="flex:1;font:600 12px ' + F + ';color:#b3b3b3">' + note + '</span>' +
+        '<button class="_ar-x" style="padding:10px 20px;border-radius:999px;background:#242424;border:1px solid rgba(255,255,255,.12);color:#e6e6e6;font:800 13px ' + F + ';cursor:pointer">Cancel</button>' +
+        '<button class="_ar-go" style="padding:10px 22px;border-radius:999px;border:none;background:#5bbccb;color:#141414;font:800 13px ' + F + ';cursor:pointer;white-space:nowrap;' + (enabled ? '' : 'opacity:.45;pointer-events:none') + '">' + lbl + '</button>';
       modal.appendChild(cta);
     }
     function wire() {
