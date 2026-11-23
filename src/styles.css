@@ -268,6 +268,13 @@ input[type="date"] { color-scheme: dark; }
 #cr-root .cr-status-pill { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800; }
 #cr-root .cr-load-meta { font-size: 10px; color: var(--cr-text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #cr-root .cr-load-price { font-size: 14px; font-weight: 700; color: var(--cr-accent); flex-shrink: 0; margin-top: 1px; }
+/* Auto-rebuild engine block in Create route: cycle summary, times with zone + source, cabin tag */
+#cr-root .cr-cycle-sum { font-size: 11px; color: var(--cr-text-dim); background: rgba(46,153,117,.07); border: 1px solid rgba(46,153,117,.25); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; line-height: 1.45; }
+#cr-root .cr-cycle-sum b { color: #e6e6e6; }
+#cr-root .cr-cycle-sum-sub { font-size: 10px; color: var(--cr-text-muted); margin-top: 2px; }
+#cr-root .cr-load-meta.cr-load-times { white-space: normal; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; color: var(--cr-text-dim); }
+#cr-root .cr-cab-tag { flex-shrink: 0; padding: 1px 6px; border-radius: 999px; font-size: 8.5px; font-weight: 800; text-transform: uppercase; color: #9a7fd1; background: rgba(154,127,209,.12); border: 1px solid rgba(154,127,209,.4); }
+#cr-root .cr-cycle-full { color: #6688cc; font-weight: 800; cursor: pointer; white-space: nowrap; }
 /* TONU cycle card: struck consignee, TONU tag, fee caption */
 #cr-root .cr-load-tonu .cr-load-route s { color: var(--cr-text-muted); }
 #cr-root .cr-tonu-tag { flex-shrink: 0; padding: 1px 6px; border-radius: 5px; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #e8a33d; background: rgba(232,163,61,.1); border: 1px solid rgba(232,163,61,.55); }
