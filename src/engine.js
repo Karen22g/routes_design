@@ -425,7 +425,7 @@ export function initApp() {
     });
     const { key, dir } = s.routeSort;
     // test cases read in order (AR01 → AR14) unless the user sorts by another column
-    if (s.routeTab === 'Auto-rebuild cases' && key === 'dateStart') return out.sort((a, b) => a.arCase.localeCompare(b.arCase));
+    if (s.routeTab === 'Auto-rebuild cases' && key === 'dateStart') return out.sort((a, b) => _arRouteRank(a) - _arRouteRank(b) || a.id.localeCompare(b.id));   // by use-case priority
     out.sort((a, b) => {
       const sa = routeStats(a), sb = routeStats(b);
       if (key === 'income') return cmp(sa.income, sb.income, dir);
@@ -4284,6 +4284,12 @@ export function initApp() {
     var routeReal = routeLoads.filter(function (l) { return _arEligible(l) && inC(l); });
     var rFirst = routeReal.length ? Math.min.apply(null, routeReal.map(_arPuUtc)) : null, rLast = routeReal.length ? Math.max.apply(null, routeReal.map(_arPuUtc)) : null;
     var rows = [], hidden = [], outside = [];
+    // Next cycle (UC05): loads after the end edge. If the route already holds some and the unit has no later
+    // route, the route continues into the next cycle by default (toggle in the modal: ctx.continueNext).
+    var nextLoads = endInfo.movedOut && endInfo.movedOut.length ? endInfo.movedOut : (cycles[k + 1] ? cycles[k + 1].loads : []);
+    var ownNext = nextLoads.filter(function (l) { return r && l.route === r.id; });
+    var contDefault = !!(r && ownNext.length && !nextR);
+    var cont = !!r && (ctx.continueNext != null ? ctx.continueNext : contDefault);
     var movableIn = function (other, l) {
       var ols = loadsOf(other.id).filter(_arIsReal);
       if (other === prevR) return ols.every(function (x) { return _arPuUtc(x) < _arPuUtc(l) || inC(x); });
@@ -4309,8 +4315,10 @@ export function initApp() {
       } else {
         var before = _arPuUtc(l) < _arPuUtc(C.loads[0]);
         var rcOut = recapOf(l);
+        var inNext = nextLoads.indexOf(l) >= 0;
         if (own) {
           row.cls = before ? 'previous_cycle' : 'next_cycle'; row.keep = true;
+          if (!before && inNext && cont) row.cont = true;
           // Move it to the neighbor route whose cycle it belongs to (proposal 23-nov) — same cycle = < 34 h apart
           var nb = before ? prevR : nextR;
           if (nb && nb.status !== 'Completed') {
@@ -4319,6 +4327,7 @@ export function initApp() {
             if (gapNb != null && gapNb < 34) row.moveTo = { id: nb.id, name: nb.name, dir: before ? 'prev' : 'next' };
           }
         }
+        else if (cont && inNext && (!l.route || !routeOf(l.route).id)) { row.cls = 'next_add'; row.sel = true; }   // UC05: next cycle, same route
         else if (rcOut && !l.route) { row.cls = 'next_cycle'; row.free = true; }   // fits with recap, recap off
         else if (!l.route || !routeOf(l.route).id) { row.cls = 'outside_cycle'; outside.push(row); return; }
         else return;   // other cycles of other routes: not part of this answer
@@ -4364,7 +4373,8 @@ export function initApp() {
     return {
       ctx: ctx, route: r, empty: false, anchor: anchor, start: startInfo, end: endInfo, pauses: pauses, rows: rows, hidden: hidden, outside: outside, gone: goneRows,
       warnings: warnings, hos: hosState, hosData: hos, driverNow: driverNow, origin: origin, covered: covered, rechained: unb.filter(function (l) { return covered.indexOf(l) < 0; }),
-      excluded: excluded, clipped: clipped, cabins: cabins, unitCtx: uc, prevRoute: prevR, nextRoute: nextR, cycleLoads: C.loads, conflicts: conflicts
+      excluded: excluded, clipped: clipped, cabins: cabins, unitCtx: uc, prevRoute: prevR, nextRoute: nextR, cycleLoads: C.loads, conflicts: conflicts,
+      next: { available: nextLoads.length > 0, cont: cont, contDefault: contDefault }
     };
   }
   // Loads of the detected cycle that the route is missing (Cycle loads list in Refresh, G6)
@@ -4379,7 +4389,7 @@ export function initApp() {
   function _arMetrics(e, sel, drop) {
     drop = drop || {};
     var add = e.rows.filter(function (x) { return sel(x); }).concat(e.outside.filter(function (x) { return x.sel; }));
-    var keep = e.rows.filter(function (x) { return x.cls === 'in_this_route' && !drop[x.load.id]; });
+    var keep = e.rows.filter(function (x) { return (x.cls === 'in_this_route' || x.cont) && !drop[x.load.id]; });   // + next-cycle loads the route keeps (UC05)
     var res = keep.concat(add).map(function (x) { return x.load; }).sort(function (a, b) { return _arPuUtc(a) - _arPuUtc(b); });
     var sum = function (arr, f) { return arr.reduce(function (s, x) { return s + f(x); }, 0); };
     var dh = 0;
@@ -4534,13 +4544,14 @@ export function initApp() {
     var st = {
       phase: hosCfg === 'none' ? 'ready' : 'eld',       // H1: «Checking ELD…»
       hosOn: hosCfg === 'ok', hosArrived: false,        // C10: slow ELD → HOS arrive later
-      widen: false, showHidden: false, sel: {}, remove: {}, move: {}, tms: {}, moveOut: {}, recap: true,
+      widen: false, showHidden: false, sel: {}, remove: {}, move: {}, tms: {}, moveOut: {}, recap: true, cont: null,
       sync: 'idle', syncMin: uc.syncMin || 4, conflict: false, gapWarn: null
     };
     (opts.preselect || []).forEach(function (id) { st.sel[id] = true; });
     var e;
     function compute() {
-      e = _arEngine({ unit: unit, rId: mode === 'route' ? rId : null, driver: driver, anchor: opts.anchor, hosOverride: st.hosOn ? 'ok' : 'none', recap: st.recap });
+      e = _arEngine({ unit: unit, rId: mode === 'route' ? rId : null, driver: driver, anchor: opts.anchor, hosOverride: st.hosOn ? 'ok' : 'none', recap: st.recap, continueNext: st.cont == null ? undefined : st.cont });
+      if (st.cont == null && !e.empty) st.cont = e.next.cont;   // the engine's default is read once, then the user rules
       if (mode === 'create' && opts.preselect) e.rows.forEach(function (x) { if (x.cls === 'cycle' || x.cls === 'fills_gap') x.sel = !!st.sel[x.load.id]; });
       else e.rows.forEach(function (x) { if (x.load.id in st.sel) x.sel = st.sel[x.load.id]; });
       e.outside.forEach(function (x) { x.sel = !!st.sel[x.load.id]; });
@@ -4601,18 +4612,20 @@ export function initApp() {
     }
     function render() {
       modal.innerHTML = '';
-      var selRow = function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap') && x.sel; };
+      var selRow = function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap' || x.cls === 'next_add') && x.sel; };
       var addRows = e.rows.filter(selRow), outsideSel = e.outside.filter(function (x) { return x.sel; });
       var moveRows = e.rows.filter(function (x) { return x.cls === 'other_route' && st.move[x.load.id]; });
       var remN = Object.keys(st.remove).length + Object.keys(st.moveOut).length, tmsN = Object.keys(st.tms).length;
       var drop = Object.assign({}, st.remove, st.moveOut);
       var mt = e.empty ? null : _arMetrics(e, function (x) { return selRow(x) || (x.cls === 'other_route' && st.move[x.load.id]); }, drop);
+      var nextAdd = e.empty ? 0 : e.rows.filter(function (x) { return x.cls === 'next_add'; }).length;
       var inOther = e.empty ? 0 : e.rows.filter(function (x) { return x.cls === 'other_route'; }).length + e.hidden.length;
       var missing = e.rows.filter(function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap') && (!x.conflict || x.conflict.suggested); }).length;   // a «not compatible» pair counts once
       var inRoute = e.rows.filter(function (x) { return x.cls === 'in_this_route'; }).length;
       var nShown = e.rows.length + (st.widen ? e.outside.length : 0) + (st.showHidden ? e.hidden.length : 0) + e.gone.length;
       var sub = e.empty ? 'empty cycle' : mode === 'create' ? 'cycle for the new route' : !missing && !e.rows.some(function (x) { return x.cls === 'other_route' && x.other.movable; }) ? 'cycle up to date'
         : e.rows.some(function (x) { return x.cls === 'fills_gap'; }) ? 'fill every gap in the cycle' : 'complete the cycle';
+      if (!e.empty && mode === 'route' && !missing && nextAdd) sub = 'continue into the next cycle';
       // ── top bar ──
       var top = document.createElement('div');
       top.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);flex:none';
@@ -4642,6 +4655,7 @@ export function initApp() {
         '<div style="flex:1"></div><div style="text-align:right;font:600 12px ' + F + ';color:#b3b3b3;line-height:1.5">' +
         (st.phase === 'eld' ? 'Reading the truck cycle…' : e.empty ? '<b style="color:#e6e6e6">No loads</b> in this unit’s cycle'
           : '<span style="color:#5bbccb">Full cycle computed →</span><br><b style="color:#f5f5f5">' + missing + ' missing load' + (missing === 1 ? '' : 's') + '</b> to fill · ' + inRoute + ' already in the route' +
+            (nextAdd ? ' · ' + nextAdd + ' from the next cycle' : '') +
             (inOther ? ' · <span title="Already planned in another route of this unit — counted there, not here. Move them only if they belong to this cycle.">' + inOther + ' in other routes</span>' : '')) + '</div>';
       modal.appendChild(ctx);
       // ── only the notices that need a decision ──
@@ -4691,13 +4705,13 @@ export function initApp() {
       var chosen = function (x) { return x.cls === 'in_this_route' ? !st.remove[x.load.id] : !!x.sel; };
       var rowEl = function (x) {
         var l = x.load, k = x.cls, d = document.createElement('div'), nc = x.conflict;
-        var toggle = !nc && (k === 'cycle' || k === 'fills_gap' || k === 'outside_cycle');
+        var toggle = !nc && (k === 'cycle' || k === 'fills_gap' || k === 'outside_cycle' || k === 'next_add');
         var removing = (k === 'next_cycle' || k === 'previous_cycle' || k === 'gone') && st.remove[l.id];
         var leaving = (k === 'next_cycle' || k === 'previous_cycle') && st.moveOut[l.id];
         var moving = k === 'other_route' && st.move[l.id];
         var on = nc ? chosen(x) : toggle ? x.sel : (k === 'in_this_route' || ((k === 'next_cycle' || k === 'previous_cycle' || k === 'gone') && !removing && !leaving && !x.free) || moving);
         var hl = (toggle && x.sel) || moving || (nc && on && k !== 'in_this_route');
-        var edge = nc ? '#cc666f' : k === 'gone' ? '#cc666f' : x.recap ? '#9a7fd1' : k === 'fills_gap' ? '#d0a038' : k === 'next_cycle' || k === 'previous_cycle' ? '#b28835' : '';
+        var edge = nc ? '#cc666f' : k === 'gone' ? '#cc666f' : x.recap ? '#9a7fd1' : k === 'fills_gap' ? '#d0a038' : k === 'next_cycle' || k === 'previous_cycle' || k === 'next_add' ? '#b28835' : '';
         d.style.cssText = 'display:grid;grid-template-columns:' + COLS + ';align-items:center;padding:0 18px;' + MINW + ';border-bottom:1px solid rgba(255,255,255,.05);' +
           'background:' + (removing ? 'rgba(204,102,111,.07)' : leaving ? 'rgba(102,136,204,.08)' : hl ? 'rgba(46,153,117,.09)' : 'transparent') + ';box-shadow:' + (edge ? 'inset 3px 0 0 ' + edge : 'none') + ';' + (toggle || nc ? 'cursor:pointer;' : '');
         var box = k === 'other_route' && !x.other.movable
@@ -4713,18 +4727,21 @@ export function initApp() {
         else if (k === 'fills_gap') tg = '<span style="color:#d0a038">fills gap</span>';
         else if (k === 'cycle' && rc) tg = '<span title="' + rcT + '" style="color:#9a7fd1">' + rc + '</span>';
         else if (k === 'outside_cycle') tg = '<span style="color:#808080">outside the cycle</span>';
+        else if (k === 'next_add') tg = '<span style="color:#b28835">next cycle</span>';
         else if (k === 'next_cycle' && x.free) tg = '<span style="color:#b28835">next cycle</span> <span title="' + rcT + '" style="color:#9a7fd1">· fits with recap</span>';
         else if (k === 'next_cycle' || k === 'previous_cycle') {
           var nb = k === 'next_cycle' ? 'next' : 'previous';
           if (removing) tg = '<span style="color:#cc666f">will be removed</span>' + link('_ar-rm', 'undo', l.id, '#cc666f');
           else if (leaving) tg = '<span title="' + x.moveTo.name + '" style="color:#6688cc">→ moves to ' + nb + ' route</span>' + link('_ar-mo', 'undo', l.id, '#6688cc');
-          else tg = '<span style="color:#b28835">' + nb + ' cycle</span>' + (x.recap ? ' <span title="' + rcT + '" style="color:#9a7fd1">· fits with recap</span>' : '') +
+          else tg = '<span style="color:#b28835">' + nb + ' cycle' + (x.cont ? ' · in this route' : '') + '</span>' + (x.recap ? ' <span title="' + rcT + '" style="color:#9a7fd1">· fits with recap</span>' : '') +
             (x.moveTo ? link('_ar-mo', 'move to ' + nb + ' route', l.id, '#6688cc', x.moveTo.name) : '') + link('_ar-rm', 'remove', l.id, '#d0a038');
         }
         else if (k === 'gone') tg = removing ? '<span style="color:#cc666f">will be removed</span>' + link('_ar-rm', 'undo', l.id, '#cc666f')
           : '<span title="' + x.why + '" style="color:#cc666f">' + (l.reassignedTo ? 'reassigned to ' + l.reassignedTo : 'cancelled in TMS') + '</span>' + link('_ar-rm', 'remove', l.id, '#cc666f');
         else if (k === 'other_route') tg = '<span title="' + x.other.name + '" style="color:' + (x.other.movable ? '#6688cc' : '#cc666f') + '">in ' + (x.other.neighbor === 'prev' ? 'previous' : x.other.neighbor === 'next' ? 'next' : 'other') + ' route</span>' +
           (x.other.movable ? link('_ar-mv', moving ? 'undo' : 'move here', l.id, '#6688cc') : ' · <span class="_ar-open" data-r="' + x.other.id + '" title="' + x.other.reason + '" style="cursor:pointer;color:#cc666f;text-decoration:underline;text-underline-offset:2px">open</span>');
+        if ((e.start.method === 'reset_in_load' && e.start.load === l) || (e.end.method === 'reset_in_load' && e.end.load === l))   // UC04
+          tg += ' <span title="The 34 h reset happened during this load — it stays in the cycle of its pickup" style="color:#9a7fd1">· split by a reset</span>';
         if (x.tms) tg += (tg ? '<br>' : '') + '<span title="' + x.tms.detail + '" style="color:#d0a038">changed in TMS</span>' + link('_ar-tms', st.tms[l.id] ? 'undo' : 'update', l.id, '#d0a038');
         var cabTag = e.cabins && e.cabins.length > 1 && _arCabinOf(l) && _arCabinOf(l) !== cab ? ' <span title="Other cabin of unit ' + _arUnitKey(unit) + '" style="font:800 9px ' + F + ';color:#9a7fd1;background:rgba(154,127,209,.14);padding:1px 5px;border-radius:4px">' + _arCabinOf(l) + '</span>' : '';
         d.innerHTML = '<div>' + box + '</div>' +
@@ -4752,7 +4769,7 @@ export function initApp() {
           if (ev.target.closest('._ar-rm,._ar-mv,._ar-tms,._ar-open')) return;
           x.sel = !x.sel; st.sel[l.id] = x.sel;
           if (!x.sel && x.cls !== 'outside_cycle') {   // E9
-            var ordered = e.rows.filter(function (y) { return y.cls !== 'next_cycle' && y.cls !== 'previous_cycle'; });
+            var ordered = e.rows.filter(function (y) { return y.cls !== 'next_cycle' && y.cls !== 'previous_cycle' && y.cls !== 'next_add'; });
             var ix = ordered.indexOf(x), kept = function (y) { return y.cls === 'in_this_route' || ((y.cls === 'cycle' || y.cls === 'fills_gap') && y.sel); };
             st.gapWarn = ordered.slice(0, ix).some(kept) && ordered.slice(ix + 1).some(kept) ? 'Unchecking #' + l.id + ' leaves a gap in the cycle.' : null;
           } else st.gapWarn = null;
@@ -4767,8 +4784,8 @@ export function initApp() {
         return h;
       };
       var order = e.rows.slice().sort(function (a, b) { return _arPuUtc(a.load) - _arPuUtc(b.load); });
-      var prevRows = order.filter(function (x) { return x.cls === 'previous_cycle'; }), nextRows = order.filter(function (x) { return x.cls === 'next_cycle'; });
-      var cyc = order.filter(function (x) { return x.cls !== 'previous_cycle' && x.cls !== 'next_cycle'; });
+      var prevRows = order.filter(function (x) { return x.cls === 'previous_cycle'; }), nextRows = order.filter(function (x) { return x.cls === 'next_cycle' || x.cls === 'next_add'; });
+      var cyc = order.filter(function (x) { return x.cls !== 'previous_cycle' && x.cls !== 'next_cycle' && x.cls !== 'next_add'; });
       prevRows.forEach(function (x) { body.appendChild(rowEl(x)); });
       var sTxt = edgeTxt(e.start, false);
       if (prevRows.length || sTxt) body.appendChild(thin('Cycle start' + (sTxt ? ' · ' + sTxt : ''), '#808080'));
@@ -4783,7 +4800,16 @@ export function initApp() {
         body.appendChild(rowEl(x));
       });
       if (firstUp < 0 && cyc.length) body.appendChild(nowLine());
-      if (e.end.method !== 'open' || nextRows.length) body.appendChild(thin('Cycle end · ' + edgeTxt(e.end, true), '#808080'));
+      if (e.next && e.next.available && mode === 'route') {   // UC05: the route may continue into the next cycle
+        var ce = thin('Cycle end · ' + edgeTxt(e.end, true), '#808080');
+        var tgl = document.createElement('span');
+        tgl.className = '_ar-cont';
+        tgl.title = st.cont ? 'This route continues into the next cycle — turn off to leave the next cycle for another route' : 'Turn on to continue the next cycle in this same route';
+        tgl.style.cssText = 'display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:700 11px ' + F + ';color:' + (st.cont ? '#141414' : '#b28835') + ';background:' + (st.cont ? '#b28835' : 'transparent') + ';border:1px solid rgba(178,136,53,.6);padding:3px 9px;border-radius:999px;white-space:nowrap';
+        tgl.innerHTML = '<span style="width:20px;height:11px;border-radius:999px;background:' + (st.cont ? '#141414' : 'rgba(178,136,53,.25)') + ';position:relative;display:inline-block"><span style="position:absolute;top:2px;' + (st.cont ? 'right:2px' : 'left:2px') + ';width:7px;height:7px;border-radius:50%;background:#b28835"></span></span>Next cycle in this route';
+        ce.insertBefore(tgl, ce.lastChild);
+        body.appendChild(ce);
+      } else if (e.end.method !== 'open' || nextRows.length) body.appendChild(thin('Cycle end · ' + edgeTxt(e.end, true), '#808080'));
       nextRows.forEach(function (x) { body.appendChild(rowEl(x)); });
       e.gone.forEach(function (x) { body.appendChild(rowEl(x)); });
       if (st.widen) { if (e.outside.length) body.appendChild(thin('Outside the detected cycle', '#808080')); e.outside.forEach(function (x) { body.appendChild(rowEl(x)); }); }
@@ -4805,7 +4831,7 @@ export function initApp() {
         var mm = document.createElement('div');
         mm.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,.08);background:#1c1c1c;flex:none;overflow-x:auto';
         mm.innerHTML = cell(mode === 'create' ? 'Loads selected' : 'Loads to add', mt.add.n) + cell('Added income', money(mt.add.inc)) + cell('Avg RPM', mt.add.mi ? '$' + (mt.add.inc / mt.add.mi).toFixed(2) : '--') + cell('Added miles', mt.add.mi.toLocaleString('en-US') + ' mi') +
-          cell('Resulting cycle', mt.res.n + ' loads', money(mt.res.inc) + ' · ' + mt.res.days + ' d · $' + mt.res.rpm.toFixed(2) + '/mi') +
+          cell(st.cont && e.next && e.next.available ? 'Resulting route' : 'Resulting cycle', mt.res.n + ' loads', money(mt.res.inc) + ' · ' + mt.res.days + ' d · $' + mt.res.rpm.toFixed(2) + '/mi') +
           (st.hosOn && e.hosData && e.hosData.leftH != null ? cell('HOS left', e.hosData.leftH + ' h' + (rcH ? '<span style="font-size:13px;color:#9a7fd1"> + ' + rcH + ' h recap</span>' : ''), over ? '⚠ plan needs ~' + mt.needH + ' h' : 'plan needs ~' + mt.needH + ' h', over ? '#d0a038' : '#f5f5f5') : '');
         mm.firstChild.style.borderLeft = 'none';
         modal.appendChild(mm);
@@ -4831,6 +4857,7 @@ export function initApp() {
       q('._ar-widen', function () { st.widen = !st.widen; render(); });
       q('._ar-rm', function (b) { var id = b.dataset.id; delete st.moveOut[id]; if (st.remove[id]) delete st.remove[id]; else st.remove[id] = true; render(); });
       q('._ar-recap', function () { st.recap = !st.recap; compute(); render(); });
+      q('._ar-cont', function () { st.cont = !st.cont; compute(); render(); });
       q('._ar-mo', function (b) {   // to the neighbor route of its cycle, as a contiguous block (execution order)
         var id = b.dataset.id, x = e.rows.find(function (y) { return y.load.id === id; });
         if (st.moveOut[id]) { var to = st.moveOut[id]; Object.keys(st.moveOut).forEach(function (k2) { if (st.moveOut[k2] === to) delete st.moveOut[k2]; }); render(); return; }
@@ -4861,7 +4888,7 @@ export function initApp() {
       var go = modal.querySelector('._ar-go');
       if (go) go.addEventListener('click', function () {
         if (mode === 'create') {
-          var picked = e.rows.filter(function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap') && x.sel; }).map(function (x) { return x.load.id; })
+          var picked = e.rows.filter(function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap' || x.cls === 'next_add') && x.sel; }).map(function (x) { return x.load.id; })
             .concat(e.outside.filter(function (x) { return x.sel; }).map(function (x) { return x.load.id; }));
           close(); if (opts.onPick) opts.onPick(picked); return;
         }
@@ -4870,7 +4897,7 @@ export function initApp() {
         if (flow[0] === 'conflict') { flow.shift(); if (uc.onConflict) uc.onConflict(); st.conflict = true; st.move = {}; compute(); render(); return; }
         st.conflict = false;
         var ch = {
-          add: e.rows.filter(function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap') && x.sel; }).map(function (x) { return x.load; }).concat(e.outside.filter(function (x) { return x.sel; }).map(function (x) { return x.load; })),
+          add: e.rows.filter(function (x) { return (x.cls === 'cycle' || x.cls === 'fills_gap' || x.cls === 'next_add') && x.sel; }).map(function (x) { return x.load; }).concat(e.outside.filter(function (x) { return x.sel; }).map(function (x) { return x.load; })),
           move: e.rows.filter(function (x) { return x.cls === 'other_route' && st.move[x.load.id]; }).map(function (x) { return { load: x.load, other: routeOf(x.other.id) }; }),
           remove: Object.keys(st.remove), tms: Object.keys(st.tms),
           moveOut: Object.keys(st.moveOut).map(function (id) { return { load: e.rows.find(function (x) { return x.load.id === id; }).load, to: routeOf(st.moveOut[id]) }; })
@@ -5339,6 +5366,16 @@ export function initApp() {
     sc('S24', 'Límite del ciclo y recap hours (propuesta)', 'A Carla se le acaban las horas el vie 20 a las 20:00 (próximo reset). A la medianoche recupera 9 h (recap). Columbus→Indianapolis (en la ruta) e Indianapolis→Louisville (libre) caben en esas 9 h; Louisville→Nashville ya no.',
       'Abre Auto-rebuild. Apaga y prende el chip «Recap».', 'Con recap: las 2 cargas siguen en el ciclo con la etiqueta «recap +h» y el cálculo en el tooltip; el fin del ciclo pasa después de ellas. Sin recap: pasan al ciclo siguiente (la de la ruta con «remove», la libre solo informativa).', ['J5']);
 
+    // S25 · the route continues into the next cycle (UC05): it already holds a next-cycle load, no later route
+    unit('2074', { driver: 'Pat Kim', hos: { state: 'none' } });
+    var x1 = L('424001', '2074', 'Memphis, TN', 'Nashville, TN', 'Delivered', S('Memphis, TN', dd(18), '06:00', 'real'), S('Nashville, TN', dd(18), '10:00', 'real'));
+    var x2 = L('424002', '2074', 'Nashville, TN', 'Atlanta, GA', 'In Transit', S('Nashville, TN', dd(19), '07:00', 'real'), S('Atlanta, GA', dd(19), '12:00'));
+    var x3 = L('424003', '2074', 'Atlanta, GA', 'Charlotte, NC', 'Booked', S('Atlanta, GA', dd(21), '08:00'), S('Charlotte, NC', dd(21), '12:00'));
+    L('424004', '2074', 'Charlotte, NC', 'Pittsburgh, PA', 'Booked', S('Charlotte, NC', dd(22), '07:00'), S('Pittsburgh, PA', dd(22), '14:00'));
+    L('424005', '2074', 'Pittsburgh, PA', 'Philadelphia, PA', 'Booked', S('Pittsburgh, PA', dd(23), '06:00'), S('Philadelphia, PA', dd(23), '11:00'));
+    R('S25', 'R-AR25', '2074_Kim_2026-11-18', '2074', 'Pat Kim', 'In progress', [x1, x2, x3]);
+    sc('S25', 'Continuar el siguiente ciclo en la misma ruta', 'Ver UC05.', '', '', ['J8', 'E4']);
+
     // Free loads of a unit without route (G8) and of the Create-route unit 5017 (G1)
     unit('2069', { driver: 'Lena Fox', hos: { state: 'none' } });
     L('421001', '2069', 'Columbus, OH', 'Pittsburgh, PA', 'Delivered', S('Columbus, OH', dd(18), '07:00', 'real'), S('Pittsburgh, PA', dd(18), '11:00', 'real'));
@@ -5438,8 +5475,132 @@ export function initApp() {
     C('J5', J, 'Recap hours: indicador + cálculo; al apagarlo pasan al ciclo siguiente', 'Modal · chip Recap', 'Propuesta', md('R-AR24'));
     C('J6', J, 'Carga del próximo ciclo → mover a la ruta que le corresponde (en orden)', 'Modal → R-AR08N', 'Propuesta', md('R-AR08'));
     C('J7', J, 'Cargas en otra ruta: no se cuentan dos veces; mover respeta el orden', 'Modal', 'Propuesta', md('R-AR09'));
+    C('J8', J, 'Continuar el siguiente ciclo en la misma ruta (interruptor en «Cycle end»)', 'Modal', 'Propuesta', md('R-AR25'));
+    C('J9', J, 'Carga partida por un reset: etiqueta «split by a reset»', 'Modal', 'Propuesta', md('R-AR17'));
+    _arInitUseCases();
     setTimeout(_arMountCaseBtn, 0);
   }
+
+  // ── USE CASES ordered by frequency × importance (P1 common → P4 rare). Each one: scenario (seeded data),
+  //    test (what to do) and expected result. This list drives the case selector, the Plan card and the doc.
+  var _AR_UC = [];
+  var _AR_PRIO = { P1: 'Común', P2: 'Frecuente', P3: 'Ocasional', P4: 'Raro' };
+  function _arInitUseCases() {
+    var U = function (code, prio, title, sc, go, covers, scenario, test, expected) { _AR_UC.push({ code: code, prio: prio, title: title, sc: sc, go: go, covers: covers, scenario: scenario, test: test, expected: expected }); };
+    var md = function (rid) { return { route: rid, modal: true }; }, rt = function (rid) { return { route: rid }; };
+    // P1 · Común — what the dispatcher meets every day
+    U('UC01', 'P1', 'Sin HOS: el ciclo se corta por descansos de 34 h o más', ['S02'], md('R-AR02'), ['C1', 'C2', 'H4', 'D5', 'E2', 'E8', 'B2', 'caso 7'],
+      'Unidad 2046 sin driver (sin HOS). TMS: Houston→Dallas (vie 13) · descanso de exactamente 34 h · Dallas→OKC (dom 15) · pausa de 33 h · OKC→Tulsa→KC→St. Louis (en la ruta) · descanso de 35 h · St. Louis→Chicago (en la ruta).',
+      'Abre Auto-rebuild. Luego toca el chip «Pickup ≥» para ampliar 3 días.',
+      'Bordes «Cycle start · 34 h rest» y «Cycle end · 35 h rest»; la pausa de 33 h no corta y no se muestra. Dallas→OKC sale preseleccionada como faltante. St. Louis→Chicago queda después del fin como «next cycle · in this route» (la ruta ya sigue en ese ciclo; se puede quitar). Sin HOS no hay chip ni métrica de HOS. Al ampliar, Houston→Dallas aparece como «outside the cycle», sin marcar.');
+    U('UC02', 'P1', 'Con HOS: reset del driver al inicio y próximo reset al final', ['S01'], md('R-AR01'), ['C3', 'C9', 'D4', 'E5', 'E12', 'F11', 'B1', 'B3', 'B5', 'H3', 'J2'],
+      'Unidad 2045 con TJ Brooks (HOS ok, 31 h disponibles). Dallas→Houston (lun 16) · reset de 34 h en Houston · Houston→San Antonio (mié 18) · San Antonio→El Paso en tránsito (llega vie 02:00 MST).',
+      'Abre Auto-rebuild.',
+      'Bordes «Cycle start · HOS reset» y «Cycle end · next HOS reset Sat Nov 21 · 06:00 MST». Dallas→Houston queda arriba como «previous cycle · remove». Línea «Now — 1 done · 1 upcoming» antes de la carga en tránsito. Horas locales con huso (CST/MST) y punto de fuente (real/planned). Chip «HOS left 31 h» y métrica «plan needs ~h». CTA «Nothing to add».');
+    U('UC03', 'P1', 'Cargas con fechas que se solapan → «Not compatible», se elige una', ['S23'], md('R-AR23'), ['J4'],
+      'Unidad 2072. Vie 20: dos cargas libres salen de San Antonio con una hora de diferencia (doble reserva). Sáb 21: Laredo→Houston (en la ruta) entrega a las 11:00 y Dallas→Memphis (libre) recoge a las 14:00, a ~5 h de manejo.',
+      'Abre Auto-rebuild. En cada par elige la otra carga y vuelve a la sugerida.',
+      'Cada par sale bajo «Not compatible · choose one» con el motivo en una línea, y se elige con un radio. Sugerida: la de la ruta, o la de más ingreso (San Antonio→Dallas). Si eliges Dallas→Memphis, Laredo→Houston pasa a «leaves the route» y sale al construir. «Missing loads» cuenta cada par una sola vez.');
+    U('UC04', 'P1', 'Carga partida entre dos ciclos (reset durante la carga)', ['S17'], md('R-AR17'), ['C6', 'J9'],
+      'Sam Ellis (HOS ok) toma el reset de 34 h en Kansas City mientras hace Dallas→Chicago (pickup lun 16, entrega mié 18). Después: Chicago→Indianapolis (en tránsito, en la ruta) e Indianapolis→Columbus (libre).',
+      'Abre Auto-rebuild.',
+      'Dallas→Chicago se queda en el ciclo de su pickup: sale arriba como «previous cycle · split by a reset» (el tooltip explica la regla) y se puede quitar. El ciclo actual empieza en «Cycle start · HOS reset during #416002». Indianapolis→Columbus falta y va preseleccionada.');
+    U('UC05', 'P1', 'Continuar el siguiente ciclo en la misma ruta', ['S25'], md('R-AR25'), ['J8', 'E4'],
+      'Unidad 2074 sin HOS. Ciclo actual: Memphis→Nashville y Nashville→Atlanta (en tránsito). Descanso de 44 h. El siguiente ciclo ya empezó en esta ruta (Atlanta→Charlotte, sáb 21) y el TMS tiene dos cargas más de ese ciclo. La unidad no tiene otra ruta después.',
+      'Abre Auto-rebuild. Apaga y prende «Next cycle in this route» en la línea «Cycle end». Construye.',
+      'Como la ruta ya tiene cargas del siguiente ciclo y no hay otra ruta, el interruptor viene encendido: Atlanta→Charlotte dice «next cycle · in this route», y Charlotte→Pittsburgh y Pittsburgh→Philadelphia salen preseleccionadas como «next cycle». El resumen dice «· 2 from the next cycle». Apagado: las dos libres desaparecen y Atlanta→Charlotte queda como «next cycle · remove». Al construir, las 5 lanes quedan en orden de pickup en la misma ruta.');
+    U('UC06', 'P1', 'Recap hours: agregar con recap o dejar para el siguiente ciclo', ['S24'], md('R-AR24'), ['J5'],
+      'Carla Vega (HOS ok, 12 h disponibles) se queda sin horas el vie 20 a las 20:00 (próximo reset). A medianoche recupera 9 h (recap). Columbus→Indianapolis (en la ruta, ~5 h) e Indianapolis→Louisville (libre, ~4 h) caben en esas 9 h; Louisville→Nashville ya no.',
+      'Abre Auto-rebuild. Pasa el mouse por el chip «Recap» y apágalo; vuelve a prenderlo.',
+      'Con recap: Columbus→Indianapolis «in this route · recap · 5 of 9 h» e Indianapolis→Louisville preseleccionada «recap · 9 of 9 h». Louisville→Nashville no aparece. El tooltip del chip «Recap +9 h · 9 h used» muestra el cálculo; «HOS left» dice «12 h + 9 h recap»; el fin pasa a «after the recap loads». Apagado: ambas pasan a «next cycle · fits with recap» y el fin vuelve a «next HOS reset Fri Nov 20 · 20:00 EST».');
+    // P2 · Frecuente — the daily build flows
+    U('UC07', 'P2', 'Ruta vacía → ciclo completo (caso 6)', ['S03'], rt('R-AR03'), ['caso 6', 'D1', 'E1', 'F1', 'F2', 'F4', 'F5', 'G3', 'F10'],
+      'Ruta Planned de la unidad 2047 (Maria Lopez, HOS ok) sin cargas reales: 3 lanes Unbooked, salida jue 19 08:00 CST. El TMS tiene el ciclo en curso Memphis→Nashville→Louisville→Indianapolis→Columbus; el ciclo anterior terminó en Memphis.',
+      'Usa «Auto-rebuild» del estado vacío del Plan. Construye. Vuelve a abrir Auto-rebuild.',
+      'Ancla = fecha de salida; las 4 cargas salen preseleccionadas y el pie avisa que 2 lanes Unbooked se reemplazan. Tras construir: lanes por pickup, la Unbooked posterior re-encadenada desde Columbus, Origin = Memphis, ruta In progress y «Complete with Easy routes» al final. Al reabrir: «Nothing to add» (no duplica).');
+    U('UC08', 'P2', 'Huecos en el ciclo → «fills gap» (caso 8)', ['S07'], md('R-AR07'), ['caso 8', 'E3', 'E9', 'F3', 'G6'],
+      'Ruta con Houston→Dallas, OKC→KC (en tránsito), St. Louis→Indianapolis y Columbus→Pittsburgh. El TMS tiene Dallas→OKC y KC→St. Louis; entre Indianapolis y Columbus no hay carga.',
+      'Abre Auto-rebuild; desmarca Dallas→OKC y vuelve a marcarla. Construye. Antes de construir, prueba también Refresh ▾ → Cycle loads.',
+      'Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso de una línea «leaves a gap in the cycle» (no bloquea). Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.');
+    U('UC09', 'P2', 'Crear ruta con una unidad que ya tiene ciclo (caso 2)', [], { create: '5017' }, ['caso 2', 'G1', 'D6'],
+      'Crear ruta → Assign unit → unidad 5017 (Jeremy Davis, HOS ok). Ciclo en el TMS: TONU en Houston (mar 17), Houston→Dallas, Dallas→Memphis (en tránsito).',
+      'Elige la unidad. Revisa el bloque «Loads in this truck cycle». Cambia la fecha de salida. Abre «View full cycle».',
+      'Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio, el inicio del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.');
+    U('UC10', 'P2', 'Unidad sin cargas de ciclo → Easy routes (casos 1 y 5)', [], { create: '2201', cont: true }, ['caso 1', 'caso 5', 'G4'],
+      'Crear ruta con la unidad 2201, que no tiene cargas en el TMS alrededor de hoy.',
+      'Continúa a Easy routes. Usa la barra Auto-rebuild y cancela.',
+      'El bloque de ciclo dice que no hay cargas. En Easy routes la barra Auto-rebuild está activa; el modal muestra «No loads in this cycle» y cancelar vuelve al Plan vacío.');
+    U('UC11', 'P2', 'Cargas en el borde de la ruta anterior → «move here» (caso 10)', ['S09'], md('R-AR09'), ['caso 10', 'E6', 'J7'],
+      'La ruta anterior de la unidad 2053 (R-AR09P) termina con Jacksonville→Tampa y Tampa→Atlanta, que son del ciclo en curso de esta ruta.',
+      'Abre Auto-rebuild → «move here» en Jacksonville→Tampa → confirma. Construye y abre R-AR09P.',
+      'Las 2 cargas salen como «in previous route · move here» y no cuentan como faltantes ni en el ciclo resultante hasta moverlas (el resumen las nombra aparte). Mover Jacksonville→Tampa arrastra el bloque hasta el borde (la confirmación nombra la ruta). R-AR09P muestra el aviso «moved…».');
+    U('UC12', 'P2', 'Carga del próximo ciclo con una ruta siguiente → moverla o quitarla (caso 9)', ['S08'], md('R-AR08'), ['caso 9', 'E4', 'E13', 'J6'],
+      'Denver→Salt Lake City (sáb 21) está en la ruta después de un descanso de 43.5 h. La unidad ya tiene la ruta siguiente R-AR08N, que empieza el dom 22 en Salt Lake City.',
+      'Abre Auto-rebuild → «move to next route» → Update route. Abre R-AR08N. (Alternativa: «remove» y luego Refresh ▾ en R-AR08N.)',
+      'Como hay ruta siguiente, «Next cycle in this route» viene apagado: la carga sale como «next cycle · move to next route · remove», fuera de métricas. Al moverla: «→ moves to next route · undo» y CTA «Update route». R-AR08N la recibe en orden de pickup, con aviso. Si se quita, queda libre en My Loads y aparece en Cycle loads de R-AR08N.');
+    U('UC13', 'P2', 'TONU dentro del ciclo', ['S22'], md('R-AR22'), ['A3', 'J3b'],
+      'Antes de la ruta el camión hizo DH St. Louis→Oklahoma City para una carga cancelada en el pickup (TONU, Invoiced, $300).',
+      'Abre Auto-rebuild y construye. Revisa la lane en el Plan.',
+      'La TONU sale preseleccionada sin tachado: destino = pickup con «not delivered» (destino original en el tooltip), «DH 541 mi», $300 «TONU fee» y la etiqueta TONU. En el Plan: lane «Not delivered · TONU» con su DH.');
+    U('UC14', 'P2', 'Desde My Loads (con y sin unidad filtrada)', [], { myloads: '*' }, ['J1', 'G7', 'G8'],
+      'My Loads sin filtro de unidad. Unidad 2069 (Lena Fox) con cargas libres y sin ruta.',
+      'Toca «Auto-rebuild cycle» → busca «lena» → elige 2069. Prueba también desde un Plan: «Add» → «Add load».',
+      'Sin unidad, primero se abre el selector (unidad, driver, «on the road», número de cargas). La unidad queda como filtro y se conservan los demás. Con 2069 se crea una ruta vacía y se abre el mismo modal con «Trucks» fijo. Desde el Plan, «Add load» abre My Loads filtrado por la unidad, con «← Back to route».');
+    // P3 · Ocasional
+    U('UC15', 'P3', 'Cambios del TMS y Sync', ['S11'], md('R-AR11'), ['E10', 'E11', 'H2', 'J3'],
+      'El TMS movió la cita de dropoff de Indianapolis→Columbus, reasignó Columbus→Pittsburgh a la unidad 2071 y canceló Pittsburgh→Philadelphia. Última sincronización: hace 23 min, con una carga nueva.',
+      'Abre Auto-rebuild → «update» → «remove» → toca «Synced 23 min ago» → «Update cycle».',
+      '«changed in TMS · update» (detalle en el tooltip); «reassigned to 2071 · remove» y «cancelled in TMS · remove» con borde rojo, sin tachar. Al quitar, la fila dice «will be removed · undo». El Sync encuentra cambios y aparece Columbus→Philadelphia para agregar.');
+    U('UC16', 'P3', 'ELD lento o caído', ['S12', 'S13'], md('R-AR12'), ['C10', 'H1'],
+      'S12: el ELD de 2056 tarda; con HOS, el próximo reset de Ana es vie 04:00 y Phoenix→Las Vegas pasa al ciclo siguiente. S13: el ELD de 2057 no responde.',
+      'Abre Auto-rebuild y espera. A: «Update cycle» cuando lleguen las HOS. B: construye antes.',
+      '«Checking ELD…» → chip HOS «Retrying…» → aviso «HOS data available — the cycle may change · Update cycle». Si confirmas sin HOS, el Plan avisa «HOS data arrived and… differs» con «Reopen Auto-rebuild»; la ruta nunca se corrige sola. S13: chip «HOS · Unavailable» y bordes por descansos.');
+    U('UC17', 'P3', 'Cambio de conductor dentro del ciclo', ['S15'], md('R-AR15'), ['C4', 'C7', 'I1', 'A5'],
+      'Dan Wu hizo Little Rock→Memphis y tomó un reset en Memphis; el camión siguió con Luis Ortega. Dan volvió a manejar Nashville→Louisville. Driver actual: Luis.',
+      'Abre Auto-rebuild.',
+      '«Cycle start · 41 h rest» (no el reset de Dan) y un aviso de una línea de cambio de conductor. Nashville→Louisville «fills gap». La ruta sigue siendo la misma.');
+    U('UC18', 'P3', 'Descanso de 34 h o más sin reset en HOS (on duty)', ['S16'], md('R-AR16'), ['C5'],
+      'El camión estuvo parado 38 h en Denver, pero las HOS de Nina muestran on duty.',
+      'Abre Auto-rebuild.',
+      'Manda HOS: el descanso no corta y Kansas City→Denver entra como faltante. Aviso de una línea «Truck stopped ≥ 34 h but the driver’s HOS show no reset».');
+    U('UC19', 'P3', 'Fecha de salida pasada', ['S04'], md('R-AR04'), ['D2', 'F6'],
+      'Ruta vacía de la unidad 2048 con salida lun 9-nov. En ese ciclo hubo 3 cargas ejecutadas, una Offer y una Cancelled.',
+      'Abre Auto-rebuild y construye.',
+      'Se reconstruye el ciclo pasado (Paid, Invoiced, Delivered); Offer y Cancelled no aparecen. En el Plan, las lanes ejecutadas llevan candado.');
+    U('UC20', 'P3', 'Ancla dentro de un descanso', ['S05', 'S06'], md('R-AR05'), ['D3', 'F7'],
+      'S05: salida mié 18, en medio de un descanso de 91 h; el ciclo siguiente empieza el vie 20. S06: salida sáb 21 y no hay cargas después.',
+      'Abre Auto-rebuild y construye (S05). Abre R-AR06.',
+      'S05: se propone el ciclo siguiente (Dallas→OKC, OKC→KC) y, como todo es futuro, la ruta sigue Planned. S06: se propone el ciclo anterior.');
+    U('UC21', 'P3', 'Ruta vecina finalizada o carga en una ruta no vecina', ['S10'], md('R-AR10'), ['E7'],
+      'Houston→San Antonio es del ciclo pero está en R-AR10P (Finished). Houston→Dallas también, pero en R-AR10X, que no es vecina.',
+      'Abre Auto-rebuild → «Show loads in other routes».',
+      'Houston→San Antonio: «in previous route · open» con casilla bloqueada (tooltip «route is finished»). Houston→Dallas oculta; al mostrarla, bloqueada con «open».');
+    U('UC22', 'P3', 'Cabinas agrupadas, carga manual y datos incompletos', ['S20'], md('R-AR20'), ['A1', 'A2', 'A4', 'B4', 'B6'],
+      'Unidad 2065 con dos cabinas (2065-A con ELD, 2065-B). Una carga manual de efRouting, una en tránsito sin hora de dropoff y una parcial.',
+      'Abre Auto-rebuild.',
+      'Cargas de ambas cabinas juntas; la de 2065-B con su etiqueta. La manual con ícono «ef». Dropoff sin hora → punto «estimated» y «est.». La parcial con millas «est.».');
+    // P4 · Raro
+    U('UC23', 'P4', 'Sin descanso ni reset en 10 días', ['S18'], md('R-AR18'), ['C8'],
+      'La unidad 2062 hizo una carga diaria desde el 6-nov sin descansos de 34 h.', 'Abre Auto-rebuild.',
+      '«Cycle start · no reset in 10 days» y un aviso de una línea; se ofrecen solo las cargas de la ventana de 10 días.');
+    U('UC24', 'P4', 'Ventana sin cargas', ['S19'], md('R-AR19'), ['C11'],
+      'La unidad 2063 no tiene cargas en el TMS alrededor de la salida.', 'Abre Auto-rebuild.',
+      '«No loads in this cycle» y CTA «Nothing to add» deshabilitado.');
+    U('UC25', 'P4', 'Cambio de cabina → ruta nueva consecutiva', ['S21'], rt('R-AR21'), ['I2'],
+      'Omar empezó con la cabina 2066 y en Memphis pasa a la 2067, que ya tiene una carga Booked.',
+      '«Change driver / unit…» en la ficha → unidad 2067 → «Create new route». En la nueva usa Auto-rebuild.',
+      'Aviso «Changing the cabin creates a new route». Se crea una ruta consecutiva para 2067, con avisos en ambas; la anterior conserva lo hecho.');
+    U('UC26', 'P4', 'Concurrencia y error al construir', ['S14'], md('R-AR14'), ['F8', 'F9'],
+      'Mientras revisas, el TMS agrega una carga anterior del ciclo. Después, la construcción da timeout una vez.',
+      'Rebuild → revisa → Rebuild → Retry.',
+      '1.º: no construye, «The cycle changed while you were reviewing it» y el modal recargado con la carga nueva. 2.º: «Building route…» → «Couldn’t build the route» con Retry. Retry → Plan + toast con Undo.');
+    U('UC27', 'P4', 'Ruta o Crear ruta sin unidad', [], { create: 'any', cont: true }, ['A6', 'G2', 'G5', 'caso 4'],
+      'Crear ruta en modo Any unit (sin unidad). En Rutas, R-2602 no tiene unidad.',
+      'Continúa a Easy routes y toca Auto-rebuild. Elige un recurso ocupado en «Assign driver & equipment».',
+      'Sin bloque de ciclo. Auto-rebuild deshabilitado con candado y el motivo; al tocarlo se abre «Assign driver & equipment». Un recurso ocupado en otra ruta que se solapa bloquea Save.');
+  }
+  function _arUcOfRoute(r) { return r && r.arCase ? _AR_UC.find(function (u) { return u.sc.indexOf(r.arCase) >= 0; }) || null : null; }
+  function _arRouteRank(r) { var u = _arUcOfRoute(r); return u ? _AR_UC.indexOf(u) : 999; }
 
   // ── Case selector: floating button + drawer with the coverage matrix (case → screen → status → «Ir») ──
   function _arGo(go) {
@@ -5469,35 +5630,63 @@ export function initApp() {
     b.addEventListener('click', function () { _arCasePanel(!document.getElementById('_ef-ar-cases')); });
     document.body.appendChild(b);
   }
+  var _arPanelTab = 'uc', _arUcOpen = {};
   function _arCasePanel(open) {
     var ex = document.getElementById('_ef-ar-cases'); if (ex) ex.remove();
     if (!open) return;
     var F = _AR_F, q = '';
     var pn = document.createElement('div'); pn.id = '_ef-ar-cases';
-    pn.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:480px;max-width:96vw;z-index:9360;background:#161616;border-left:1px solid rgba(255,255,255,.1);box-shadow:-20px 0 60px rgba(0,0,0,.6);display:flex;flex-direction:column;font-family:' + F;
+    pn.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:500px;max-width:96vw;z-index:9360;background:#161616;border-left:1px solid rgba(255,255,255,.1);box-shadow:-20px 0 60px rgba(0,0,0,.6);display:flex;flex-direction:column;font-family:' + F;
     var stc = { 'Ofrecido': '#47b26b', 'Parcial': '#d0a038', 'Falta': '#cc666f', 'Propuesta': '#9a7fd1' };
-    function render() {
-      var counts = {}; _AR_CATALOG.forEach(function (c) { counts[c.status] = (counts[c.status] || 0) + 1; });
+    var PCOL = { P1: '#47b26b', P2: '#6688cc', P3: '#d0a038', P4: '#808080' };
+    var PDESC = { P1: 'empieza aquí · pasa todos los días', P2: 'flujos diarios de armado', P3: 'pasa de vez en cuando', P4: 'casos de borde' };
+    var goBtn = function (cls, ix) { return '<span class="' + cls + '" data-ix="' + ix + '" style="flex:none;cursor:pointer;font:800 11px ' + F + ';color:#141414;background:#2e9975;padding:3px 9px;border-radius:999px">Ir →</span>'; };
+    function ucView() {
+      var rows = _AR_UC.filter(function (u) { return !q || (u.code + ' ' + u.title + ' ' + u.covers.join(' ') + ' ' + u.scenario).toLowerCase().indexOf(q) >= 0; });
+      return ['P1', 'P2', 'P3', 'P4'].map(function (p) {
+        var rs = rows.filter(function (u) { return u.prio === p; }); if (!rs.length) return '';
+        return '<div style="display:flex;align-items:baseline;gap:8px;padding:14px 18px 4px"><span style="font:900 10.5px ' + F + ';letter-spacing:.07em;color:#141414;background:' + PCOL[p] + ';padding:2px 7px;border-radius:5px">' + p + ' · ' + _AR_PRIO[p].toUpperCase() + '</span><span style="font:600 10.5px ' + F + ';color:#808080">' + PDESC[p] + '</span></div>' +
+          rs.map(function (u) {
+            var ix = _AR_UC.indexOf(u), op = !!_arUcOpen[u.code];
+            var ln = function (k, v, col) { return '<div style="display:flex;gap:8px;margin-top:5px"><span style="flex:none;width:62px;font:800 9px ' + F + ';letter-spacing:.06em;text-transform:uppercase;color:' + (col || '#808080') + ';padding-top:2px">' + k + '</span><span style="flex:1;font:600 11px ' + F + ';color:#b3b3b3;line-height:1.45">' + v + '</span></div>'; };
+            return '<div style="padding:8px 18px;border-bottom:1px solid rgba(255,255,255,.04)"><div style="display:flex;align-items:flex-start;gap:10px">' +
+              '<span style="flex:none;min-width:38px;font:900 10.5px ' + F + ';color:' + PCOL[p] + ';padding-top:1px">' + u.code + '</span>' +
+              '<div class="_cp-tg" data-c="' + u.code + '" style="flex:1;min-width:0;cursor:pointer"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + u.title + ' <span style="color:#666666;font-weight:600">' + (op ? '▴' : '▾') + '</span></div>' +
+              '<div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + (u.sc.length ? u.sc.join(', ') + ' · ' : '') + u.covers.join(', ') + '</div></div>' + goBtn('_cp-uc', ix) + '</div>' +
+              (op ? '<div style="margin:4px 0 2px 48px">' + ln('Escenario', u.scenario) + ln('Prueba', u.test) + ln('Esperado', u.expected, '#47b26b') + '</div>' : '') + '</div>';
+          }).join('');
+      }).join('');
+    }
+    function matrixView() {
       var rows = _AR_CATALOG.filter(function (c) { return !q || (c.id + ' ' + c.title + ' ' + c.screen + ' ' + c.group).toLowerCase().indexOf(q) >= 0; });
       var groups = rows.map(function (c) { return c.group; }).filter(function (g, i, a) { return a.indexOf(g) === i; });
+      return groups.map(function (g) {
+        return '<div style="padding:12px 18px 4px;font:900 10px ' + F + ';letter-spacing:.07em;text-transform:uppercase;color:#666666">' + g + '</div>' + rows.filter(function (c) { return c.group === g; }).map(function (c) {
+          return '<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 18px;border-bottom:1px solid rgba(255,255,255,.04)"><span style="flex:none;min-width:46px;font:900 10.5px ' + F + ';color:#6688cc;padding-top:1px">' + c.id + '</span>' +
+            '<div style="flex:1;min-width:0"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + c.title + '</div><div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + c.screen + (c.note ? ' · ' + c.note : '') + '</div></div>' +
+            '<span style="flex:none;font:800 9.5px ' + F + ';color:' + (stc[c.status] || '#b3b3b3') + ';background:' + (stc[c.status] || '#b3b3b3') + '1f;padding:2px 7px;border-radius:999px;margin-top:1px">' + c.status + '</span>' + goBtn('_cp-go', _AR_CATALOG.indexOf(c)) + '</div>';
+        }).join('');
+      }).join('');
+    }
+    function render() {
+      var counts = {}; _AR_CATALOG.forEach(function (c) { counts[c.status] = (counts[c.status] || 0) + 1; });
+      var tab = function (k, t) { var on = _arPanelTab === k; return '<span class="_cp-tab" data-k="' + k + '" style="cursor:pointer;padding:6px 11px;border-radius:8px;font:800 11.5px ' + F + ';color:' + (on ? '#f5f5f5' : '#808080') + ';background:' + (on ? '#2a2a2a' : 'transparent') + '">' + t + '</span>'; };
       pn.innerHTML = '<div style="padding:16px 18px 10px;border-bottom:1px solid rgba(255,255,255,.08)"><div style="display:flex;align-items:center;gap:10px"><span style="font:800 15px ' + F + ';color:#f5f5f5;flex:1">Casos de Auto-rebuild</span>' +
         '<span class="_cp-reset" title="Recarga la maqueta con los datos iniciales" style="cursor:pointer;font:800 11px ' + F + ';color:#6688cc;border:1px solid rgba(102,136,204,.4);padding:4px 9px;border-radius:999px">Reiniciar datos</span><span class="_cp-x" style="cursor:pointer;color:#808080;font-size:16px">✕</span></div>' +
-        '<div style="font:600 11px ' + F + ';color:#808080;margin-top:6px;line-height:1.45">Catálogo del entregable (§3) + casos 1–10 del prototipo. «Ir» abre la pantalla con los datos del escenario. Cobertura: ' +
-        Object.keys(counts).map(function (k) { return '<b style="color:' + (stc[k] || '#b3b3b3') + '">' + counts[k] + ' ' + k.toLowerCase() + '</b>'; }).join(' · ') + '.</div>' +
+        '<div style="display:flex;gap:4px;margin-top:10px">' + tab('uc', 'Casos de uso (' + _AR_UC.length + ')') + tab('matrix', 'Matriz de cobertura (' + _AR_CATALOG.length + ')') + '</div>' +
+        '<div style="font:600 11px ' + F + ';color:#808080;margin-top:8px;line-height:1.45">' + (_arPanelTab === 'uc'
+          ? 'Ordenados por frecuencia e importancia: empieza por P1. Toca un caso para ver escenario, prueba y resultado esperado; «Ir» abre la pantalla con sus datos.'
+          : 'Catálogo del entregable (§3) + casos 1–10 del prototipo + propuestas. Cobertura: ' + Object.keys(counts).map(function (k) { return '<b style="color:' + (stc[k] || '#b3b3b3') + '">' + counts[k] + ' ' + k.toLowerCase() + '</b>'; }).join(' · ') + '.') + '</div>' +
         '<input class="_cp-q" placeholder="Buscar caso, pantalla…" value="' + q + '" style="margin-top:10px;width:100%;box-sizing:border-box;padding:8px 10px;border-radius:9px;background:#242424;border:1px solid rgba(255,255,255,.1);color:#e6e6e6;font:600 12px ' + F + ';outline:none"></div>' +
-        '<div class="ef-scroll" style="flex:1;overflow:auto;padding:6px 0 18px">' + groups.map(function (g) {
-          return '<div style="padding:12px 18px 4px;font:900 10px ' + F + ';letter-spacing:.07em;text-transform:uppercase;color:#666666">' + g + '</div>' + rows.filter(function (c) { return c.group === g; }).map(function (c) {
-            return '<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 18px;border-bottom:1px solid rgba(255,255,255,.04)"><span style="flex:none;min-width:46px;font:900 10.5px ' + F + ';color:#6688cc;padding-top:1px">' + c.id + '</span>' +
-              '<div style="flex:1;min-width:0"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + c.title + '</div><div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + c.screen + (c.note ? ' · ' + c.note : '') + '</div></div>' +
-              '<span style="flex:none;font:800 9.5px ' + F + ';color:' + (stc[c.status] || '#b3b3b3') + ';background:' + (stc[c.status] || '#b3b3b3') + '1f;padding:2px 7px;border-radius:999px;margin-top:1px">' + c.status + '</span>' +
-              '<span class="_cp-go" data-ix="' + _AR_CATALOG.indexOf(c) + '" style="flex:none;cursor:pointer;font:800 11px ' + F + ';color:#141414;background:#2e9975;padding:3px 9px;border-radius:999px">Ir →</span></div>';
-          }).join('');
-        }).join('') + '</div>';
+        '<div class="ef-scroll" style="flex:1;overflow:auto;padding:0 0 18px">' + (_arPanelTab === 'uc' ? ucView() : matrixView()) + '</div>';
       pn.querySelector('._cp-x').addEventListener('click', function () { pn.remove(); });
       pn.querySelector('._cp-reset').addEventListener('click', function () { location.reload(); });
+      pn.querySelectorAll('._cp-tab').forEach(function (b) { b.addEventListener('click', function () { _arPanelTab = b.dataset.k; render(); }); });
+      pn.querySelectorAll('._cp-tg').forEach(function (b) { b.addEventListener('click', function () { _arUcOpen[b.dataset.c] = !_arUcOpen[b.dataset.c]; render(); }); });
       var inp = pn.querySelector('._cp-q');
       inp.addEventListener('input', function () { q = inp.value.toLowerCase(); render(); var i2 = pn.querySelector('._cp-q'); i2.focus(); i2.setSelectionRange(q.length, q.length); });
       pn.querySelectorAll('._cp-go').forEach(function (b) { b.addEventListener('click', function () { _arGo(_AR_CATALOG[+b.dataset.ix].go); }); });
+      pn.querySelectorAll('._cp-uc').forEach(function (b) { b.addEventListener('click', function () { _arGo(_AR_UC[+b.dataset.ix].go); }); });
     }
     render();
     document.body.appendChild(pn);
@@ -10588,7 +10777,10 @@ export function initApp() {
     // Auto-rebuild test case card (seeded AR-xx routes): situation, how to test, expected result
     const _arCaseCard = (function () {
       var r = routeOf(routeId); if (!r.arCase) return null;
-      var c = _AR_CASES.find(function (x) { return x.code === r.arCase; }); if (!c) return null;
+      var u = _arUcOfRoute(r), c0 = _AR_CASES.find(function (x) { return x.code === r.arCase; }); if (!u && !c0) return null;
+      var c = u ? { badge: u.code + ' · ' + u.prio + ' ' + _AR_PRIO[u.prio], title: u.title, covers: u.covers, situation: u.scenario, test: u.test, expected: u.expected, code: r.arCase }
+        : { badge: 'ESCENARIO ' + c0.code, title: c0.title, covers: c0.covers, situation: c0.situation, test: c0.test, expected: c0.expected, code: c0.code };
+      var PCOL = { P1: '#47b26b', P2: '#6688cc', P3: '#d0a038', P4: '#808080' }, pc = u ? PCOL[u.prio] : '#6688cc';
       var FB = "'General Sans', Nunito, system-ui", open = !_arCaseCollapsed[routeId];
       var line = function (k, v, col) { return el('div', { style: { display: 'flex', gap: '10px', marginTop: '6px' } }, [
         el('span', { style: { flex: 'none', width: '68px', font: '800 9.5px ' + FB, letterSpacing: '.06em', textTransform: 'uppercase', color: col || '#808080', paddingTop: '2px' } }, [k]),
@@ -10597,12 +10789,12 @@ export function initApp() {
       var btn = function (t, fn) { return el('span', { class: 'hoverable', onclick: (ev) => { ev.stopPropagation(); fn(); }, style: { font: '800 11px ' + FB, color: '#6688cc', border: '1px solid rgba(102,136,204,.45)', padding: '4px 10px', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' } }, [t]); };
       return el('div', { style: { marginBottom: '12px', padding: '11px 14px', borderRadius: '12px', background: 'rgba(102,136,204,.06)', border: '1px dashed rgba(102,136,204,.4)' } }, [
         el('div', { class: 'hoverable', onclick: () => { _arCaseCollapsed[routeId] = open; setState({}); }, style: { display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer', flexWrap: 'wrap' } }, [
-          el('span', { style: { font: '900 9.5px ' + FB, letterSpacing: '.06em', color: '#141414', background: '#6688cc', padding: '3px 7px', borderRadius: '5px' } }, ['ESCENARIO ' + c.code]),
+          el('span', { style: { font: '900 9.5px ' + FB, letterSpacing: '.06em', color: '#141414', background: pc, padding: '3px 7px', borderRadius: '5px', textTransform: 'uppercase' } }, [c.badge]),
           el('span', { style: { flex: '1', font: '800 12.5px ' + FB, color: '#e6e6e6', minWidth: '180px' } }, [c.title]),
           ...c.covers.map(function (k) { return el('span', { style: { font: '800 9.5px ' + FB, color: '#6688cc', background: 'rgba(102,136,204,.12)', padding: '2px 6px', borderRadius: '5px' } }, [k]); }),
           el('span', { style: { font: '700 11px ' + FB, color: '#6688cc', marginLeft: '6px' } }, [open ? 'Ocultar ▴' : 'Detalle ▾'])
         ]),
-        ...(open ? [line('Situación', c.situation), line('Prueba', c.test), line('Esperado', c.expected, '#47b26b'),
+        ...(open ? [line('Escenario', c.situation), line('Prueba', c.test), line('Esperado', c.expected, '#47b26b'),
           el('div', { style: { display: 'flex', gap: '8px', marginTop: '9px', flexWrap: 'wrap' } }, [
             ...(r.status !== 'Completed' && _arHasUnit(r) ? [btn('Abrir Auto-rebuild', () => _openAutoRebuild(routeId, {}))] : []),
             ...(c.code === 'S21' ? [btn('Change driver / unit…', () => _arOpenAssign(routeId, () => setState({})))] : []),
