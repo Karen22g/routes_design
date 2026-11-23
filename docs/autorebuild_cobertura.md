@@ -116,6 +116,26 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 | H4 | Sin HOS: sin bloque de factibilidad | Modal · pie | Ofrecido | S02 · R-AR02 (modal) |
 | I1 | Cambio de conductor: misma ruta + aviso | Modal / Assign | Ofrecido | S15 · R-AR15 (modal) |
 | I2 | Cambio de cabina: ruta nueva consecutiva | Assign → ruta nueva | Ofrecido | S21 · R-AR21 |
+| J1 | My Loads sin unidad → selector de unidad → mismo modal | My Loads → selector → modal | Propuesta | My Loads · sin filtro de unidad — Los filtros del ciclo (unidad y fechas) quedan fijos en el modal. |
+| J2 | Ciclo: lo ejecutado y lo que viene (línea «Now») | Modal | Propuesta | S01 · R-AR01 (modal) |
+| J3 | Cargas con problema sin tachado: cancelada / reasignada con el motivo | Modal | Propuesta | S11 · R-AR11 (modal) |
+| J3b | TONU sin tachado: destino = pickup + «not delivered» | Modal + Crear ruta | Propuesta | S22 · R-AR22 (modal) |
+| J4 | Not compatible: el par agrupado, con el motivo, y se escoge una | Modal | Propuesta | S23 · R-AR23 (modal) |
+| J5 | Recap hours: indicador + cálculo; al apagarlo pasan al ciclo siguiente | Modal · chip Recap | Propuesta | S24 · R-AR24 (modal) |
+| J6 | Carga del próximo ciclo → mover a la ruta que le corresponde (en orden) | Modal → R-AR08N | Propuesta | S08 · R-AR08 (modal) |
+| J7 | Cargas en otra ruta: no se cuentan dos veces; mover respeta el orden | Modal | Propuesta | S09 · R-AR09 (modal) |
+
+### Propuestas de la reunión del 23-nov (grupo J, estado «Propuesta»)
+
+Son propuestas, no decisiones cerradas. Están en la maqueta para poder probarlas y decidir. Ninguna agrega texto explicativo: cada una se muestra con la señal más pequeña posible.
+
+| # | Punto discutido | Cómo queda en la maqueta | Probar |
+|---|---|---|---|
+| 1 | Acceso desde My Loads con el mismo modal | «Auto-rebuild cycle» está siempre activo. Si My Loads no está filtrado por una sola unidad, primero se abre un selector (búsqueda por unidad o driver, con «on the road» y número de cargas). La unidad elegida queda como filtro Unit y se conservan los demás filtros. En el modal, el chip «Trucks» queda fijo: solo entran cargas de esa unidad y de su ciclo. | J1 |
+| 2 | Lo ejecutado y lo que viene; marcar sin tachar | Una línea «▼ Now — cycle continues from here · N done · M upcoming» separa siempre lo ejecutado de lo que viene, aunque no haya carga en movimiento (resuelve la duda 7). El tachado se quitó. TONU: el destino es el pickup, con «not delivered» debajo y el destino original en el tooltip. Cancelada o reasignada: borde rojo y el motivo concreto («cancelled in TMS», «reassigned to 2071»). Al quitar una carga, la fila no se atenúa: queda sin marcar y dice «will be removed · undo». | J2, J3, J3b |
+| 3 | Cargas incompatibles o solapadas | El motor detecta pares que el camión no puede hacer seguidos: se solapan en el tiempo, o no da el tiempo de manejo entre ambas (~50 mph). Cada par sale agrupado con una línea «Not compatible · choose one» y el motivo, y se elige con un radio. Se sugiere la carga que ya está en la ruta; si ninguna está, la de más ingreso. Si eliges la carga nueva sobre una de la ruta, esa queda «leaves the route» y sale al construir. El par cuenta una sola vez en «missing loads». | J4 (S23) |
+| 4 | Límite del ciclo y recap hours | Con HOS, las cargas que quedan después del próximo reset y caben en las horas que el driver recupera (recap) siguen en el ciclo. Llevan la etiqueta «recap · 5 of 9 h» (horas acumuladas sobre las recuperadas) y el detalle en el tooltip. El chip «Recap +9 h · 9 h used» muestra el cálculo completo al pasar el mouse y funciona como interruptor: apagado, esas cargas pasan al ciclo siguiente («next cycle · fits with recap»). «HOS left» suma el recap y el fin del ciclo pasa a «after the recap loads». | J5 (S24) |
+| 5 | Cargas en otra ruta: sin doble conteo y moverlas al ciclo que corresponde | Las cargas de otras rutas no cuentan como faltantes ni entran al «Resulting cycle», salvo que se muevan. El resumen las nombra aparte («· K in other routes»). Una carga de esta ruta que es del ciclo siguiente o anterior ofrece «move to next/previous route» cuando la ruta vecina existe, no está finalizada y su ciclo es el mismo (< 34 h). El movimiento va en bloque contiguo para respetar el orden de ejecución, con confirmación. La ruta que la recibe reordena sus lanes por pickup y muestra un aviso. Las métricas nunca cuentan lo que sale (quitada, movida o descartada en un par). | J6, J7 |
 
 ### Escenarios sembrados
 
@@ -143,6 +163,8 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 | S20 · Cabinas agrupadas, carga manual, dropoff estimado y carga parcial | R-AR20 | La unidad 2065 tiene dos cabinas (2065-A, elegida, con ELD; 2065-B). Hay una carga manual de efRouting, una carga en tránsito sin hora planeada de dropoff y una carga parcial sin ELD ni transacciones. | A1, A2, A4, B4, B6 |
 | S21 · Cambio de cabina dentro del ciclo | R-AR21 | Omar empezó con la cabina 2066 y en Memphis pasa a la cabina 2067 (que ya tiene una carga Booked). | I2 |
 | S22 · TONU en el historial (decisión abierta) | R-AR22 | Antes de la ruta el camión hizo DH St. Louis→Oklahoma City para una carga cancelada en el pickup (TONU, Invoiced, $300). El entregable dice que TONU queda fuera; en el chat del 23-nov se pidió incluirla. | A3 |
+| S23 · Cargas no compatibles (propuesta) | R-AR23 | El TMS tiene dos cargas del viernes 20 que salen de San Antonio con una hora de diferencia (doble reserva). Además, Dallas→Memphis (sáb 14:00) no se alcanza a hacer después de Laredo→Houston, que termina a las 11:00 y está en la ruta. | J4 |
+| S24 · Límite del ciclo y recap hours (propuesta) | R-AR24 | A Carla se le acaban las horas el vie 20 a las 20:00 (próximo reset). A la medianoche recupera 9 h (recap). Columbus→Indianapolis (en la ruta) e Indianapolis→Louisville (libre) caben en esas 9 h; Louisville→Nashville ya no. | J5 |
 
 ## 3. Dudas y contradicciones para resolver antes de Notion
 
@@ -152,7 +174,7 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 4. **«Carga de la mitad de otra ruta» (E7).** Si se puede mover un bloque contiguo hasta el borde, toda carga de la vecina que esté en el ciclo termina siendo movible en bloque. «La mitad» solo queda bloqueada si la vecina se solapa en el tiempo o no es vecina. La maqueta bloquea cargas de rutas no vecinas y las de vecinas finalizadas (S10). ¿Es esa la intención?
 5. ~~**Origin en Crear ruta.**~~ **Resuelto (23-nov):** Origin = punto de inicio del ciclo de la ruta que se crea (último dropoff del ciclo anterior → primera parada ELD → pickup de la primera carga). Sigue al ciclo (cambia con la unidad o la fecha), no a las tarjetas marcadas.
 6. **Estado de las cargas en Crear ruta.** Producción las convierte en Booked; la maqueta conserva el estado del TMS (Delivered, In Transit…), igual que Auto-rebuild. Confirmar.
-7. **Línea «Cycle continues from here» (F11) sin carga en movimiento.** Hoy no se dibuja. ¿Debería ir encima de la primera carga no ejecutada?
+7. ~~**Línea «Cycle continues from here» (F11) sin carga en movimiento.**~~ **Propuesta J2:** la línea «Now» va siempre encima de la primera carga no ejecutada.
 8. **«Alguna carga ya empezó» (F7).** La maqueta cuenta Dispatched como iniciada. ¿Correcto?
 9. **Tiempos del ELD.** El documento pide esperar ~5 s. La maqueta usa 1,4 s de «Checking ELD…» y las HOS «llegan» a los 4 s, para poder recorrerla. Solo afecta a la demo.
 10. **Horas que necesita el plan (H3).** No está definido cómo se calculan (¿solo manejo?, ¿on-duty?). La maqueta usa millas futuras / 50 + 30 % del DH.
@@ -166,6 +188,11 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 18. **Llave de unidad en la ruta.** La maqueta guarda la cabina en la ruta («2065-A») y calcula la llave con el número. ¿La ruta guarda la cabina o el número normalizado?
 19. **Concurrencia (F9).** ¿Qué cuenta como «cambió»: un Sync del TMS, una edición de otro usuario, ambas? La maqueta simula «el TMS agregó una carga del ciclo».
 20. **Sync en tiempo real (H2).** Sigue pendiente de validar con Joaquín Meza (revierte el recorte del 14-jun), como dice §7.
+21. **Recap hours (J5): fuente y regla.** ¿De dónde salen las horas de recap: el ELD las entrega, o el backend las calcula con la regla 70 h / 8 días? ¿Se cuentan las horas on-duty o solo las de manejo? La maqueta usa ~50 mph + 1 h de muelle por carga, y en TONU el DH más las horas en sitio. ¿Recap viene encendido por defecto?
+22. **Not compatible (J4): umbral.** ¿Cuándo dos cargas son incompatibles: solo si se solapan, o también si no da el tiempo de manejo? Hay que definir la velocidad, el tiempo de muelle y las ventanas de cita contra la hora exacta. ¿Qué se sugiere por defecto: la de la ruta, la de más ingreso o ninguna (que el usuario elija sí o sí)?
+23. **Not compatible con dos cargas ya ejecutadas.** Si las dos ya pasaron, el dato del TMS está mal. La maqueta no las marca. ¿Se debería avisar?
+24. **Mover a la ruta vecina (J6).** ¿Se mueve solo si la vecina está en el mismo ciclo (< 34 h), o también si es la ruta siguiente aunque haya un descanso de por medio? ¿Hace falta confirmación, o basta con deshacer?
+25. **My Loads sin unidad (J1).** ¿El selector muestra todas las unidades o solo las que tienen cargas en la vista filtrada? La maqueta muestra todas las que tienen cargas (no Unbooked) y pone primero las que están en la carretera («on the road»).
 
 ## 4. Límites conocidos de la maqueta
 - Los mapas (Plan, On Road, Report) no reflejan los marcadores del ciclo ni el Origin.
