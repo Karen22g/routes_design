@@ -1056,13 +1056,13 @@ export function initApp() {
     if (c.e.empty) { if (cnt) cnt.textContent = '0 LOADS'; return; }
     var sel = c.list.filter(function (x) { return c.sel[x.load.id]; });
     if (cnt) cnt.textContent = sel.length + ' OF ' + c.list.length + ' SELECTED';
-    var origin, how;
-    if (!sel.length) { origin = c.list[c.list.length - 1].load.dest; how = 'after the cycle (no cycle load selected)'; }
-    else { var i0 = c.list.indexOf(sel[0]); if (i0 === 0) { origin = c.e.origin.city; how = c.e.origin.how; } else { origin = c.list[i0 - 1].load.dest; how = 'where the truck was before the first selected load'; } }
+    // Origin = start point of the cycle of the route being created (where the truck was when the cycle began:
+    // last dropoff of the previous cycle → first ELD stop → first pickup). It follows the cycle, not the selection.
+    var origin = c.e.origin.city, how = 'start of the cycle · ' + c.e.origin.how;
     var oi = document.getElementById('cr-origin-input'), dep = document.getElementById('cr-departure-date'), sum = document.getElementById('cr-cycle-summary');
     if (oi && !ed.origin) { oi.value = origin; oi.classList.add('cr-filled'); }
     if (dep && !ed.dep) dep.value = sel.length ? _crIso(_arStops(sel[0].load).pu.date) : '2026-11-19';
-    var o2 = sum && sum.querySelector('.cr-cycle-origin'); if (o2) o2.remove();
+    if (sum) sum.querySelectorAll('.cr-cycle-origin').forEach(function (n) { n.remove(); });
     if (sum) sum.insertAdjacentHTML('beforeend', '<div class="cr-cycle-sum-sub cr-cycle-origin">Origin: <b>' + origin + '</b> — ' + how + (ed.origin ? ' (you edited Origin, it isn’t overwritten)' : '') + '</div>');
     // E9 in the block: a hole between selected loads
     var idx = sel.map(function (x) { return c.list.indexOf(x); });
@@ -5217,7 +5217,7 @@ export function initApp() {
     C('F9', 'F · Construcción y resultado', 'Concurrencia: «the cycle changed», modal recargado', 'Modal', 'Ofrecido', md('R-AR14'));
     C('F10', 'F · Construcción y resultado', 'Rebuild repetido no duplica', 'Modal', 'Ofrecido', md('R-AR07'), 'Construye y vuelve a abrir Auto-rebuild.');
     C('F11', 'F · Construcción y resultado', 'Línea «Cycle continues from here» sobre la carga en movimiento', 'Modal + Plan', 'Ofrecido', md('R-AR01'));
-    C('G1', 'G · Puntos de entrada', 'Crear ruta · Assign unit: bloque resumen + «View full cycle»; Origin recalculado', 'Crear ruta', 'Ofrecido', { create: '5017' });
+    C('G1', 'G · Puntos de entrada', 'Crear ruta · Assign unit: bloque resumen + «View full cycle»; Origin = inicio del ciclo de la ruta', 'Crear ruta', 'Ofrecido', { create: '5017' }, 'Cambia la fecha (D6) para ver cómo Origin sigue al ciclo.');
     C('G2', 'G · Puntos de entrada', 'Crear ruta · Any unit: sin bloque', 'Crear ruta', 'Ofrecido', { create: 'any' });
     C('G3', 'G · Puntos de entrada', 'Plan: toolbar + estado vacío; solo con unidad', 'Plan', 'Ofrecido', rt('R-AR03'));
     C('G4', 'G · Puntos de entrada', 'Easy routes con unidad: modal; cancelar → Plan vacío', 'Easy routes', 'Ofrecido', { create: '2201', cont: true });

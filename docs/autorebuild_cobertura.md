@@ -26,7 +26,7 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 | Pantalla / componente | Qué hace con Auto-rebuild |
 |---|---|
 | **Motor único** `_arEngine` (truck-cycle/) | Llave = número de unidad normalizado (agrupa cabinas). Horas en UTC y cada parada en su hora local con huso y fuente (real / planned / estimated). Bordes por hueco ≥ 34 h o reset de HOS (mismo driver), discrepancia, reset dentro de una carga y ventana de 10 días. Ancla por contexto, clasificación, vecinas, cambios del TMS, Origin y Unbooked cubiertas. |
-| **Crear ruta** (Any unit / Assign unit) | Bloque «Loads in this truck cycle»: resumen del ciclo (bordes, ancla, HOS), tarjetas con horas, huso y fuente, **View full cycle** (mismo modal, la selección vuelve al bloque), Origin y fecha recalculados al marcar o desmarcar, cambiar la fecha recalcula sin pisar lo editado, y aviso de hueco. |
+| **Crear ruta** (Any unit / Assign unit) | Bloque «Loads in this truck cycle»: resumen del ciclo (bordes, ancla, HOS), tarjetas con horas, huso y fuente, **View full cycle** (mismo modal, la selección vuelve al bloque), Origin = inicio del ciclo de la ruta (sigue al ciclo, no a la selección), cambiar la fecha recalcula el ciclo sin pisar lo editado, y aviso de hueco. |
 | **Easy routes** (lane map post-create) | Barra de Auto-rebuild: con unidad abre el modal sobre el Plan vacío (cancelar deja el Plan); sin unidad, bloqueada con «Assign unit». |
 | **Plan** | Pill en la toolbar y estado vacío. Lanes con hora local, huso y fuente, candado en tramos ejecutados, DH con millas reales entre ciudades, línea «Cycle continues from here» sobre la carga en movimiento, banner de resultado, aviso «HOS differ» con «Reopen Auto-rebuild», aviso en la ruta vecina, «Complete with Easy routes» y «Add» → My Loads filtrado. |
 | **Refresh ▾ → Cycle loads** | Misma respuesta del motor: lista las cargas del ciclo que faltan y «+ Add» inserta una sola sin reorganizar. |
@@ -102,7 +102,7 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 | F9 | Concurrencia: «the cycle changed», modal recargado | Modal | Ofrecido | S14 · R-AR14 (modal) |
 | F10 | Rebuild repetido no duplica | Modal | Ofrecido | S07 · R-AR07 (modal) — Construye y vuelve a abrir Auto-rebuild. |
 | F11 | Línea «Cycle continues from here» sobre la carga en movimiento | Modal + Plan | Ofrecido | S01 · R-AR01 (modal) |
-| G1 | Crear ruta · Assign unit: bloque resumen + «View full cycle»; Origin recalculado | Crear ruta | Ofrecido | Crear ruta · unidad 5017 |
+| G1 | Crear ruta · Assign unit: bloque resumen + «View full cycle»; Origin = inicio del ciclo de la ruta | Crear ruta | Ofrecido | Crear ruta · unidad 5017 — Cambia la fecha (D6) para ver cómo Origin sigue al ciclo. |
 | G2 | Crear ruta · Any unit: sin bloque | Crear ruta | Ofrecido | Crear ruta · Any unit |
 | G3 | Plan: toolbar + estado vacío; solo con unidad | Plan | Ofrecido | S03 · R-AR03 |
 | G4 | Easy routes con unidad: modal; cancelar → Plan vacío | Easy routes | Ofrecido | Crear ruta · unidad 2201 → Continue |
@@ -150,7 +150,7 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 2. **Deadheads (F3) contra producción.** La decisión dice «DH solo si el destino no coincide con el siguiente origen». Pero la ruta de producción que se tomó como referencia muestra «Macon, GA → Macon, GA · 62 mi». La maqueta compara por ciudad: entre ciudades distintas usa millas reales y en la misma ciudad muestra un DH local estimado, como producción. ¿La comparación es por dirección (stop) o por ciudad?
 3. **Quitar cargas ejecutadas.** E5 dice que la carga del ciclo anterior (Delivered) «se puede quitar», y F6 dice que los tramos ejecutados son de solo lectura. La maqueta permite quitarla desde el modal. ¿Se puede quitar del plan una carga ya ejecutada?
 4. **«Carga de la mitad de otra ruta» (E7).** Si se puede mover un bloque contiguo hasta el borde, toda carga de la vecina que esté en el ciclo termina siendo movible en bloque. «La mitad» solo queda bloqueada si la vecina se solapa en el tiempo o no es vecina. La maqueta bloquea cargas de rutas no vecinas y las de vecinas finalizadas (S10). ¿Es esa la intención?
-5. **Origin en Crear ruta.** Producción usa el destino de la carga más reciente; F2 pide la ubicación al inicio del ciclo. La maqueta usa el inicio de lo seleccionado: el Origin del ciclo si la primera carga va marcada; si no, el destino de la carga anterior a la primera marcada; y sin selección, el destino de la última carga. ¿Correcto?
+5. ~~**Origin en Crear ruta.**~~ **Resuelto (23-nov):** Origin = punto de inicio del ciclo de la ruta que se crea (último dropoff del ciclo anterior → primera parada ELD → pickup de la primera carga). Sigue al ciclo (cambia con la unidad o la fecha), no a las tarjetas marcadas.
 6. **Estado de las cargas en Crear ruta.** Producción las convierte en Booked; la maqueta conserva el estado del TMS (Delivered, In Transit…), igual que Auto-rebuild. Confirmar.
 7. **Línea «Cycle continues from here» (F11) sin carga en movimiento.** Hoy no se dibuja. ¿Debería ir encima de la primera carga no ejecutada?
 8. **«Alguna carga ya empezó» (F7).** La maqueta cuenta Dispatched como iniciada. ¿Correcto?
