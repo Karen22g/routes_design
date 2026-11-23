@@ -629,7 +629,8 @@ export function initApp() {
       const meta = metaEl ? metaEl.textContent : '';
       const miM = meta.match(/(\d+)\s*mi/);
       const miles = miM ? parseInt(miM[1]) : 280;
-      tmsLoads.push(Object.assign({ origin: lOrig, dest: lDest, income, miles, pickup: card.getAttribute('data-pickup') || '07/30/2026', customer: card.getAttribute('data-broker') || '--', loadId: card.getAttribute('data-loadid') || null }, _crTonuOf(card)));
+      const tmsSt = ((card.querySelector('.cr-status-pill') || {}).textContent || 'Booked').trim();
+      tmsLoads.push(Object.assign({ origin: lOrig, dest: lDest, income, miles, status: tmsSt, pickup: card.getAttribute('data-pickup') || '07/30/2026', customer: card.getAttribute('data-broker') || '--', loadId: card.getAttribute('data-loadid') || null }, _crTonuOf(card)));
     });
     // Cards are listed newest first; the plan needs them in cycle (chronological) order
     tmsLoads.sort(function (a, b) { var pa = a.pickup.split('/'), pb = b.pickup.split('/'); return new Date(+pa[2], +pa[0]-1, +pa[1]) - new Date(+pb[2], +pb[0]-1, +pb[1]); });
@@ -646,7 +647,8 @@ export function initApp() {
       newLoads.push({
         id: (tl.loadId && !LOADS.some(function (l) { return l.id === tl.loadId; })) ? tl.loadId : ('ef-' + newId + '-' + i),
         route: newId, origin: tl.origin || curCity, dest: tl.dest,
-        miles: tl.miles, income: tl.income, status: tl.tonu ? tl.status : 'Booked',
+        // cycle loads keep their TMS status (Delivered / In Transit / Invoiced…), as Auto-rebuild does
+        miles: tl.miles, income: tl.income, status: tl.status || 'Booked',
         tonu: tl.tonu || undefined, tonuFrom: tl.tonuFrom, tonuDest: tl.tonuDest, dhMi: tl.dhMi, waitH: tl.waitH,
         pickup: tl.pickup, pickupTime: '08:00 - 12:00',
         delivery: tl.pickup, deliveryTime: '12:00 - 16:00',
@@ -680,7 +682,8 @@ export function initApp() {
       id: newId,
       name: routeNameVal || (startCity + '_' + endCity + '_2026-07-30'),
       dateStart: 'Jul 30 / 2026', dateEnd: 'Aug 03 / 2026',
-      status: 'Planned', driver: driver, unit: unit, trailer: trailerType,
+      status: newLoads.some(function (l) { return l.tonu || ['In Transit', 'Dispatched', 'Delivered', 'Invoiced', 'Paid'].indexOf(l.status) >= 0; }) ? 'In progress' : 'Planned',
+      driver: driver, unit: unit, trailer: trailerType,
       dispatcher: 'karen', routeDeviation: 0, fuelExcess: 0, planAdherence: 100
     };
 
@@ -1273,7 +1276,7 @@ export function initApp() {
           </div>
           <div class="cr-load-price">$300<span class="cr-load-price-sub">TONU fee</span></div>
         </div>
-        <div class="cr-cycle-foot">Selected loads become <b>Booked</b> lanes at the start of the plan; a <b>TONU</b> stays as is — its DH to the pickup and time on site count in the route. The cycle comes from <code>/truck-cycle/</code>, the same engine Auto-rebuild uses in the Plan.</div>
+        <div class="cr-cycle-foot">Selected loads open the plan with their TMS status (the lanes already driven show as done); a <b>TONU</b> keeps its DH to the pickup and time on site in the route. The cycle comes from <code>/truck-cycle/</code>, the same engine Auto-rebuild uses in the Plan.</div>
         </div>
         <div id="cr-cycle-empty" class="cr-cycle-empty" style="display:none">
           <span class="cr-cycle-empty-ic">i</span>
@@ -3119,13 +3122,21 @@ export function initApp() {
       const dhFuel = Math.round(dh * 0.52), dhOp = Math.round(dh * 1.88);
       totalFuel += dhFuel; totalOp += dhOp;
       var dhRowOpacity = l.status === 'Completed' ? 0.35 : 1;
+      // A deadhead is done once the load it feeds has started (truck already at that pickup): load
+      // In Transit / delivered / billed / TONU → DH Completed; Dispatched (heading to the pickup) →
+      // DH In progress; otherwise Upcoming. Same rule as On Road.
+      var _dhSt = (l.tonu || l.status === 'In Transit' || ['Delivered', 'Invoiced', 'Paid', 'Completed'].indexOf(l.status) >= 0) ? 'Completed'
+        : l.status === 'Dispatched' ? 'In progress' : 'Upcoming';
+      var _dhC = _dhSt === 'Upcoming' ? null : STATUS[_dhSt];
       rows.push({
-        num: 'DH', numBg: 'transparent', numFg: '#666666',
-        numBorder: '1px solid rgba(255,255,255,.12)', numFontSize: '10px', rowOpacity: dhRowOpacity,
+        num: 'DH',
+        numBg: _dhSt === 'Completed' ? 'rgba(204,102,111,.16)' : _dhSt === 'In progress' ? '#a6e3ec' : 'transparent',
+        numFg: _dhSt === 'Completed' ? '#e0707a' : _dhSt === 'In progress' ? '#141414' : '#666666',
+        numBorder: _dhSt === 'Upcoming' ? '1px solid rgba(255,255,255,.12)' : 'none', numFontSize: '10px', rowOpacity: dhRowOpacity,
         origin: i === 0 ? (l.tonuFrom || l.origin) : ls[i - 1].dest, originDate: 'Est. ' + prettyDate(i === 0 ? l.pickup : ls[i - 1].delivery),
         dest: l.origin, destDate: 'Est. ' + prettyDate(l.pickup),
         textFg: '#808080', weight: 500, tonuDh: !!l.tonu,
-        status: 'Upcoming', statusBg: 'transparent', statusFg: '#808080', statusBorder: '1px solid rgba(255,255,255,.1)',
+        status: _dhSt, statusBg: _dhC ? _dhC[0] : 'transparent', statusFg: _dhC ? _dhC[1] : '#808080', statusBorder: _dhC ? '1px solid transparent' : '1px solid rgba(255,255,255,.1)',
         mileage: dh.toLocaleString('en-US'), driving: drive(dh), income: '$0', incomeFg: '#666666',
         rpm: '--', cost: '-$' + Math.round(dh * 2.4).toLocaleString('en-US'),
         fuelCost: '-$' + dhFuel.toLocaleString('en-US'), tollCost: '$0', opCost: '-$' + dhOp.toLocaleString('en-US'),
@@ -3142,6 +3153,8 @@ export function initApp() {
       var _lNumBg, _lNumFg, _lNumBorder, _lRowOp;
       if (l.status === 'Completed') {
         _lNumBg = '#2e9975'; _lNumFg = '#292929'; _lNumBorder = 'none'; _lRowOp = 0.4;
+      } else if (l.tonu || ['Delivered', 'Invoiced', 'Paid'].indexOf(l.status) >= 0) {
+        _lNumBg = '#2e9975'; _lNumFg = '#141414'; _lNumBorder = 'none'; _lRowOp = 1;   // done (as in efData)
       } else if (l.status === 'Unbooked') {
         _lNumBg = 'rgba(178,136,53,.12)'; _lNumFg = '#b28835'; _lNumBorder = '1.5px solid #b28835'; _lRowOp = 1;
       } else {
@@ -3151,7 +3164,8 @@ export function initApp() {
         num: String(i + 1), numBg: _lNumBg, numFg: _lNumFg,
         numBorder: _lNumBorder, numFontSize: '10.5px', rowOpacity: _lRowOp,
         origin: l.origin, originDate: 'Est. ' + prettyDate(l.pickup),
-        dest: l.dest, destDate: l.tonu ? 'TONU · not delivered to ' + String(l.tonuDest || '--').split(',')[0] : 'Est. ' + prettyDate(l.delivery),
+        dest: l.dest, destDate: l.tonu ? 'Not delivered · TONU' : 'Est. ' + prettyDate(l.delivery),
+        destTitle: l.tonu ? 'TONU — load to ' + (l.tonuDest || '--') + ' was not delivered; closed at the pickup' : null,
         textFg: '#f5f5f5', weight: 700, tonu: !!l.tonu,
         status: l.status, statusBg: c[0], statusFg: c[1], statusBorder: '1px solid transparent',
         mileage: l.miles.toLocaleString('en-US'), driving: l.tonu ? (l.waitH || 0) + 'h on site' : drive(l.miles),
@@ -9179,7 +9193,7 @@ export function initApp() {
         el('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 6px 10px 0' } }, [
           el('div', { style: { flex: '1', minWidth: '0' } }, [
             el('div', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '12px', fontWeight: String(row.weight), color: row.textFg } }, [row.origin]),
-            el('div', { style: { whiteSpace: 'nowrap', color: '#666666', fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } }, [row.originDate])
+            el('div', { title: row.originDate, style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#666666', fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } }, [row.originDate])
           ]),
           iconEl('arrow', { flex: 'none' }),
           el('div', { style: { flex: '1', minWidth: '0' } }, [
@@ -9195,7 +9209,7 @@ export function initApp() {
                 return chip;
               })()] : [])
             ]),
-            el('div', { style: { whiteSpace: 'nowrap', color: '#666666', fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } }, [row.destDate])
+            el('div', { title: row.destTitle || row.destDate, style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#666666', fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } }, [row.destDate])
           ])
         ]),
         (function() {
