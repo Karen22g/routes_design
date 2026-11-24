@@ -11504,9 +11504,19 @@ export function initApp() {
   ];
   const _orDevReason = (k) => _OR_DEV_REASONS.find(r => r.key === k) || null;
   const _OR_DEV_EXCESS = (d) => Math.round((d.detourMi || 0) * 3.5);   // synthetic $ excess for a detour
+  // Real (ELD) miles a TONU lane shows: the truck's movement at / around the pickup (yard, waiting spot)
+  function _orTonuRealMi(l) { return l ? (l.tonuRealMi != null ? l.tonuRealMi : 2 + (_arHash(l.id) % 6)) : 0; }
+  // Map marker of a TONU pickup + hover that explains it (no planned polyline: 0 loaded miles)
+  function _orTonuMarker(ll, l) {
+    const FT = "'General Sans', Nunito, system-ui";
+    const tip = '<div style="font:600 11px ' + FT + ';line-height:1.45;width:250px;white-space:normal"><span style="font-size:9px;padding:1px 6px;' + _arTonuTagCss(false) + '">TONU</span> <b>' + (l ? l.origin : '') + '</b><br>Truck Ordered Not Used: the load was cancelled by the shipper or broker after the truck was dispatched. Closed at the pickup · 0 loaded mi' +
+      (l ? ' · ' + (l.waitH || 0) + ' h on site · fee ' + money(l.income) + (l.tonuDest ? '<br><span style="color:#999">Not delivered to ' + l.tonuDest + '</span>' : '') : '') + '</div>';
+    return L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#e8a33d;border:2.5px solid #141414;color:#141414;box-shadow:0 2px 8px rgba(0,0,0,.5);font:900 9px ' + FT + '">TONU</div>'.replace('>TONU<', '><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><'), iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 900 })
+      .bindTooltip(tip, { direction: 'top', offset: [0, -14] });
+  }
   function _orDeviationsFor(routeId, key) {
     const seg = _orSegReg[routeId] && _orSegReg[routeId][key];
-    if (!seg || seg.truckMi < 0) return [];                    // not started → no actual yet
+    if (!seg || seg.tonu || seg.truckMi < 0) return [];       // not started → no actual yet; TONU → nothing driven loaded
     if (!_orDev[routeId]) _orDev[routeId] = {};
     if (!(key in _orDev[routeId])) {
       const h = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -12026,7 +12036,9 @@ export function initApp() {
       } else {
         truckMi = row.exec === 'Completed' ? miles + 1 : (row.exec === 'In progress' ? miles * 0.5 : -1);
       }
-      _orSegReg[routeId][key] = { miles: miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0, oLL: oLL, dLL: dLL };
+      // TONU: the load was cancelled at the pickup → 0 loaded mi, no polyline, closed at the pickup
+      const tonu = !!(isLoad && row.load && row.load.tonu);
+      _orSegReg[routeId][key] = { miles: tonu ? 0 : miles, origin: row.origin, dest: row.dest, truckMi: truckMi, isLoad: isLoad, loadIdx: isLoad ? row.loadIdx : null, income: isLoad ? row.load.income : 0, oLL: oLL, dLL: dLL, tonu: tonu, load: isLoad ? row.load : null };
     });
     _orSeedPlan(routeId);
   }
@@ -13169,6 +13181,19 @@ export function initApp() {
     function _execAct(label, onclick, primary) {
       return el('div', { class: 'hoverable', onclick: onclick, style: { font: '800 10.5px ' + F, cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', whiteSpace: 'nowrap', color: primary ? '#0d1a13' : '#b3b3b3', background: primary ? '#2e9975' : '#242424', border: '1px solid ' + (primary ? '#2e9975' : 'rgba(255,255,255,.1)') } }, [label]);
     }
+    // TONU summary (replaces «Miles driven» + adherence): planned data of a cancelled-at-pickup load
+    function _orTonuInfo(l) {
+      const c = (v, k) => el('div', {}, [el('div', { style: { font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' } }, [v]), el('div', { style: { font: '600 9.5px ' + F, color: '#808080', marginTop: '2px' } }, [k])]);
+      return el('div', {}, [
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' } }, [
+          el('span', { style: { flexShrink: '0' }, html: '<span style="font:800 9.5px \'General Sans\', Nunito, system-ui;padding:2px 7px;' + _arTonuTagCss(false) + '">TONU</span>' }),
+          el('span', { style: { font: '600 11px ' + F, color: '#b3b3b3', lineHeight: '1.4' } }, ['Load cancelled at the pickup — the truck was ordered and not used.'])
+        ]),
+        el('div', { style: { display: 'flex', gap: '26px', flexWrap: 'wrap' } }, [
+          c('0 mi', 'Planned miles'), c(_orTonuRealMi(l) + ' mi', 'Real mileage'), c(money(l.income), 'TONU fee'), c((l.waitH || 0) + ' h', 'Time on site'), c(l.tonuDest || '--', 'Not delivered to')
+        ])
+      ]);
+    }
     // fixed execution strip (top of the manage-stops modal panel)
     function _orExecStrip(row) {
       const seg = _orSegReg[routeId][row.segKey];
@@ -13211,6 +13236,7 @@ export function initApp() {
         el('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: x.active ? '#2e9975' : '#666666', animation: x.active ? '_efDotPulse 1.4s ease-in-out infinite' : 'none' } }),
         el('span', {}, [x.active ? 'Live execution' : 'Execution'])
       ]);
+      if (seg.tonu) return el('div', { style: { flexShrink: '0', margin: '2px 16px 6px', padding: '12px 14px', borderRadius: '12px', border: '1px solid rgba(232,163,61,.3)', background: '#242424' } }, [topRow, _orTonuInfo(seg.load)]);
       return el('div', { style: { flexShrink: '0', margin: '2px 16px 6px', padding: '12px 14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,.08)', background: '#242424' } }, [topRow, grid, prog, adhRow]);
     }
     // compact 1-line live strip for the inline stops dropdown
@@ -14168,8 +14194,8 @@ export function initApp() {
       const loadCard = isLoad
         ? el('div', { class: 'hoverable', title: 'Open full load details', onclick: _ldObj ? (() => setState({ openLoad: _ldObj.id, drawerTab: 'Load' })) : undefined, style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 16px 2px', padding: '11px 12px', borderRadius: '12px', background: '#242424', border: '1px solid ' + (_docMiss.length ? 'rgba(204,102,111,.28)' : 'rgba(255,255,255,.07)'), cursor: _ldObj ? 'pointer' : 'default' } }, [
             el('div', { style: { width: '30px', height: '30px', borderRadius: '8px', background: '#1a1a1a', color: '#6688cc', display: 'grid', placeItems: 'center', flexShrink: '0' }, html: _boxIc }),
-            _ldM('L' + (10000000 + (seg.loadIdx || 0)), 'Load id'),
-            _ldM(money(income), 'Current income'),
+            el('div', {}, [el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', font: '800 12.5px ' + F, color: '#e6e6e6', whiteSpace: 'nowrap' }, html: 'L' + (10000000 + (seg.loadIdx || 0)) + (seg.tonu ? ' <span title="Truck Ordered Not Used — the load was cancelled at the pickup; the fee is the income" style="font-size:9px;padding:1px 6px;' + _arTonuTagCss(false) + '">TONU</span>' : '') }), el('div', { style: { font: '600 9.5px ' + F, color: '#666666', marginTop: '2px' } }, ['Load id'])]),
+            _ldM(money(income), seg.tonu ? 'TONU fee' : 'Current income'),
             _ldM(seg.miles.toLocaleString('en-US') + ' mi', 'Estimated miles'),
             el('div', { style: { flex: '1', minWidth: '4px' } }),
             docWarn,
@@ -14259,7 +14285,9 @@ export function initApp() {
             el('span', { style: { font: '600 11.5px ' + F } }, ['Add a stop to this lane'])
           ])
         );
-        listArea = el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: '9px', padding: '4px 16px 6px' } }, [
+        listArea = seg.tonu
+          ? el('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px', padding: '4px 16px 6px' } }, [rows[0]])   // TONU: only the pickup (closed there)
+          : el('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: '9px', padding: '4px 16px 6px' } }, [
           el('div', { style: { position: 'absolute', left: '29px', top: '24px', bottom: '24px', borderLeft: '2px dashed rgba(255,255,255,.13)', zIndex: '0' } }),
           ...rows, addRow
         ]);
@@ -14442,6 +14470,9 @@ export function initApp() {
           el('div', { class: 'hoverable', onclick: () => _orChangeRoute(routeId, key), style: { flexShrink: '0', display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 11px', borderRadius: '8px', background: 'rgba(178,136,53,.12)', border: '1px solid rgba(178,136,53,.4)', color: '#d0a038', font: '800 11px ' + F, cursor: 'pointer' }, html: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7.5 7.5"/><path d="M8 21H3v-5"/><path d="M3 21l7.5-7.5"/></svg><span>Change route</span>' })
         ]);
       }
+      if (seg.tonu) return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(232,163,61,.22)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
+        loadCard, _started ? _orExecStrip(row) : el('div', { style: { margin: '10px 16px 2px' } }, [_orTonuInfo(seg.load)]), listWrap, logBtn
+      ]);
       return el('div', { style: { flexShrink: '0', margin: '0 8px 8px', borderRadius: '12px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(102,136,204,.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, [
         loadCard, (_started ? _orExecStrip(row) : _routeStrip), (_started ? deviationsSection : null), (_started ? hosBanner : null), (_started ? lateBanner : null), (_started ? missedBanner : null), secHead, listWrap, impactStrip, fuelBanner, logBtn
       ]);
@@ -14774,6 +14805,26 @@ export function initApp() {
         } else if (_fresh || _orMapFitKey !== 'plan-nogeo') { _orMapFitKey = 'plan-nogeo'; map.setView([37.8, -96], 4); }
         return;
       }
+      if (laneMode && _orSegReg[routeId][state.orLane] && _orSegReg[routeId][state.orLane].tonu) {
+        // ── TONU lane: 0 loaded mi → no polyline, only the pickup marker with the TONU explanation ──
+        const tseg = _orSegReg[routeId][state.orLane], tll = _OR_COORD[tseg.origin];
+        let _tonuFitPts = null;
+        if (tll) {
+          const _tl = tseg.load, _rmi = _orTonuRealMi(_tl);
+          if (tseg.truckMi >= 0 && _rmi > 0) {   // executed: what the truck actually moved at / around the pickup (green, like a driven LD)
+            const h = _arHash(_tl.id), ang = (h % 360) * Math.PI / 180, len = 0.0145 * _rmi * 0.35;   // ~1 mi = 0.0145°, wiggly path
+            const pts = [[tll[0] - Math.sin(ang) * len, tll[1] - Math.cos(ang) * len]];
+            for (let i = 1; i <= 6; i++) { const f = i / 6, w = Math.sin(f * Math.PI) * 0.18 * len; /* gentle curve, like a local street path */ pts.push([pts[0][0] + Math.sin(ang) * len * f + Math.cos(ang) * w, pts[0][1] + Math.cos(ang) * len * f - Math.sin(ang) * w]); }
+            pts.push(tll);
+            L.polyline(pts, { color: '#2e9975', weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layers).bindTooltip('Executed (ELD) · ' + _rmi + ' mi around the pickup — no loaded leg', { sticky: true });
+            _tonuFitPts = pts;
+          }
+          _orTonuMarker(tll, _tl).addTo(layers);
+          const _tFit = () => { try { map.invalidateSize(); if (_tonuFitPts) map.fitBounds(L.latLngBounds(_tonuFitPts), { padding: [80, 80], maxZoom: 14 }); else map.setView(tll, 12); } catch (e) {} };
+          if (_fresh || _orMapFitKey !== 'tonu:' + state.orLane) { _orMapFitKey = 'tonu:' + state.orLane; _tFit(); [120, 350].forEach(ms => setTimeout(_tFit, ms)); }
+        } else if (_fresh || _orMapFitKey !== 'lane-nogeo') { _orMapFitKey = 'lane-nogeo'; map.setView([37.8, -96], 4); }
+        return;
+      }
       if (laneMode) {
         // ── lane-focused view: single lane polyline + its stops (+ candidates) ──
         const seg = _orSegReg[routeId][state.orLane];
@@ -15050,13 +15101,14 @@ export function initApp() {
         return;
       }
       // ordered waypoint sequence from loads
-      const seq = [];
+      const seq = [], tonuAt = {};
       cd.ls.forEach((l, i) => {
         if (i === 0) seq.push(l.origin);
         else if (seq[seq.length - 1] !== l.origin) seq.push(l.origin);
+        if (l.tonu) { tonuAt[seq.length - 1] = l; return; }   // TONU closes at the pickup: no loaded leg
         seq.push(l.dest);
       });
-      const pts = seq.map(c => ({ city: c, ll: _OR_COORD[c] })).filter(p => p.ll);
+      const pts = seq.map((c, i) => ({ city: c, ll: _OR_COORD[c], tonu: tonuAt[i] })).filter(p => p.ll);
       if (pts.length) {
         const latlngs = pts.map(p => p.ll);
         L.polyline(latlngs, { color: '#6688cc', weight: 3, opacity: .85, dashArray: '2 9', lineCap: 'round' }).addTo(layers);
@@ -15069,6 +15121,7 @@ export function initApp() {
           const html = endpoint
             ? '<div style="width:16px;height:16px;border-radius:50%;background:#2e5299;border:3px solid #141414;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></div>'
             : '<div style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#1a1a1a;border:2px solid rgba(255,255,255,.28);color:#e6e6e6;font:800 12px ' + F + '">' + (i + 1) + '</div>';
+          if (p.tonu) { _orTonuMarker(p.ll, p.tonu).addTo(layers); return; }
           L.marker(p.ll, { icon: L.divIcon({ className: '', html: html, iconSize: endpoint ? [16, 16] : [26, 26], iconAnchor: endpoint ? [8, 8] : [13, 13] }) }).addTo(layers);
         });
         // truck marker at active lane origin
