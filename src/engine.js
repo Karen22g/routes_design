@@ -5484,6 +5484,7 @@ export function initApp() {
   // ── USE CASES ordered by frequency × importance (P1 common → P4 rare). Each one: scenario (seeded data),
   //    test (what to do) and expected result. This list drives the case selector, the Plan card and the doc.
   var _AR_UC = [];
+  var _AR_BE = [];   // backend groups (same handling → one story each)
   var _AR_PRIO = { P1: 'Común', P2: 'Frecuente', P3: 'Ocasional', P4: 'Raro' };
   function _arInitUseCases() {
     var U = function (code, prio, title, sc, go, covers, scenario, test, expected) { _AR_UC.push({ code: code, prio: prio, title: title, sc: sc, go: go, covers: covers, scenario: scenario, test: test, expected: expected }); };
@@ -5598,6 +5599,48 @@ export function initApp() {
       'Crear ruta en modo Any unit (sin unidad). En Rutas, R-2602 no tiene unidad.',
       'Continúa a Easy routes y toca Auto-rebuild. Elige un recurso ocupado en «Assign driver & equipment».',
       'Sin bloque de ciclo. Auto-rebuild deshabilitado con candado y el motivo; al tocarlo se abre «Assign driver & equipment». Un recurso ocupado en otra ruta que se solapa bloquea Save.');
+    // ── BACKEND GROUPS: use cases the backend solves with the SAME handling (one story per group) ──
+    var B = function (code, title, rule, ucs, cat) { _AR_BE.push({ code: code, title: title, rule: rule, ucs: ucs, cat: cat }); };
+    var rng = function (p, a, b) { var o = []; for (var i = a; i <= b; i++) o.push(p + i); return o; };
+    B('BE-1', 'Entrada del motor: cargas de la unidad y hora de cada parada',
+      'Una sola consulta arma el pool de cargas de la unidad: todas sus cabinas (la llave es el número), cualquier driver, solo los estados elegibles (TONU incluida con su fee) y también las cargas manuales de efRouting y las parciales. Cada parada se lleva a UTC con su huso horario, y su fuente es real, planned o estimated, en ese orden.',
+      ['UC13', 'UC22'], rng('A', 1, 5).concat(rng('B', 1, 6), ['J3b']));
+    B('BE-2', 'Bordes del ciclo, con y sin HOS (incluye recap)',
+      'Una sola función recorre las cargas en orden y decide dónde se corta el ciclo. Con HOS manda el reset de 34 h del mismo driver; si el reset cae durante una carga, esa carga queda en el ciclo de su pickup. Sin HOS corta un descanso de 34 h o más, y la ventana máxima es de 10 días. Hacia adelante, el ciclo corta en el próximo reset del driver actual, que las recap hours pueden correr.',
+      ['UC01', 'UC02', 'UC04', 'UC06', 'UC17', 'UC18', 'UC23'], rng('C', 1, 9).concat(['H4', 'I1', 'J5', 'J9']));
+    B('BE-3', 'HOS no disponible (ELD lento o caído)',
+      'Si el ELD no responde a tiempo, el ciclo se calcula con la regla sin HOS de BE-2 y el resultado queda marcado como calculado sin HOS. Cuando llegan las HOS, se avisa para recalcular; la ruta nunca se corrige sola.',
+      ['UC16'], ['C10', 'H1']);
+    B('BE-4', 'Ancla y puntos de entrada (mismo endpoint)',
+      'Todas las entradas llaman al mismo endpoint con la unidad, la ruta (opcional) y el ancla; lo único que cambia es el ancla. El ancla es, en este orden: la carga en movimiento, la carga más antigua, la salida de la ruta, o ahora / la fecha elegida. Si el ancla cae en un descanso se toma el ciclo siguiente, o el anterior si no hay siguiente. Sin unidad no se calcula.',
+      ['UC09', 'UC10', 'UC14', 'UC19', 'UC20', 'UC24', 'UC27'], rng('D', 1, 6).concat(['G1', 'G2', 'G3', 'G4', 'G5', 'G7', 'G8', 'A6', 'C11', 'E8', 'J1', 'caso 1', 'caso 2', 'caso 4', 'caso 5']));
+    B('BE-5', 'Faltantes del ciclo frente a la ruta',
+      'Compara el ciclo con la ruta. Lo que está en los dos queda como «in this route». Lo que falta se propone preseleccionado, y lo que cae entre cargas de la ruta se marca como «fills gap». Cada carga dice si ya se ejecutó. El resultado es el mismo para el modal y para Cycle loads (Refresh).',
+      ['UC08'], ['E1', 'E2', 'E3', 'E9', 'E12', 'G6', 'H3', 'J2', 'caso 7', 'caso 8']);
+    B('BE-6', 'Siguiente ciclo en la misma ruta',
+      'Las cargas del ciclo siguiente se devuelven aparte. Si la ruta ya tiene cargas de ese ciclo y la unidad no tiene una ruta posterior, se marcan para continuar en la misma ruta; el usuario lo puede apagar.',
+      ['UC05'], ['J8']);
+    B('BE-7', 'Cargas fuera del ciclo y entre rutas vecinas',
+      'Una carga pertenece a una sola ruta y no se cuenta dos veces. Una carga del ciclo que está en una ruta vecina se puede traer. Una carga de esta ruta que pertenece al ciclo vecino se puede mover a esa ruta o quitar. Los movimientos van siempre en bloque contiguo hasta el borde, para respetar el orden de ejecución. Si la ruta está finalizada o no es vecina, la carga queda bloqueada.',
+      ['UC11', 'UC12', 'UC21'], ['E4', 'E5', 'E6', 'E7', 'E13', 'J6', 'J7', 'caso 9', 'caso 10']);
+    B('BE-8', 'Cargas no compatibles',
+      'Entre cargas consecutivas del ciclo se valida que el camión llegue a tiempo. Si se solapan o no da el tiempo de manejo, el par se devuelve como «not compatible», con el motivo y una carga sugerida.',
+      ['UC03'], ['J4']);
+    B('BE-9', 'Cambios del TMS y Sync',
+      'Al leer el ciclo, las cargas de la ruta se comparan con el TMS. Si una carga cambió, se ofrece actualizarla; si se canceló o se reasignó a otra unidad, se ofrece quitarla. El Sync vuelve a leer el TMS y avisa si encontró cambios.',
+      ['UC15'], ['E10', 'E11', 'H2', 'J3']);
+    B('BE-10', 'Construcción de la ruta (build)',
+      'Un solo POST idempotente aplica los cambios:\n• ordena las cargas por pickup;\n• pone Origin en el inicio del ciclo;\n• crea DH solo entre cargas no contiguas;\n• borra las Unbooked cubiertas y re-encadena las posteriores;\n• deja lo ejecutado en solo lectura;\n• pasa la ruta a In Progress solo si algo ya empezó.\nSi el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.',
+      ['UC07', 'UC26'], rng('F', 1, 11).concat(['caso 6']));
+    B('BE-11', 'Cambio de cabina',
+      'Cambiar la cabina de una ruta que ya empezó crea una ruta nueva consecutiva, y su ciclo se calcula con la nueva unidad. Cambiar solo el driver mantiene la ruta.',
+      ['UC25'], ['I2']);
+    var PR = ['P1', 'P2', 'P3', 'P4'];
+    _AR_BE.forEach(function (g) {
+      g.ucs.forEach(function (c) { var u = _AR_UC.find(function (x) { return x.code === c; }); if (u) u.be = g.code; });
+      g.prio = PR.find(function (p) { return g.ucs.some(function (c) { var u = _AR_UC.find(function (x) { return x.code === c; }); return u && u.prio === p; }); });
+      g.cat.forEach(function (id) { var c = _AR_CATALOG.find(function (x) { return x.id === id; }); if (c) c.be = g.code; });
+    });
   }
   function _arUcOfRoute(r) { return r && r.arCase ? _AR_UC.find(function (u) { return u.sc.indexOf(r.arCase) >= 0; }) || null : null; }
   function _arRouteRank(r) { var u = _arUcOfRoute(r); return u ? _AR_UC.indexOf(u) : 999; }
@@ -5652,9 +5695,22 @@ export function initApp() {
             return '<div style="padding:8px 18px;border-bottom:1px solid rgba(255,255,255,.04)"><div style="display:flex;align-items:flex-start;gap:10px">' +
               '<span style="flex:none;min-width:38px;font:900 10.5px ' + F + ';color:' + PCOL[p] + ';padding-top:1px">' + u.code + '</span>' +
               '<div class="_cp-tg" data-c="' + u.code + '" style="flex:1;min-width:0;cursor:pointer"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + u.title + ' <span style="color:#666666;font-weight:600">' + (op ? '▴' : '▾') + '</span></div>' +
-              '<div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + (u.sc.length ? u.sc.join(', ') + ' · ' : '') + u.covers.join(', ') + '</div></div>' + goBtn('_cp-uc', ix) + '</div>' +
+              '<div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + (u.be ? '<span style="font-weight:800;color:#5bbccb">' + u.be + '</span> · ' : '') + (u.sc.length ? u.sc.join(', ') + ' · ' : '') + u.covers.join(', ') + '</div></div>' + goBtn('_cp-uc', ix) + '</div>' +
               (op ? '<div style="margin:4px 0 2px 48px">' + ln('Escenario', u.scenario) + ln('Prueba', u.test) + ln('Esperado', u.expected, '#47b26b') + '</div>' : '') + '</div>';
           }).join('');
+      }).join('');
+    }
+    function beView() {   // backend groups: use cases solved with the same handling → one story per group
+      var rows = _AR_BE.filter(function (g) { return !q || (g.code + ' ' + g.title + ' ' + g.rule + ' ' + g.ucs.join(' ') + ' ' + g.cat.join(' ')).toLowerCase().indexOf(q) >= 0; });
+      return rows.map(function (g) {
+        var op = !!_arUcOpen[g.code];
+        var ucs = g.ucs.map(function (c) { var u = _AR_UC.find(function (x) { return x.code === c; }); return '<span class="_cp-ucgo" data-ix="' + _AR_UC.indexOf(u) + '" title="' + (u ? u.title : '') + '" style="cursor:pointer;font:800 10px ' + F + ';color:' + PCOL[u.prio] + ';background:' + PCOL[u.prio] + '1f;padding:2px 7px;border-radius:999px;white-space:nowrap">' + c + ' ↗</span>'; }).join(' ');
+        return '<div style="padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.05)"><div style="display:flex;align-items:flex-start;gap:10px">' +
+          '<span style="flex:none;min-width:44px;font:900 10.5px ' + F + ';color:#5bbccb;padding-top:1px">' + g.code + '</span>' +
+          '<div class="_cp-tg" data-c="' + g.code + '" style="flex:1;min-width:0;cursor:pointer"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + g.title + ' <span style="color:#666666;font-weight:600">' + (op ? '▴' : '▾') + '</span></div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' + ucs + '</div></div>' +
+          '<span style="flex:none;font:900 9.5px ' + F + ';color:#141414;background:' + PCOL[g.prio] + ';padding:2px 6px;border-radius:5px">' + g.prio + '</span></div>' +
+          (op ? '<div style="margin:6px 0 2px 54px;font:600 11px ' + F + ';color:#b3b3b3;line-height:1.5"><span style="font:800 9px ' + F + ';letter-spacing:.06em;text-transform:uppercase;color:#5bbccb">Mismo manejo · </span>' + g.rule.replace(/\n/g, '<br>') + '<div style="margin-top:5px;color:#808080">Requisitos: ' + g.cat.join(', ') + '</div></div>' : '') + '</div>';
       }).join('');
     }
     function matrixView() {
@@ -5663,7 +5719,7 @@ export function initApp() {
       return groups.map(function (g) {
         return '<div style="padding:12px 18px 4px;font:900 10px ' + F + ';letter-spacing:.07em;text-transform:uppercase;color:#666666">' + g + '</div>' + rows.filter(function (c) { return c.group === g; }).map(function (c) {
           return '<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 18px;border-bottom:1px solid rgba(255,255,255,.04)"><span style="flex:none;min-width:46px;font:900 10.5px ' + F + ';color:#6688cc;padding-top:1px">' + c.id + '</span>' +
-            '<div style="flex:1;min-width:0"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + c.title + '</div><div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + c.screen + (c.note ? ' · ' + c.note : '') + '</div></div>' +
+            '<div style="flex:1;min-width:0"><div style="font:700 12px ' + F + ';color:#e6e6e6;line-height:1.35">' + c.title + '</div><div style="font:600 10.5px ' + F + ';color:#808080;margin-top:2px">' + (c.be ? '<span style="font-weight:800;color:#5bbccb">' + c.be + '</span> · ' : '') + c.screen + (c.note ? ' · ' + c.note : '') + '</div></div>' +
             '<span style="flex:none;font:800 9.5px ' + F + ';color:' + (stc[c.status] || '#b3b3b3') + ';background:' + (stc[c.status] || '#b3b3b3') + '1f;padding:2px 7px;border-radius:999px;margin-top:1px">' + c.status + '</span>' + goBtn('_cp-go', _AR_CATALOG.indexOf(c)) + '</div>';
         }).join('');
       }).join('');
@@ -5673,12 +5729,14 @@ export function initApp() {
       var tab = function (k, t) { var on = _arPanelTab === k; return '<span class="_cp-tab" data-k="' + k + '" style="cursor:pointer;padding:6px 11px;border-radius:8px;font:800 11.5px ' + F + ';color:' + (on ? '#f5f5f5' : '#808080') + ';background:' + (on ? '#2a2a2a' : 'transparent') + '">' + t + '</span>'; };
       pn.innerHTML = '<div style="padding:16px 18px 10px;border-bottom:1px solid rgba(255,255,255,.08)"><div style="display:flex;align-items:center;gap:10px"><span style="font:800 15px ' + F + ';color:#f5f5f5;flex:1">Casos de Auto-rebuild</span>' +
         '<span class="_cp-reset" title="Recarga la maqueta con los datos iniciales" style="cursor:pointer;font:800 11px ' + F + ';color:#6688cc;border:1px solid rgba(102,136,204,.4);padding:4px 9px;border-radius:999px">Reiniciar datos</span><span class="_cp-x" style="cursor:pointer;color:#808080;font-size:16px">✕</span></div>' +
-        '<div style="display:flex;gap:4px;margin-top:10px">' + tab('uc', 'Casos de uso (' + _AR_UC.length + ')') + tab('matrix', 'Matriz de cobertura (' + _AR_CATALOG.length + ')') + '</div>' +
-        '<div style="font:600 11px ' + F + ';color:#808080;margin-top:8px;line-height:1.45">' + (_arPanelTab === 'uc'
+        '<div style="display:flex;gap:4px;margin-top:10px">' + tab('uc', 'Casos de uso (' + _AR_UC.length + ')') + tab('be', 'Grupos backend (' + _AR_BE.length + ')') + tab('matrix', 'Matriz (' + _AR_CATALOG.length + ')') + '</div>' +
+        '<div style="font:600 11px ' + F + ';color:#808080;margin-top:8px;line-height:1.45">' + (_arPanelTab === 'be'
+          ? 'Casos que el backend resuelve con el mismo manejo: una historia por grupo. Toca un grupo para ver la regla común; los chips abren cada caso.'
+          : _arPanelTab === 'uc'
           ? 'Ordenados por frecuencia e importancia: empieza por P1. Toca un caso para ver escenario, prueba y resultado esperado; «Ir» abre la pantalla con sus datos.'
           : 'Catálogo del entregable (§3) + casos 1–10 del prototipo + propuestas. Cobertura: ' + Object.keys(counts).map(function (k) { return '<b style="color:' + (stc[k] || '#b3b3b3') + '">' + counts[k] + ' ' + k.toLowerCase() + '</b>'; }).join(' · ') + '.') + '</div>' +
         '<input class="_cp-q" placeholder="Buscar caso, pantalla…" value="' + q + '" style="margin-top:10px;width:100%;box-sizing:border-box;padding:8px 10px;border-radius:9px;background:#242424;border:1px solid rgba(255,255,255,.1);color:#e6e6e6;font:600 12px ' + F + ';outline:none"></div>' +
-        '<div class="ef-scroll" style="flex:1;overflow:auto;padding:0 0 18px">' + (_arPanelTab === 'uc' ? ucView() : matrixView()) + '</div>';
+        '<div class="ef-scroll" style="flex:1;overflow:auto;padding:0 0 18px">' + (_arPanelTab === 'uc' ? ucView() : _arPanelTab === 'be' ? beView() : matrixView()) + '</div>';
       pn.querySelector('._cp-x').addEventListener('click', function () { pn.remove(); });
       pn.querySelector('._cp-reset').addEventListener('click', function () { location.reload(); });
       pn.querySelectorAll('._cp-tab').forEach(function (b) { b.addEventListener('click', function () { _arPanelTab = b.dataset.k; render(); }); });
@@ -5686,7 +5744,7 @@ export function initApp() {
       var inp = pn.querySelector('._cp-q');
       inp.addEventListener('input', function () { q = inp.value.toLowerCase(); render(); var i2 = pn.querySelector('._cp-q'); i2.focus(); i2.setSelectionRange(q.length, q.length); });
       pn.querySelectorAll('._cp-go').forEach(function (b) { b.addEventListener('click', function () { _arGo(_AR_CATALOG[+b.dataset.ix].go); }); });
-      pn.querySelectorAll('._cp-uc').forEach(function (b) { b.addEventListener('click', function () { _arGo(_AR_UC[+b.dataset.ix].go); }); });
+      pn.querySelectorAll('._cp-uc,._cp-ucgo').forEach(function (b) { b.addEventListener('click', function () { _arGo(_AR_UC[+b.dataset.ix].go); }); });
     }
     render();
     document.body.appendChild(pn);
@@ -10778,7 +10836,7 @@ export function initApp() {
     const _arCaseCard = (function () {
       var r = routeOf(routeId); if (!r.arCase) return null;
       var u = _arUcOfRoute(r), c0 = _AR_CASES.find(function (x) { return x.code === r.arCase; }); if (!u && !c0) return null;
-      var c = u ? { badge: u.code + ' · ' + u.prio + ' ' + _AR_PRIO[u.prio], title: u.title, covers: u.covers, situation: u.scenario, test: u.test, expected: u.expected, code: r.arCase }
+      var c = u ? { badge: u.code + ' · ' + u.prio + ' ' + _AR_PRIO[u.prio] + (u.be ? ' · ' + u.be : ''), title: u.title, covers: u.covers, situation: u.scenario, test: u.test, expected: u.expected, code: r.arCase }
         : { badge: 'ESCENARIO ' + c0.code, title: c0.title, covers: c0.covers, situation: c0.situation, test: c0.test, expected: c0.expected, code: c0.code };
       var PCOL = { P1: '#47b26b', P2: '#6688cc', P3: '#d0a038', P4: '#808080' }, pc = u ? PCOL[u.prio] : '#6688cc';
       var FB = "'General Sans', Nunito, system-ui", open = !_arCaseCollapsed[routeId];
@@ -11182,16 +11240,15 @@ export function initApp() {
     'Paid':        { label: 'Paid',        color: '#89e589', bg: 'rgba(46,153,117,.20)', ic: _OR_LST_IC.dollar },
     'Upcoming':    { label: 'Upcoming',    color: '#808080', bg: 'transparent',          ic: _OR_LST_IC.clock },
     'In progress': { label: 'In Progress', color: '#6688cc', bg: 'rgba(102,136,204,.12)', ic: _OR_LST_IC.spin },
-    'Completed':   { label: 'Completed',   color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.check },
-    // TONU: load cancelled at the pickup — closed there, 0 loaded mi (fixed, not part of the lifecycle)
-    'TONU':        { label: 'TONU',        color: '#e8a33d', bg: 'rgba(232,163,61,.12)', ic: _OR_LST_IC.check }
+    'Completed':   { label: 'Completed',   color: '#47b26b', bg: 'rgba(46,153,117,.12)', ic: _OR_LST_IC.check }
   };
   const _orLaneStatusOverride = {};   // manually-set lifecycle status per lane (maquetado)
   function _orLaneStatusGet(routeId, key, exec) {
     const ov = _orLaneStatusOverride[routeId] && _orLaneStatusOverride[routeId][key];
     if (ov) return ov;
     const isLoad = String(key).charAt(0) === 'L';
-    if (isLoad) { const _tl = loadsOf(routeId)[+String(key).slice(1)]; if (_tl && _tl.tonu) return 'TONU'; }
+    // TONU is a TAG on the lane, not a status: the lane keeps the load's status from My Loads (Invoiced / Paid)
+    if (isLoad) { const _tl = loadsOf(routeId)[+String(key).slice(1)]; if (_tl && _tl.tonu) return _OR_LANE_ST[_tl.status] ? _tl.status : 'Invoiced'; }
     if (isLoad) return exec === 'Completed' ? 'Delivered' : exec === 'In progress' ? 'In Transit' : exec === 'Booked' ? 'Booked' : 'Upcoming';
     return exec === 'Completed' ? 'Completed' : exec === 'In progress' ? 'In progress' : 'Upcoming';
   }
@@ -11205,7 +11262,8 @@ export function initApp() {
     const closing = isLoad ? 'Delivered' : 'Completed';
     const active = isLoad ? 'In Transit' : 'In progress';
     const curIdx = flow.indexOf(current);
-    const locked = (!isLoad && current === 'Completed') || current === 'TONU';   // deadhead closed / TONU → no changes
+    const _tonuL = isLoad && (loadsOf(routeId)[+String(key).slice(1)] || {}).tonu;
+    const locked = (!isLoad && current === 'Completed') || !!_tonuL;   // deadhead closed / TONU (status comes from the TMS) → no changes
     const ex = document.getElementById('or-lane-menu'); if (ex) ex.remove();
     const rect = anchorEl.getBoundingClientRect();
     const _pick = (s) => {
@@ -13457,7 +13515,11 @@ export function initApp() {
           el('div', { style: { display: 'flex', justifyContent: 'center', color: '#666666' }, html: IC.arrowLeft }),
           _endpoint(row.dest, row.destDate, active ? 'ETA' : (done ? 'Arrived' : null), false)
         ]),
-        _laneIssues(row),
+        (row.load && row.load.tonu)   // TONU tag next to the status (the status itself stays the TMS one)
+          ? el('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+              el('span', { title: 'TONU (Truck Ordered Not Used): the load was cancelled by the shipper or broker after the truck was dispatched. 0 loaded miles; the fee is the income.', style: { font: '800 10px ' + F, padding: '3px 7px', color: '#e8a33d', background: 'rgba(232,163,61,.1)', border: '1px solid rgba(232,163,61,.55)', borderRadius: '5px', letterSpacing: '.05em', whiteSpace: 'nowrap' } }, ['TONU']),
+              _laneIssues(row)])
+          : _laneIssues(row),
         (function () { const _life = _orLaneStatusGet(routeId, row.segKey, row.exec); return _statusDrop(_life, (e) => _orLaneStatusMenu(e.currentTarget, routeId, row.segKey, _life)); })(),
         el('div', { class: 'hoverable', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); _toggle(); }, title: isSel ? 'Hide stops' : 'Show stops', style: { width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isSel ? '#6688cc' : '#666666', transform: isSel ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }, html: IC.chevDown })
       ]));
