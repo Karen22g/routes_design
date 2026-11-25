@@ -14,7 +14,14 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 | Puntos de entrada | Un solo modal para tres entradas: **Plan de la ruta, Crear ruta y My Loads**. Desde My Loads se elige la **unidad**, nunca una carga suelta. Easy routes deja de ser punto de entrada. | Se quitó la barra Auto-rebuild de Easy routes (casos 4 y 5, G4 y G5 pasan a «Fuera»). J1 pasa a «Decidido». |
 | Selección | El usuario puede ajustar los **extremos** del ciclo: recortar o ampliar por el inicio o por el final. Nunca puede crear una ruta que se salte una carga **en medio**. | Si una carga queda fuera entre dos cargas de la ruta, aviso rojo y botón de construir bloqueado, con tres arreglos: «Check #X again», «Drop the N before» y «Drop the N after». Un arreglo que quitaría lanes ya ejecutadas no se ofrece. La misma regla aplica en el modal (K1) y en las tarjetas de Crear ruta (K2, bloquea Continue). |
 | Excepciones del bloqueo | No cuentan como hueco: la carga descartada de un par «Not compatible», las canceladas o reasignadas, las cargas planeadas en otra ruta y las cargas libres del ciclo anterior o siguiente. | Ampliar por un extremo exige marcar también las cargas que quedan entre la nueva y el ciclo. |
-| Crear ruta y Easy routes | El flujo nuevo va directo al detalle de la ruta, así que no aplica la validación de fechas de Easy routes contra driver, trailer y cabina. No se reutiliza la implementación anterior de Easy routes / Auto-rebuild: el equipo estima que empezar de cero tarda menos. | Continue en Crear ruta abre siempre el Plan (antes, sin cargas de ciclo, abría Easy routes). «Complete with Easy routes» (F5) se mantiene como acción opcional después de construir. |
+| Bordes: excepción a «manda el camión» | Hacia atrás manda el camión (huecos de ≥ 34 h). Excepción: con el **mismo driver y HOS disponibles**, si el camión paró ≥ 34 h pero las HOS no muestran reset (on duty), **mandan las HOS**: no corta y sale un aviso que no bloquea. | K5 · S16 / R-AR16. |
+| Unidad = cabina; cambio de unidad y de driver | Una unidad **es** una cabina, en relación 1 a 1 (la cabina 5005 es la unidad 5005); no existe una unidad con varias cabinas. Cambiar la unidad crea una **ruta nueva** consecutiva. Cambiar el driver mantiene **la misma ruta y unidad**; desde la carga que toma el driver nuevo, las HOS salen de ese driver. | K7 · S15 / R-AR15 (aviso por carga). |
+| Origin y salida («dropoff antes del inicio del ciclo») | Origin y fecha/hora de inicio **siguen a las cargas marcadas**: si se desmarcan las primeras del ciclo, el Origin es el **dropoff (lugar y fecha) de la última desmarcada**, donde empieza el DH a la siguiente. Si no se desmarca ninguna: la **primera parada que detecta el ELD desde el inicio del ciclo** (`isStopped`); sin parada ELD, el **último dropoff real aunque sea del ciclo anterior**; sin ninguna carga anterior, el pickup de la primera carga. La fecha se envía con el huso de esa parada (defecto D10). Igual que la historia [Origen y fecha de inicio desde la primera parada del ciclo](https://app.notion.com/p/422b7d6347c681ceba63d82163fc5e61). | K6 · Crear ruta 5017 (parada ELD San Antonio, lun 16 05:30) y R-AR03 (pickup real de Memphis, mar 17 06:00). |
+| Fin del ciclo por HOS | Las **recap hours las calcula el backend** con la regla de HOS. | K8 · S24 / R-AR24. J5 pasa a «Decidido». |
+| Not compatible | Solo cuando las horas **se solapan** (pickup antes del dropoff anterior). No se valida el tiempo de manejo entre cargas. | S23 / R-AR23 con dos solapes. J4 pasa a «Decidido». |
+| Zona horaria | Sirven los campos `real_*` mapeados en las historias BE-1 y BE-2. | — |
+| ¿Uno o dos endpoints? | Se evalúa en un ticket propio del proyecto. | — |
+| Crear ruta y Easy routes | El flujo nuevo va directo al detalle de la ruta, así que no aplica la validación de fechas de Easy routes contra driver, trailer y unidad. No se reutiliza la implementación anterior de Easy routes / Auto-rebuild: el equipo estima que empezar de cero tarda menos. | Continue en Crear ruta abre siempre el Plan (antes, sin cargas de ciclo, abría Easy routes). «Complete with Easy routes» (F5) se mantiene como acción opcional después de construir. |
 
 ## 0. Casos de uso por prioridad — empezar por P1
 
@@ -25,7 +32,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 | **P1 · Común** | Pasa todos los días y define el resultado del ciclo: con o sin HOS, cargas que se solapan, una carga partida entre dos ciclos, continuar el siguiente ciclo en la misma ruta, y recap contra dejar para el siguiente ciclo. |
 | **P2 · Frecuente** | Flujos diarios de armado: ruta vacía, huecos, ajustar los extremos sin saltarse cargas, Crear ruta, rutas vecinas, TONU, My Loads. |
 | **P3 · Ocasional** | Pasa de vez en cuando: cambios del TMS, ELD lento, cambio de conductor, discrepancias de HOS, fechas pasadas, ancla en un descanso, datos incompletos. |
-| **P4 · Raro** | Casos de borde: 10 días sin reset, ventana vacía, cambio de cabina, concurrencia y errores, sin unidad. |
+| **P4 · Raro** | Casos de borde: 10 días sin reset, ventana vacía, cambio de unidad, concurrencia y errores, sin unidad. |
 
 | # | Prioridad | Caso de uso | Grupo backend | Datos | Cubre |
 |---|---|---|---|---|---|
@@ -34,10 +41,10 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 | UC03 | P1 · Común | Cargas con fechas que se solapan → «Not compatible», se elige una | BE-8 | R-AR23 | J4 |
 | UC04 | P1 · Común | Carga partida entre dos ciclos (reset durante la carga) | BE-2 | R-AR17 | C6, J9 |
 | UC05 | P1 · Común | Continuar el siguiente ciclo en la misma ruta | BE-6 | R-AR25 | J8, E4 |
-| UC06 | P1 · Común | Recap hours: agregar con recap o dejar para el siguiente ciclo | BE-2 | R-AR24 | J5 |
+| UC06 | P1 · Común | Recap hours: agregar con recap o dejar para el siguiente ciclo | BE-2 | R-AR24 | J5, K8 |
 | UC07 | P2 · Frecuente | Ruta vacía → ciclo completo (caso 6) | BE-10 | R-AR03 | caso 6, D1, E1, F1, F2, F4, F5, G3, F10 |
 | UC08 | P2 · Frecuente | Huecos en el ciclo → «fills gap» (caso 8) | BE-5 | R-AR07 | caso 8, E3, E9, F3, G6 |
-| UC09 | P2 · Frecuente | Crear ruta con una unidad que ya tiene ciclo (caso 2) | BE-4 | Crear ruta · unidad 5017 | caso 2, G1, D6 |
+| UC09 | P2 · Frecuente | Crear ruta con una unidad que ya tiene ciclo (caso 2) | BE-4 | Crear ruta · unidad 5017 | caso 2, G1, D6, K6 |
 | UC10 | P2 · Frecuente | Unidad sin cargas de ciclo → detalle de la ruta (caso 1) | BE-4 | Crear ruta · unidad 2201 | caso 1, K3 |
 | UC11 | P2 · Frecuente | Cargas en el borde de la ruta anterior → «move here» (caso 10) | BE-7 | R-AR09P, R-AR09 | caso 10, E6, J7 |
 | UC12 | P2 · Frecuente | Carga del próximo ciclo con una ruta siguiente → moverla o quitarla (caso 9) | BE-7 | R-AR08, R-AR08N | caso 9, E4, E13, J6 |
@@ -45,15 +52,15 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 | UC14 | P2 · Frecuente | Desde My Loads (con y sin unidad filtrada) | BE-4 | My Loads | J1, G7, G8 |
 | UC15 | P3 · Ocasional | Cambios del TMS y Sync | BE-9 | R-AR11 | E10, E11, H2, J3 |
 | UC16 | P3 · Ocasional | ELD lento o caído | BE-3 | R-AR12, R-AR13 | C10, H1 |
-| UC17 | P3 · Ocasional | Cambio de conductor dentro del ciclo | BE-2 | R-AR15 | C4, C7, I1, A5 |
-| UC18 | P3 · Ocasional | Descanso de 34 h o más sin reset en HOS (on duty) | BE-2 | R-AR16 | C5 |
+| UC17 | P3 · Ocasional | Cambio de conductor dentro del ciclo | BE-2 | R-AR15 | C4, C7, I1, A5, K7 |
+| UC18 | P3 · Ocasional | Descanso de 34 h o más sin reset en HOS (on duty) | BE-2 | R-AR16 | C5, K5 |
 | UC19 | P3 · Ocasional | Fecha de salida pasada | BE-4 | R-AR04 | D2, F6 |
 | UC20 | P3 · Ocasional | Ancla dentro de un descanso | BE-4 | R-AR05, R-AR06 | D3, F7 |
 | UC21 | P3 · Ocasional | Ruta vecina finalizada o carga en una ruta no vecina | BE-7 | R-AR10X, R-AR10P, R-AR10 | E7 |
-| UC22 | P3 · Ocasional | Cabinas agrupadas, carga manual y datos incompletos | BE-1 | R-AR20 | A1, A2, A4, B4, B6 |
+| UC22 | P3 · Ocasional | Carga manual, carga sin real stops y datos incompletos | BE-1 | R-AR20 | A1, A2, A4, B4, B6 |
 | UC23 | P4 · Raro | Sin descanso ni reset en 10 días | BE-2 | R-AR18 | C8 |
 | UC24 | P4 · Raro | Ventana sin cargas | BE-4 | R-AR19 | C11 |
-| UC25 | P4 · Raro | Cambio de cabina → ruta nueva consecutiva | BE-11 | R-AR21 | I2 |
+| UC25 | P4 · Raro | Cambio de unidad → ruta nueva consecutiva | BE-11 | R-AR21 | I2 |
 | UC26 | P4 · Raro | Concurrencia y error al construir | BE-10 | R-AR14 | F8, F9 |
 | UC27 | P4 · Raro | Ruta o Crear ruta sin unidad | BE-4 | Crear ruta · Any unit | A6, G2 |
 | UC28 | P2 · Frecuente | Ajustar los extremos del ciclo sin saltarse una carga en medio | BE-10 | R-AR07 | K1, K2, E9 |
@@ -74,7 +81,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 
 **UC03 · Cargas con fechas que se solapan → «Not compatible», se elige una** — BE-8 · R-AR23 (S23) · cubre J4
 
-- **Escenario:** Unidad 2072. Vie 20: dos cargas libres salen de San Antonio con una hora de diferencia (doble reserva). Sáb 21: Laredo→Houston (en la ruta) entrega a las 11:00 y Dallas→Memphis (libre) recoge a las 14:00, a ~5 h de manejo.
+- **Escenario:** Unidad 2072. Vie 20: dos cargas libres salen de San Antonio con una hora de diferencia (doble reserva). Sáb 21: Laredo→Houston (en la ruta) entrega a las 11:00 y Dallas→Memphis (libre) recoge a las 09:00. Solo cuenta el solape de horas; el tiempo de manejo entre cargas no se valida.
 - **Prueba:** Abre Auto-rebuild. En cada par elige la otra carga y vuelve a la sugerida.
 - **Esperado:** Cada par sale bajo «Not compatible · choose one» con el motivo en una línea, y se elige con un radio. Sugerida: la de la ruta, o la de más ingreso (San Antonio→Dallas). Si eliges Dallas→Memphis, Laredo→Houston pasa a «leaves the route» y sale al construir. «Missing loads» cuenta cada par una sola vez.
 
@@ -90,7 +97,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Abre Auto-rebuild. Apaga y prende «Next cycle in this route» en la línea «Cycle end». Construye.
 - **Esperado:** Como la ruta ya tiene cargas del siguiente ciclo y no hay otra ruta, el interruptor viene encendido: Atlanta→Charlotte dice «next cycle · in this route», y Charlotte→Pittsburgh y Pittsburgh→Philadelphia salen preseleccionadas como «next cycle». El resumen dice «· 2 from the next cycle». Apagado: las dos libres desaparecen y Atlanta→Charlotte queda como «next cycle · remove». Al construir, las 5 lanes quedan en orden de pickup en la misma ruta.
 
-**UC06 · Recap hours: agregar con recap o dejar para el siguiente ciclo** — BE-2 · R-AR24 (S24) · cubre J5
+**UC06 · Recap hours: agregar con recap o dejar para el siguiente ciclo** — BE-2 · R-AR24 (S24) · cubre J5, K8
 
 - **Escenario:** Carla Vega (HOS ok, 12 h disponibles) se queda sin horas el vie 20 a las 20:00 (próximo reset). A medianoche recupera 9 h (recap). Columbus→Indianapolis (en la ruta, ~5 h) e Indianapolis→Louisville (libre, ~4 h) caben en esas 9 h; Louisville→Nashville ya no.
 - **Prueba:** Abre Auto-rebuild. Pasa el mouse por el chip «Recap» y apágalo; vuelve a prenderlo.
@@ -103,7 +110,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 
 - **Escenario:** Ruta Planned de la unidad 2047 (Maria Lopez, HOS ok) sin cargas reales: 3 lanes Unbooked, salida jue 19 08:00 CST. El TMS tiene el ciclo en curso Memphis→Nashville→Louisville→Indianapolis→Columbus; el ciclo anterior terminó en Memphis.
 - **Prueba:** Usa «Auto-rebuild» del estado vacío del Plan. Construye. Vuelve a abrir Auto-rebuild.
-- **Esperado:** Ancla = fecha de salida; las 4 cargas salen preseleccionadas y el pie avisa que 2 lanes Unbooked se reemplazan. Tras construir: lanes por pickup, la Unbooked posterior re-encadenada desde Columbus, Origin = Memphis, ruta In progress y «Complete with Easy routes» al final. Al reabrir: «Nothing to add» (no duplica).
+- **Esperado:** Ancla = fecha de salida; las 4 cargas salen preseleccionadas y el pie avisa que 2 lanes Unbooked se reemplazan. Tras construir: lanes por pickup, la Unbooked posterior re-encadenada desde Columbus, Origin = Memphis, vie 14 13:00 (sin parada ELD: último dropoff real, del ciclo anterior), ruta In progress y «Complete with Easy routes» al final. Al reabrir: «Nothing to add» (no duplica).
 
 **UC08 · Huecos en el ciclo → «fills gap» (caso 8)** — BE-5 · R-AR07 (S07) · cubre caso 8, E3, E9, F3, G6
 
@@ -111,11 +118,11 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Abre Auto-rebuild; desmarca Dallas→OKC y vuelve a marcarla. Construye. Antes de construir, prueba también Refresh ▾ → Cycle loads.
 - **Esperado:** Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso rojo «left out in the middle of the route», el botón de construir queda bloqueado y el aviso ofrece «Check again» o recortar un extremo. Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.
 
-**UC09 · Crear ruta con una unidad que ya tiene ciclo (caso 2)** — BE-4 · Crear ruta · unidad 5017 · cubre caso 2, G1, D6
+**UC09 · Crear ruta con una unidad que ya tiene ciclo (caso 2)** — BE-4 · Crear ruta · unidad 5017 · cubre caso 2, G1, D6, K6
 
 - **Escenario:** Crear ruta → Assign unit → unidad 5017 (Jeremy Davis, HOS ok). Ciclo en el TMS: TONU en Houston (mar 17), Houston→Dallas, Dallas→Memphis (en tránsito).
 - **Prueba:** Elige la unidad. Revisa el bloque «Loads in this truck cycle». Cambia la fecha de salida. Abre «View full cycle».
-- **Esperado:** Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio, el inicio del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.
+- **Esperado:** Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio y salida lun 16, la primera parada ELD del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.
 
 **UC10 · Unidad sin cargas de ciclo → detalle de la ruta (caso 1)** — BE-4 · Crear ruta · unidad 2201 · cubre caso 1, K3
 
@@ -168,13 +175,13 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Abre Auto-rebuild y espera. A: «Update cycle» cuando lleguen las HOS. B: construye antes.
 - **Esperado:** «Checking ELD…» → chip HOS «Retrying…» → aviso «HOS data available — the cycle may change · Update cycle». Si confirmas sin HOS, el Plan avisa «HOS data arrived and… differs» con «Reopen Auto-rebuild»; la ruta nunca se corrige sola. S13: chip «HOS · Unavailable» y bordes por descansos.
 
-**UC17 · Cambio de conductor dentro del ciclo** — BE-2 · R-AR15 (S15) · cubre C4, C7, I1, A5
+**UC17 · Cambio de conductor dentro del ciclo** — BE-2 · R-AR15 (S15) · cubre C4, C7, I1, A5, K7
 
 - **Escenario:** Dan Wu hizo Little Rock→Memphis y tomó un reset en Memphis; el camión siguió con Luis Ortega. Dan volvió a manejar Nashville→Louisville. Driver actual: Luis.
 - **Prueba:** Abre Auto-rebuild.
-- **Esperado:** «Cycle start · 41 h rest» (no el reset de Dan) y un aviso de una línea de cambio de conductor. Nashville→Louisville «fills gap». La ruta sigue siendo la misma.
+- **Esperado:** «Cycle start · 41 h rest» (no el reset de Dan) y un aviso de una línea: misma ruta, y las HOS salen del driver nuevo desde la carga que toma. Nashville→Louisville «fills gap». La ruta sigue siendo la misma.
 
-**UC18 · Descanso de 34 h o más sin reset en HOS (on duty)** — BE-2 · R-AR16 (S16) · cubre C5
+**UC18 · Descanso de 34 h o más sin reset en HOS (on duty)** — BE-2 · R-AR16 (S16) · cubre C5, K5
 
 - **Escenario:** El camión estuvo parado 38 h en Denver, pero las HOS de Nina muestran on duty.
 - **Prueba:** Abre Auto-rebuild.
@@ -198,11 +205,11 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Abre Auto-rebuild → «Show loads in other routes».
 - **Esperado:** Houston→San Antonio: «in previous route · open» con casilla bloqueada (tooltip «route is finished»). Houston→Dallas oculta; al mostrarla, bloqueada con «open».
 
-**UC22 · Cabinas agrupadas, carga manual y datos incompletos** — BE-1 · R-AR20 (S20) · cubre A1, A2, A4, B4, B6
+**UC22 · Carga manual, carga sin real stops y datos incompletos** — BE-1 · R-AR20 (S20) · cubre A1, A2, A4, B4, B6
 
-- **Escenario:** Unidad 2065 con dos cabinas (2065-A con ELD, 2065-B). Una carga manual de efRouting, una en tránsito sin hora de dropoff y una parcial.
+- **Escenario:** Unidad 2065. Houston→San Antonio sin real stops, una carga manual de efRouting, una en tránsito sin hora de dropoff y una parcial.
 - **Prueba:** Abre Auto-rebuild.
-- **Esperado:** Cargas de ambas cabinas juntas; la de 2065-B con su etiqueta. La manual con ícono «ef». Dropoff sin hora → punto «estimated» y «est.». La parcial con millas «est.».
+- **Esperado:** Houston→San Antonio con horas «planned». La manual con ícono «ef». Dropoff sin hora → punto «estimated» y «est.». La parcial con millas «est.».
 
 
 #### P4 · Raro
@@ -219,11 +226,11 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Abre Auto-rebuild.
 - **Esperado:** «No loads in this cycle» y CTA «Nothing to add» deshabilitado.
 
-**UC25 · Cambio de cabina → ruta nueva consecutiva** — BE-11 · R-AR21 (S21) · cubre I2
+**UC25 · Cambio de unidad → ruta nueva consecutiva** — BE-11 · R-AR21 (S21) · cubre I2
 
-- **Escenario:** Omar empezó con la cabina 2066 y en Memphis pasa a la 2067, que ya tiene una carga Booked.
+- **Escenario:** Omar empezó con la unidad 2066 y en Memphis pasa a la 2067, que ya tiene una carga Booked.
 - **Prueba:** «Change driver / unit…» en la ficha → unidad 2067 → «Create new route». En la nueva usa Auto-rebuild.
-- **Esperado:** Aviso «Changing the cabin creates a new route». Se crea una ruta consecutiva para 2067, con avisos en ambas; la anterior conserva lo hecho.
+- **Esperado:** Aviso «Changing the unit creates a new route». Se crea una ruta consecutiva para 2067, con avisos en ambas; la anterior conserva lo hecho.
 
 **UC26 · Concurrencia y error al construir** — BE-10 · R-AR14 (S14) · cubre F8, F9
 
@@ -244,7 +251,7 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 | Grupo | Prioridad | Casos de uso | Requisitos del catálogo |
 |---|---|---|---|
 | BE-1 · Entrada del motor: cargas de la unidad y hora de cada parada | P2 | UC13 (P2), UC22 (P3) | A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, B6, J3b |
-| BE-2 · Bordes del ciclo, con y sin HOS (incluye recap) | P1 | UC01 (P1), UC02 (P1), UC04 (P1), UC06 (P1), UC17 (P3), UC18 (P3), UC23 (P4) | C1, C2, C3, C4, C5, C6, C7, C8, C9, H4, I1, J5, J9 |
+| BE-2 · Bordes del ciclo, con y sin HOS (incluye recap) | P1 | UC01 (P1), UC02 (P1), UC04 (P1), UC06 (P1), UC17 (P3), UC18 (P3), UC23 (P4) | C1, C2, C3, C4, C5, C6, C7, C8, C9, H4, I1, J5, J9, K5, K7, K8 |
 | BE-3 · HOS no disponible (ELD lento o caído) | P3 | UC16 (P3) | C10, H1 |
 | BE-4 · Ancla y puntos de entrada (mismo endpoint) | P2 | UC09 (P2), UC10 (P2), UC14 (P2), UC19 (P3), UC20 (P3), UC24 (P4), UC27 (P4) | D1, D2, D3, D4, D5, D6, G1, G2, G3, G4, G5, G7, G8, A6, C11, E8, J1, K3, K4, caso 1, caso 2, caso 4, caso 5 |
 | BE-5 · Faltantes del ciclo frente a la ruta | P2 | UC08 (P2) | E1, E2, E3, E9, E12, G6, H3, J2, caso 7, caso 8 |
@@ -252,17 +259,17 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 | BE-7 · Cargas fuera del ciclo y entre rutas vecinas | P2 | UC11 (P2), UC12 (P2), UC21 (P3) | E4, E5, E6, E7, E13, J6, J7, caso 9, caso 10 |
 | BE-8 · Cargas no compatibles | P1 | UC03 (P1) | J4 |
 | BE-9 · Cambios del TMS y Sync | P3 | UC15 (P3) | E10, E11, H2, J3 |
-| BE-10 · Construcción de la ruta (build) | P2 | UC07 (P2), UC26 (P4), UC28 (P2) | F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, K1, K2, caso 6 |
-| BE-11 · Cambio de cabina | P4 | UC25 (P4) | I2 |
+| BE-10 · Construcción de la ruta (build) | P2 | UC07 (P2), UC26 (P4), UC28 (P2) | F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, K1, K2, K6, caso 6 |
+| BE-11 · Cambio de unidad | P4 | UC25 (P4) | I2 |
 
 **BE-1 · Entrada del motor: cargas de la unidad y hora de cada parada** (P2)
 
-- **Mismo manejo:** Una sola consulta arma el pool de cargas de la unidad: todas sus cabinas (la llave es el número), cualquier driver, solo los estados elegibles (TONU incluida con su fee) y también las cargas manuales de efRouting y las parciales. Cada parada se lleva a UTC con su huso horario, y su fuente es real, planned o estimated, en ese orden.
-- **Casos de uso:** UC13 TONU dentro del ciclo · UC22 Cabinas agrupadas, carga manual y datos incompletos
+- **Mismo manejo:** Una sola consulta arma el pool de cargas de la unidad (la llave es la unidad; unidad = cabina, 1 a 1), de cualquier driver, solo los estados elegibles (TONU incluida con su fee) y también las cargas manuales de efRouting y las parciales. Cada parada se lleva a UTC con su huso horario, y su fuente es real, planned o estimated, en ese orden.
+- **Casos de uso:** UC13 TONU dentro del ciclo · UC22 Carga manual, carga sin real stops y datos incompletos
 
 **BE-2 · Bordes del ciclo, con y sin HOS (incluye recap)** (P1)
 
-- **Mismo manejo:** Una sola función recorre las cargas en orden y decide dónde se corta el ciclo. Con HOS manda el reset de 34 h del mismo driver; si el reset cae durante una carga, esa carga queda en el ciclo de su pickup. Sin HOS corta un descanso de 34 h o más, y la ventana máxima es de 10 días. Hacia adelante, el ciclo corta en el próximo reset del driver actual, que las recap hours pueden correr.
+- **Mismo manejo:** Una sola función recorre las cargas en orden y decide dónde se corta el ciclo. Hacia atrás manda el camión: corta un descanso de 34 h o más, y un reset de HOS solo cuenta si el mismo driver hizo las cargas de los dos lados. Excepción: con el mismo driver y HOS disponibles, si el camión paró 34 h o más pero las HOS no muestran reset (on duty), mandan las HOS: no corta y sale un aviso que no bloquea. Si el reset cae durante una carga, esa carga queda en el ciclo de su pickup. La ventana máxima es de 10 días. Cada carga lee las HOS del driver que la hizo: si cambia el driver, la ruta sigue igual y desde esa carga las HOS salen del driver nuevo. Hacia adelante, el ciclo corta en el próximo reset del driver actual, que las recap hours pueden correr; el backend las calcula con la regla de HOS.
 - **Casos de uso:** UC01 Sin HOS: el ciclo se corta por descansos de 34 h o más · UC02 Con HOS: reset del driver al inicio y próximo reset al final · UC04 Carga partida entre dos ciclos (reset durante la carga) · UC06 Recap hours: agregar con recap o dejar para el siguiente ciclo · UC17 Cambio de conductor dentro del ciclo · UC18 Descanso de 34 h o más sin reset en HOS (on duty) · UC23 Sin descanso ni reset en 10 días
 
 **BE-3 · HOS no disponible (ELD lento o caído)** (P3)
@@ -292,7 +299,7 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 
 **BE-8 · Cargas no compatibles** (P1)
 
-- **Mismo manejo:** Entre cargas consecutivas del ciclo se valida que el camión llegue a tiempo. Si se solapan o no da el tiempo de manejo, el par se devuelve como «not compatible», con el motivo y una carga sugerida.
+- **Mismo manejo:** Entre cargas consecutivas del ciclo se comparan las horas (real stop o planeada). Si el pickup de una cae antes del dropoff de la anterior, el par se devuelve como «not compatible», con el motivo y una carga sugerida. El tiempo de manejo entre cargas no se valida.
 - **Casos de uso:** UC03 Cargas con fechas que se solapan → «Not compatible», se elige una
 
 **BE-9 · Cambios del TMS y Sync** (P3)
@@ -302,20 +309,20 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 
 **BE-10 · Construcción de la ruta (build)** (P2)
 
-- **Mismo manejo:** Un solo POST idempotente aplica los cambios: • ordena las cargas por pickup; • pone Origin en el inicio del ciclo; • crea DH solo entre cargas no contiguas; • borra las Unbooked cubiertas y re-encadena las posteriores; • deja lo ejecutado en solo lectura; • rechaza una ruta que se salta una carga en medio del ciclo (los extremos sí se pueden recortar o ampliar); • pasa la ruta a In Progress solo si algo ya empezó. Si el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.
+- **Mismo manejo:** Un solo POST idempotente aplica los cambios: • ordena las cargas por pickup; • pone Origin y la salida según las cargas que entran: si se dejaron fuera las primeras del ciclo, en el dropoff (lugar y fecha) de la última que quedó fuera, donde empieza el DH a la siguiente; si no, en la primera parada que detecta el ELD desde el inicio del ciclo; sin parada ELD, en el último dropoff real aunque sea del ciclo anterior; sin cargas anteriores, en el pickup de la primera carga; • crea DH solo entre cargas no contiguas; • borra las Unbooked cubiertas y re-encadena las posteriores; • deja lo ejecutado en solo lectura; • rechaza una ruta que se salta una carga en medio del ciclo (los extremos sí se pueden recortar o ampliar); • pasa la ruta a In Progress solo si algo ya empezó. Si el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.
 - **Casos de uso:** UC07 Ruta vacía → ciclo completo (caso 6) · UC26 Concurrencia y error al construir · UC28 Ajustar los extremos del ciclo sin saltarse una carga en medio
 
-**BE-11 · Cambio de cabina** (P4)
+**BE-11 · Cambio de unidad** (P4)
 
-- **Mismo manejo:** Cambiar la cabina de una ruta que ya empezó crea una ruta nueva consecutiva, y su ciclo se calcula con la nueva unidad. Cambiar solo el driver mantiene la ruta.
-- **Casos de uso:** UC25 Cambio de cabina → ruta nueva consecutiva
+- **Mismo manejo:** Cambiar la unidad (la cabina) de una ruta que ya empezó crea una ruta nueva consecutiva, y su ciclo se calcula con la nueva unidad. Cambiar solo el driver mantiene la ruta y la unidad; desde la carga que toma, las HOS salen del driver nuevo.
+- **Casos de uso:** UC25 Cambio de unidad → ruta nueva consecutiva
 
 ### Orden sugerido para las historias
 
 1. **Núcleo demoable (P1–P2, en orden de dependencia):** BE-1 Entrada → BE-2 Bordes → BE-4 Ancla y entradas → BE-5 Faltantes → BE-10 Construcción. Con esto funcionan UC01, UC02, UC04, UC06, UC07, UC08 y UC09.
 2. **Resto de los casos comunes:** BE-8 Not compatible (UC03) y BE-6 Siguiente ciclo en la misma ruta (UC05).
 3. **Frecuentes:** BE-7 Cargas entre rutas vecinas (UC11, UC12, UC21).
-4. **Ocasionales y de borde:** BE-9 Cambios del TMS y Sync, BE-3 HOS no disponible y BE-11 Cambio de cabina.
+4. **Ocasionales y de borde:** BE-9 Cambios del TMS y Sync, BE-3 HOS no disponible y BE-11 Cambio de unidad.
 
 Cómo se repartieron los casos que tocan dos grupos:
 - **UC01 y UC02** viven en BE-2, aunque su fin de ciclo también aparezca en el modal.
@@ -357,14 +364,14 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 ### Maqueta de Rutas (después de esta entrega)
 | Pantalla / componente | Qué hace con Auto-rebuild |
 |---|---|
-| **Motor único** `_arEngine` (truck-cycle/) | Llave = número de unidad normalizado (agrupa cabinas). Horas en UTC y cada parada en su hora local con huso y fuente (real / planned / estimated). Bordes por hueco ≥ 34 h o reset de HOS (mismo driver), discrepancia, reset dentro de una carga y ventana de 10 días. Ancla por contexto, clasificación, vecinas, cambios del TMS, Origin y Unbooked cubiertas. |
+| **Motor único** `_arEngine` (truck-cycle/) | Llave = la unidad (unidad = cabina, 1 a 1). Horas en UTC y cada parada en su hora local con huso y fuente (real / planned / estimated). Bordes por hueco ≥ 34 h o reset de HOS (mismo driver), discrepancia, reset dentro de una carga y ventana de 10 días. Ancla por contexto, clasificación, vecinas, cambios del TMS, Origin y Unbooked cubiertas. |
 | **Crear ruta** (Any unit / Assign unit) | Bloque «Loads in this truck cycle»: resumen del ciclo (bordes, ancla, HOS), tarjetas con horas, huso y fuente, **View full cycle** (mismo modal, la selección vuelve al bloque), Origin = inicio del ciclo de la ruta (sigue al ciclo, no a la selección), cambiar la fecha recalcula el ciclo sin pisar lo editado. Una tarjeta desmarcada en medio bloquea Continue y ofrece los arreglos (K2). Continue abre siempre el detalle de la ruta. |
 | **Easy routes** (lane map) | Ya no es punto de entrada de Auto-rebuild (25-nov): se quitó su barra. Se llega desde «Complete with Easy routes» o «Search loads» del Plan. |
 | **Plan** | Pill en la toolbar y estado vacío. Lanes con hora local, huso y fuente, candado en tramos ejecutados, DH con millas reales entre ciudades, línea «Cycle continues from here» sobre la carga en movimiento, banner de resultado, aviso «HOS differ» con «Reopen Auto-rebuild», aviso en la ruta vecina, «Complete with Easy routes» y «Add» → My Loads filtrado. |
 | **Refresh ▾ → Cycle loads** | Misma respuesta del motor: lista las cargas del ciclo que faltan y «+ Add» inserta una sola sin reorganizar. |
-| **Modal Auto-rebuild** (único) | Estados ELD (Checking / sin HOS / HOS disponible), frescura + Sync, contexto (unidad/cabinas, driver informativo, ancla, ventana, Origin, HOS), avisos, filtros ampliables, marcadores de inicio y fin, pausas, secciones ciclo anterior / próximo / fuera del ciclo / otras rutas / ya no es de la unidad, acciones por fila (quitar, mover, actualizar desde TMS), métricas «Will be added» + «Resulting cycle» + HOS, y CTA según el estado. |
+| **Modal Auto-rebuild** (único) | Estados ELD (Checking / sin HOS / HOS disponible), frescura + Sync, contexto (unidad, driver informativo, ancla, ventana, Origin, HOS), avisos, filtros ampliables, marcadores de inicio y fin, pausas, secciones ciclo anterior / próximo / fuera del ciclo / otras rutas / ya no es de la unidad, acciones por fila (quitar, mover, actualizar desde TMS), métricas «Will be added» + «Resulting cycle» + HOS, y CTA según el estado. |
 | **Building route…** | Asíncrono, error con Retry (idempotente) y concurrencia («the cycle changed», sin construir, modal recargado). Toast con Undo. |
-| **Assign driver & equipment** | Unidad obligatoria, conflicto por solape que bloquea Save, cambio de driver en la misma ruta y cambio de cabina que crea una ruta nueva consecutiva. |
+| **Assign driver & equipment** | Unidad obligatoria, conflicto por solape que bloquea Save, cambio de driver en la misma ruta y cambio de unidad que crea una ruta nueva consecutiva. |
 | **My Loads** | Barra «Auto-rebuild cycle» siempre activa: con una unidad filtrada abre su ciclo; sin ella, primero el selector de unidad (J1), banner «Back to route» cuando viene de «Add load». |
 | **On Road / Report** | Renderizan las rutas reconstruidas (sin cambios funcionales de Auto-rebuild). |
 
@@ -381,8 +388,8 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | caso 8 | Cargas con huecos → fills gap | BE-5 | Modal | Ofrecido | S07 · R-AR07 (modal) |
 | caso 9 | Carga del próximo ciclo | BE-7 | Modal | Ofrecido | S08 · R-AR08 (modal) |
 | caso 10 | Carga en otra ruta (vecina / bloqueada) | BE-7 | Modal | Ofrecido | S09 · R-AR09 (modal) |
-| A1 | Varias cabinas con el mismo número | BE-1 | Modal · contexto + etiqueta de cabina | Ofrecido | S20 · R-AR20 (modal) |
-| A2 | Carga de otra cabina del grupo (horas planeadas) | BE-1 | Modal · fila | Ofrecido | S20 · R-AR20 (modal) |
+| A1 | La llave del ciclo es la unidad (unidad = cabina, 1 a 1); las cargas de otra unidad nunca entran | BE-1 | Modal · contexto | Ofrecido | S20 · R-AR20 (modal) |
+| A2 | Carga sin real stops: usa sus horas planeadas | BE-1 | Modal · fila | Ofrecido | S20 · R-AR20 (modal) |
 | A3 | Solo los 7 estados elegibles | BE-1 | Modal · aviso de excluidas | Parcial | S04 · R-AR04 (modal) — TONU sigue entrando (pedido del chat) — ver dudas. |
 | A4 | Carga manual de efRouting (ícono ef) | BE-1 | Modal · fila | Ofrecido | S20 · R-AR20 (modal) |
 | A5 | El driver no filtra (chip informativo) | BE-1 | Modal · contexto/filtros | Ofrecido | S15 · R-AR15 (modal) |
@@ -424,7 +431,7 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | E12 | Ciclo ya completo → «Nothing to add» | BE-5 | Modal | Ofrecido | S01 · R-AR01 (modal) |
 | E13 | Carga quitada → Cycle loads de la vecina | BE-7 | Modal → Refresh de R-AR08N | Ofrecido | S08 · R-AR08 (modal) |
 | F1 | Lanes ordenadas por pickup | BE-10 | Plan | Ofrecido | S03 · R-AR03 |
-| F2 | Origin = ubicación al inicio del ciclo | BE-10 | Modal + Plan (primer DH) | Ofrecido | S03 · R-AR03 (modal) |
+| F2 | Origin y salida siguen a las cargas marcadas (parada ELD del inicio del ciclo → último dropoff real; o el dropoff de la última carga desmarcada al inicio) | BE-10 | Modal + Plan (primer DH) | Ofrecido | S03 · R-AR03 (modal) |
 | F3 | DH solo entre cargas no contiguas | BE-10 | Plan | Ofrecido | S07 · R-AR07 (modal) |
 | F4 | Unbooked cubiertas se borran; posteriores se re-encadenan | BE-10 | Modal (aviso) + Plan | Ofrecido | S03 · R-AR03 (modal) |
 | F5 | «Complete with Easy routes» al final del Plan | BE-10 | Plan | Ofrecido | S03 · R-AR03 (modal) |
@@ -447,13 +454,13 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | H3 | Métricas «se agrega» + «ciclo resultante» + HOS | BE-5 | Modal · pie | Ofrecido | S12 · R-AR12 (modal) |
 | H4 | Sin HOS: sin bloque de factibilidad | BE-2 | Modal · pie | Ofrecido | S02 · R-AR02 (modal) |
 | I1 | Cambio de conductor: misma ruta + aviso | BE-2 | Modal / Assign | Ofrecido | S15 · R-AR15 (modal) |
-| I2 | Cambio de cabina: ruta nueva consecutiva | BE-11 | Assign → ruta nueva | Ofrecido | S21 · R-AR21 |
+| I2 | Cambio de unidad: ruta nueva consecutiva | BE-11 | Assign → ruta nueva | Ofrecido | S21 · R-AR21 |
 | J1 | My Loads sin unidad → selector de unidad → mismo modal | BE-4 | My Loads → selector → modal | Decidido | My Loads · sin filtro de unidad — Los filtros del ciclo (unidad y fechas) quedan fijos en el modal. |
 | J2 | Ciclo: lo ejecutado y lo que viene (línea «Now») | BE-5 | Modal | Propuesta | S01 · R-AR01 (modal) |
 | J3 | Cargas con problema sin tachado: cancelada / reasignada con el motivo | BE-9 | Modal | Propuesta | S11 · R-AR11 (modal) |
 | J3b | TONU sin tachado: destino = pickup + «not delivered» | BE-1 | Modal + Crear ruta | Propuesta | S22 · R-AR22 (modal) |
-| J4 | Not compatible: el par agrupado, con el motivo, y se escoge una | BE-8 | Modal | Propuesta | S23 · R-AR23 (modal) |
-| J5 | Recap hours: indicador + cálculo; al apagarlo pasan al ciclo siguiente | BE-2 | Modal · chip Recap | Propuesta | S24 · R-AR24 (modal) |
+| J4 | Not compatible: el par agrupado, con el motivo, y se escoge una | BE-8 | Modal | Decidido | S23 · R-AR23 (modal) — 25-nov: solo cuando las horas se solapan; no se valida el tiempo de manejo. |
+| J5 | Recap hours: indicador + cálculo; al apagarlo pasan al ciclo siguiente | BE-2 | Modal · chip Recap | Decidido | S24 · R-AR24 (modal) |
 | J6 | Carga del próximo ciclo → mover a la ruta que le corresponde (en orden) | BE-7 | Modal → R-AR08N | Propuesta | S08 · R-AR08 (modal) |
 | J7 | Cargas en otra ruta: no se cuentan dos veces; mover respeta el orden | BE-7 | Modal | Propuesta | S09 · R-AR09 (modal) |
 | J8 | Continuar el siguiente ciclo en la misma ruta (interruptor en «Cycle end») | BE-6 | Modal | Propuesta | S25 · R-AR25 (modal) |
@@ -462,6 +469,10 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | K2 | Misma regla en Crear ruta: tarjeta del medio desmarcada → Continue bloqueado + arreglos | BE-10 | Crear ruta · bloque de ciclo | Decidido | Crear ruta · unidad 5017 — Desmarca Houston→Dallas (la del medio). |
 | K3 | Crear ruta va directo al detalle de la ruta (no abre Easy routes) | BE-4 | Crear ruta → Plan | Decidido | Crear ruta · unidad 2201 → Continue |
 | K4 | Tres puntos de entrada: Plan, Crear ruta y My Loads (se elige la unidad, no una carga) | BE-4 | Plan · Crear ruta · My Loads | Decidido | My Loads · sin filtro de unidad |
+| K5 | Excepción a «hacia atrás manda el camión»: mismo driver con HOS y hueco ≥ 34 h sin reset → mandan las HOS, no corta + aviso | BE-2 | Modal · aviso de discrepancia | Decidido | S16 · R-AR16 (modal) |
+| K6 | Origin y salida siguen a las cargas marcadas: si se desmarcan las primeras, dropoff (lugar y fecha) de la última desmarcada; si no, primera parada que detecta el ELD desde el inicio del ciclo → si no hay, último dropoff real (aunque sea del ciclo anterior) → si no hay cargas antes, pickup de la primera | BE-10 | Modal + Plan + Crear ruta | Decidido | Crear ruta · unidad 5017 — 5017: con todo marcado, parada ELD San Antonio (lun 16 05:30); desmarca la TONU y Origin pasa a su dropoff. R-AR03 (sin ELD): Origin = último dropoff real, Memphis vie 14; desmarca Memphis→Nashville y construye → Origin Nashville, mar 17. |
+| K7 | Cambio de driver: misma ruta y unidad; las HOS salen del driver nuevo desde la carga que toma | BE-2 | Modal · aviso | Decidido | S15 · R-AR15 (modal) |
+| K8 | Recap hours: las calcula el backend con la regla de HOS (no las entrega el ELD) | BE-2 | Modal · chip Recap | Decidido | S24 · R-AR24 (modal) |
 
 ### Propuestas de la reunión del 23-nov (grupo J, estado «Propuesta»)
 
@@ -490,7 +501,7 @@ Son propuestas, no decisiones cerradas. Están en la maqueta para poder probarla
 | S09 · Carga en el borde de la ruta vecina (caso 10) | R-AR09P, R-AR09 | La ruta anterior de la unidad 2053 (R-AR09P) termina con Jacksonville→Tampa y Tampa→Atlanta, que ya pertenecen al ciclo en curso de esta ruta. | E6, caso 10 |
 | S10 · Vecina finalizada y carga en una ruta no vecina | R-AR10X, R-AR10P, R-AR10 | Houston→San Antonio (mié 18) es del ciclo en curso pero está en R-AR10P, que está Finished. Houston→Dallas (vie 20) también es del ciclo, pero está en R-AR10X, una ruta que no es vecina (se solapa en el tiempo). | E6, E7, caso 10 |
 | S11 · Cambios del TMS y Sync | R-AR11 | El TMS movió la cita de dropoff de Indianapolis→Columbus, reasignó Columbus→Pittsburgh a la unidad 2071 y canceló Pittsburgh→Philadelphia. La última sincronización fue hace 23 min y hay una carga nueva. | E10, E11, H2 |
-| S12 · ELD lento (C12) | R-AR12 | El ELD de la cabina 2056 tarda en responder. Sin HOS el ciclo llega hasta Phoenix→Las Vegas (vie 20); con HOS, el próximo reset de Ana es vie 04:00, así que esa carga es del ciclo siguiente. | C10, H1 |
+| S12 · ELD lento (C12) | R-AR12 | El ELD de la unidad 2056 tarda en responder. Sin HOS el ciclo llega hasta Phoenix→Las Vegas (vie 20); con HOS, el próximo reset de Ana es vie 04:00, así que esa carga es del ciclo siguiente. | C10, H1 |
 | S13 · ELD caído | R-AR13 | El ELD de la unidad 2057 no responde. | C10, H1, H4 |
 | S14 · Construcción: concurrencia y error | R-AR14 | Mientras revisas, el TMS agrega una carga anterior del ciclo (Laredo→San Antonio). Después el POST da timeout una vez. | F8, F9 |
 | S15 · Cambio de conductor dentro del ciclo | R-AR15 | Dan Wu hizo Little Rock→Memphis y tomó un reset en Memphis; el camión siguió con Luis Ortega. Dan volvió a manejar Nashville→Louisville (equipo). Driver actual: Luis. | C4, C7, I1, A5 |
@@ -498,10 +509,10 @@ Son propuestas, no decisiones cerradas. Están en la maqueta para poder probarla
 | S17 · Reset en medio de una carga | R-AR17 | Sam tomó el reset de 34 h en Kansas City durante Dallas→Chicago (pickup lun 16, entrega mié 18). | C6 |
 | S18 · Sin hueco ni reset en 10 días | R-AR18 | La unidad 2062 hizo una carga diaria desde el 6-nov sin descansos de 34 h. | C8 |
 | S19 · Ventana sin cargas | R-AR19 | La unidad 2063 no tiene cargas en el TMS alrededor de la salida. | C11 |
-| S20 · Cabinas agrupadas, carga manual, dropoff estimado y carga parcial | R-AR20 | La unidad 2065 tiene dos cabinas (2065-A, elegida, con ELD; 2065-B). Hay una carga manual de efRouting, una carga en tránsito sin hora planeada de dropoff y una carga parcial sin ELD ni transacciones. | A1, A2, A4, B4, B6 |
-| S21 · Cambio de cabina dentro del ciclo | R-AR21 | Omar empezó con la cabina 2066 y en Memphis pasa a la cabina 2067 (que ya tiene una carga Booked). | I2 |
+| S20 · Carga manual, carga sin real stops, dropoff estimado y carga parcial | R-AR20 | Unidad 2065 sin HOS. Houston→San Antonio no tiene real stops (horas planeadas). Hay una carga manual de efRouting, una carga en tránsito sin hora planeada de dropoff y una carga parcial sin ELD ni transacciones. | A1, A2, A4, B4, B6 |
+| S21 · Cambio de unidad dentro del ciclo | R-AR21 | Omar empezó con la unidad 2066 y en Memphis pasa a la unidad 2067 (que ya tiene una carga Booked). | I2 |
 | S22 · TONU en el historial (decisión abierta) | R-AR22 | Antes de la ruta el camión hizo DH St. Louis→Oklahoma City para una carga cancelada en el pickup (TONU, Invoiced, $300). El entregable dice que TONU queda fuera; en el chat del 23-nov se pidió incluirla. | A3 |
-| S23 · Cargas no compatibles (propuesta) | R-AR23 | El TMS tiene dos cargas del viernes 20 que salen de San Antonio con una hora de diferencia (doble reserva). Además, Dallas→Memphis (sáb 14:00) no se alcanza a hacer después de Laredo→Houston, que termina a las 11:00 y está en la ruta. | J4 |
+| S23 · Cargas no compatibles (se solapan) | R-AR23 | El TMS tiene dos cargas del viernes 20 que salen de San Antonio con una hora de diferencia (doble reserva). Además, Dallas→Memphis recoge el sáb a las 09:00, antes de que Laredo→Houston (en la ruta) entregue a las 11:00. | J4 |
 | S24 · Límite del ciclo y recap hours (propuesta) | R-AR24 | A Carla se le acaban las horas el vie 20 a las 20:00 (próximo reset). A la medianoche recupera 9 h (recap). Columbus→Indianapolis (en la ruta) e Indianapolis→Louisville (libre) caben en esas 9 h; Louisville→Nashville ya no. | J5 |
 | S25 · Continuar el siguiente ciclo en la misma ruta | R-AR25 | Ver UC05. | J8, E4 |
 
@@ -511,24 +522,24 @@ Son propuestas, no decisiones cerradas. Están en la maqueta para poder probarla
 2. **Deadheads (F3) contra producción.** La decisión dice «DH solo si el destino no coincide con el siguiente origen». Pero la ruta de producción que se tomó como referencia muestra «Macon, GA → Macon, GA · 62 mi». La maqueta compara por ciudad: entre ciudades distintas usa millas reales y en la misma ciudad muestra un DH local estimado, como producción. ¿La comparación es por dirección (stop) o por ciudad?
 3. **Quitar cargas ejecutadas.** E5 dice que la carga del ciclo anterior (Delivered) «se puede quitar», y F6 dice que los tramos ejecutados son de solo lectura. La maqueta permite quitarla desde el modal. ¿Se puede quitar del plan una carga ya ejecutada?
 4. **«Carga de la mitad de otra ruta» (E7).** Si se puede mover un bloque contiguo hasta el borde, toda carga de la vecina que esté en el ciclo termina siendo movible en bloque. «La mitad» solo queda bloqueada si la vecina se solapa en el tiempo o no es vecina. La maqueta bloquea cargas de rutas no vecinas y las de vecinas finalizadas (S10). ¿Es esa la intención?
-5. ~~**Origin en Crear ruta.**~~ **Resuelto (23-nov):** Origin = punto de inicio del ciclo de la ruta que se crea (último dropoff del ciclo anterior → primera parada ELD → pickup de la primera carga). Sigue al ciclo (cambia con la unidad o la fecha), no a las tarjetas marcadas.
+5. ~~**Origin en Crear ruta.**~~ **Resuelto (23-nov), ajustado el 25-nov:** Origin y salida siguen a las cargas marcadas y a la historia de Origin (parada ELD desde el inicio del ciclo → último dropoff real → pickup de la primera carga). Texto del 23-nov: Origin = punto de inicio del ciclo de la ruta que se crea (último dropoff del ciclo anterior → primera parada ELD → pickup de la primera carga). Sigue al ciclo (cambia con la unidad o la fecha), no a las tarjetas marcadas.
 6. **Estado de las cargas en Crear ruta.** Producción las convierte en Booked; la maqueta conserva el estado del TMS (Delivered, In Transit…), igual que Auto-rebuild. Confirmar.
 7. ~~**Línea «Cycle continues from here» (F11) sin carga en movimiento.**~~ **Propuesta J2:** la línea «Now» va siempre encima de la primera carga no ejecutada.
 8. **«Alguna carga ya empezó» (F7).** La maqueta cuenta Dispatched como iniciada. ¿Correcto?
 9. **Tiempos del ELD.** El documento pide esperar ~5 s. La maqueta usa 1,4 s de «Checking ELD…» y las HOS «llegan» a los 4 s, para poder recorrerla. Solo afecta a la demo.
 10. **Horas que necesita el plan (H3).** No está definido cómo se calculan (¿solo manejo?, ¿on-duty?). La maqueta usa millas futuras / 50 + 30 % del DH.
-11. **Cambio de cabina (I2).** No está claro dónde se dispara en el producto (¿Edit route?, ¿Assign?). La maqueta usa «Assign driver & equipment» (botón en la ficha de S21). Además falta decidir qué pasa con las cargas Booked futuras de la ruta anterior: hoy se quedan donde están.
+11. **Cambio de unidad (I2).** *(25-nov: unidad → ruta nueva; driver → misma ruta, HOS del driver nuevo desde la carga que toma. Sigue abierto dónde se dispara y qué pasa con las Booked futuras.)* No está claro dónde se dispara en el producto (¿Edit route?, ¿Assign?). La maqueta usa «Assign driver & equipment» (botón en la ficha de S21). Además falta decidir qué pasa con las cargas Booked futuras de la ruta anterior: hoy se quedan donde están.
 12. **Cycle loads (Refresh) y Unbooked.** Al agregar una carga suelta «sin reorganizar», puede quedar solapada con un Unbooked. ¿Se borra el placeholder que cubre o se deja?
 13. ~~**Ancla desde Easy routes.**~~ **Ya no aplica (25-nov):** Easy routes dejó de ser punto de entrada. Texto original: la decisión dice «la fecha del filtro», pero la pantalla de Easy routes de la maqueta no tiene filtro de fecha. Usa la fecha de salida de la ruta (que en Crear ruta es «ahora» o la fecha que eligió el usuario).
 14. **G8 con varias rutas.** Si el ciclo toca varias rutas de la unidad, ¿cuál se abre? La maqueta abre la de la primera carga del ciclo que esté en una ruta.
 15. **Unbooked «cubiertas» (F4).** Falta definirlas. La maqueta trata como cubiertas las que tienen pickup hasta el fin del ciclo; las posteriores se re-encadenan desde la última carga.
 16. **Cancelada o reasignada (E11).** Al quitarla de la ruta, la maqueta la deja libre en My Loads. Para una reasignada a otra unidad, ¿debería desaparecer del todo?
 17. **Cargas excluidas por estado.** El documento no dice si se muestran. La maqueta muestra un aviso con el conteo (Offer, Canceled) sin listarlas.
-18. **Llave de unidad en la ruta.** La maqueta guarda la cabina en la ruta («2065-A») y calcula la llave con el número. ¿La ruta guarda la cabina o el número normalizado?
+18. ~~**Llave de unidad en la ruta.**~~ **Resuelto (25-nov):** una unidad es una cabina (1 a 1); la ruta guarda la unidad. No existen unidades con varias cabinas.
 19. **Concurrencia (F9).** ¿Qué cuenta como «cambió»: un Sync del TMS, una edición de otro usuario, ambas? La maqueta simula «el TMS agregó una carga del ciclo».
 20. **Sync en tiempo real (H2).** Sigue pendiente de validar con Joaquín Meza (revierte el recorte del 14-jun), como dice §7.
-21. **Recap hours (J5): fuente y regla.** ¿De dónde salen las horas de recap: el ELD las entrega, o el backend las calcula con la regla 70 h / 8 días? ¿Se cuentan las horas on-duty o solo las de manejo? La maqueta usa ~50 mph + 1 h de muelle por carga, y en TONU el DH más las horas en sitio. ¿Recap viene encendido por defecto?
-22. **Not compatible (J4): umbral.** ¿Cuándo dos cargas son incompatibles: solo si se solapan, o también si no da el tiempo de manejo? Hay que definir la velocidad, el tiempo de muelle y las ventanas de cita contra la hora exacta. ¿Qué se sugiere por defecto: la de la ruta, la de más ingreso o ninguna (que el usuario elija sí o sí)?
+21. ~~**Recap hours (J5): fuente y regla.**~~ **Resuelto (25-nov):** las calcula el backend con la regla de HOS. Texto original: ¿De dónde salen las horas de recap: el ELD las entrega, o el backend las calcula con la regla 70 h / 8 días? ¿Se cuentan las horas on-duty o solo las de manejo? La maqueta usa ~50 mph + 1 h de muelle por carga, y en TONU el DH más las horas en sitio. ¿Recap viene encendido por defecto?
+22. ~~**Not compatible (J4): umbral.**~~ **Resuelto (25-nov):** solo si se solapan. Queda abierto qué se sugiere por defecto. Texto original: ¿Cuándo dos cargas son incompatibles: solo si se solapan, o también si no da el tiempo de manejo? Hay que definir la velocidad, el tiempo de muelle y las ventanas de cita contra la hora exacta. ¿Qué se sugiere por defecto: la de la ruta, la de más ingreso o ninguna (que el usuario elija sí o sí)?
 23. **Not compatible con dos cargas ya ejecutadas.** Si las dos ya pasaron, el dato del TMS está mal. La maqueta no las marca. ¿Se debería avisar?
 24. **Mover a la ruta vecina (J6).** ¿Se mueve solo si la vecina está en el mismo ciclo (< 34 h), o también si es la ruta siguiente aunque haya un descanso de por medio? ¿Hace falta confirmación, o basta con deshacer?
 25. **My Loads sin unidad (J1).** ¿El selector muestra todas las unidades o solo las que tienen cargas en la vista filtrada? La maqueta muestra todas las que tienen cargas (no Unbooked) y pone primero las que están en la carretera («on the road»).

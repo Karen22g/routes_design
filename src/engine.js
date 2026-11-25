@@ -1040,7 +1040,7 @@ export function initApp() {
         var l = x.load, sp = _arStops(l), on = sel[l.id];
         return '<div class="cr-load-card' + (on ? ' cr-on' : '') + (l.tonu ? ' cr-load-tonu' : '') + '" data-loadid="' + l.id + '" onclick="crToggleLoad(this)"><input type="checkbox"' + (on ? ' checked' : '') + '>' +
           '<div class="cr-load-body"><div class="cr-load-route-row"><div class="cr-load-route">' + l.origin + '<span class="cr-arr">→</span>' + l.dest + '</div>' +
-          (l.tonu ? '<span class="cr-tonu-tag">TONU</span>' : '') + (e.cabins.length > 1 && _arCabinOf(l) && _arCabinOf(l) !== unitId ? '<span class="cr-cab-tag">cabin ' + _arCabinOf(l) + '</span>' : '') + pillOf(l.status) + '</div>' +
+          (l.tonu ? '<span class="cr-tonu-tag">TONU</span>' : '') + pillOf(l.status) + '</div>' +
           '<div class="cr-load-meta cr-load-times">PU ' + _arStopTxt(sp.pu) + ' ' + _arSrcTag(sp.pu.src) + ' → DO ' + _arStopTxt(sp.do, true) + ' ' + _arSrcTag(sp.do.src) + '</div>' +
           '<div class="cr-load-meta">' + (l.tonu ? 'Not delivered to ' + l.tonuDest + ' · DH ' + l.dhMi + ' mi · ' + l.waitH + 'h on site' : l.miles + ' mi') + ' · ' + (l.customer || '--') + ' · ' + l.id + (x.cls === 'fills_gap' ? ' · fills gap' : '') + '</div></div>' +
           '<div class="cr-load-price">' + money(l.income) + (l.tonu ? '<span class="cr-load-price-sub">TONU fee</span>' : '') + '</div></div>';
@@ -1055,14 +1055,15 @@ export function initApp() {
     if (c.e.empty) { if (cnt) cnt.textContent = '0 LOADS'; return; }
     var sel = c.list.filter(function (x) { return c.sel[x.load.id]; });
     if (cnt) cnt.textContent = sel.length + ' OF ' + c.list.length + ' SELECTED';
-    // Origin = start point of the cycle of the route being created (where the truck was when the cycle began:
-    // last dropoff of the previous cycle → first ELD stop → first pickup). It follows the cycle, not the selection.
-    var origin = c.e.origin.city, how = 'start of the cycle · ' + c.e.origin.how;
+    // Origin + departure follow the CHECKED loads (_arOriginFor): first loads unchecked → dropoff of the last one left
+    // out (place + date); none unchecked → first real stop of the cycle. A previous-cycle dropoff is never used.
+    var og = _arOriginFor(c.e, sel.length ? sel[0].load : null) || c.e.origin;
+    var origin = og.city, how = (og.trimmed ? '' : 'start of the cycle · ') + og.how;
     var oi = document.getElementById('cr-origin-input'), dep = document.getElementById('cr-departure-date'), sum = document.getElementById('cr-cycle-summary');
     if (oi && !ed.origin) { oi.value = origin; oi.classList.add('cr-filled'); }
-    if (dep && !ed.dep) dep.value = sel.length ? _crIso(_arStops(sel[0].load).pu.date) : '2026-11-19';
+    if (dep && !ed.dep) dep.value = og.stop ? _crIso(og.stop.date) : sel.length ? _crIso(_arStops(sel[0].load).pu.date) : '2026-11-19';
     if (sum) sum.querySelectorAll('.cr-cycle-origin').forEach(function (n) { n.remove(); });
-    if (sum) sum.insertAdjacentHTML('beforeend', '<div class="cr-cycle-sum-sub cr-cycle-origin">Origin: <b>' + origin + '</b> — ' + how + (ed.origin ? ' (you edited Origin, it isn’t overwritten)' : '') + '</div>');
+    if (sum) sum.insertAdjacentHTML('beforeend', '<div class="cr-cycle-sum-sub cr-cycle-origin">Origin: <b>' + origin + '</b>' + (og.stop ? ' · ' + _arStopTxt(og.stop) : '') + ' — ' + how + (ed.origin ? ' (you edited Origin, it isn’t overwritten)' : '') + '</div>');
     // E9 (refinement 25-nov): trim at the ends, never skip a load in the middle → Continue is blocked with the fix
     var hc = window.crCycleHoles();
     if (sum) sum.querySelectorAll('.cr-cycle-hole').forEach(function (n) { n.remove(); });
@@ -4036,6 +4037,16 @@ export function initApp() {
   // the cycle per the 23-nov chat request — the delivery doc lists TONU as excluded (open question).
   function _arIsReal(l) { return !!l.tonu || ['Unbooked', 'Offer', 'Canceled'].indexOf(l.status) < 0; }
   function _arPast(l) { return !!l.tonu || _AR_PAST.indexOf(l.status) >= 0; }
+  // Origin + route start for the loads that go into the route (decided 25-nov): when the first loads of the cycle are
+  // left out, the route starts at the dropoff of the last load left out before the first kept one (where the DH to
+  // that load starts), with that dropoff's date. Nothing left out → the first real stop of the cycle (e.origin, K6).
+  function _arOriginFor(e, first) {
+    if (!e || !e.origin) return null;
+    var cl = (e.cycleLoads || []).slice().sort(function (a, b) { return _arPuUtc(a) - _arPuUtc(b); }), ix = first ? cl.indexOf(first) : -1;
+    if (ix <= 0) return e.origin;
+    var t = cl[ix - 1], d = _arStops(t).do;
+    return { city: t.dest, stop: d, trimmed: true, how: 'dropoff of #' + t.id + ' (' + (d.src || 'planned') + '), the last load left out — the DH to #' + first.id + ' starts here' };
+  }
   // On-duty hours a load needs (driving at ~50 mph + 1 h at the docks; TONU = DH + time on site)
   function _arNeedH(l) { return l.tonu ? Math.ceil((l.dhMi || 0) / 50) + (l.waitH || 2) : Math.ceil((l.miles || 0) / 50) + 1; }
   function _arEligible(l) { return !!l.tonu || _AR_ELIGIBLE.indexOf(l.status) >= 0; }
@@ -4133,11 +4144,11 @@ export function initApp() {
   function _arUtcTxt(ms, city) { return _arStopTxt(_arFromUtc(ms, city, 'planned')); }
   function _arHours(ms) { return Math.round(ms / 3600e3 * 10) / 10; }
 
-  // ── Unit key: the normalized unit number groups every cabin with that number (decision A1) ──
-  function _arUnitKey(u) { return String(u || '').replace(/^UNT-/i, '').replace(/-[A-Z]$/i, '').trim(); }
+  // ── Unit key (decision A1, corrected 25-nov): a unit IS a cabin — 1 to 1. Cabin 5005 is unit 5005. ──
+  function _arUnitKey(u) { return String(u || '').replace(/^UNT-/i, '').trim(); }
   function _arCabinOf(l) { return l.cabin || (l.truck && !/^ext_|^--$/.test(l.truck) ? l.truck : null); }
 
-  // ── Scenario + TMS context per unit (HOS, cabins, sync, build flow…) ──
+  // ── Scenario + TMS context per unit (HOS, sync, build flow…) — unit = cabin, 1 to 1 ──
   //   _AR_UNITS[unitKey] = { cabin, hos: { state: 'ok'|'slow'|'down'|'none', resets:[{at,driver}], nextReset, leftH },
   //                          syncMin, syncAdds:[load], build:['conflict'|'error'], onConflict(fn) }
   const _AR_UNITS = {};
@@ -4164,7 +4175,7 @@ export function initApp() {
     return (_arSeed[rId] = out);
   }
 
-  // Every TMS load of the unit (all cabins with that number) + this route's own lanes
+  // Every TMS load of the unit (unit = cabin) + this route's own lanes
   function _arPool(unit, rId) {
     var key = _arUnitKey(unit), seen = {}, out = [];
     LOADS.forEach(function (l) {
@@ -4215,7 +4226,7 @@ export function initApp() {
         if (hosOk && dA === dB && !inGap) { bw.push({ i: i, k: 'discrepancy', onDuty: true, t: 'The truck stopped ' + Math.round(gapH) + ' h (' + _arUtcTxt(maxDo, L[i].dest) + ' → ' + _arUtcTxt(nPu, L[i + 1].origin) + ') but ' + dA + '’s HOS show no 34 h reset (on duty). HOS rule: the gap does not cut the cycle.' }); }
         else {
           cut = { method: hosOk && inGap && dA === dB ? 'hos_reset' : 'gap', hours: gapH };
-          if (hosOk && dA !== dB) bw.push({ i: i, k: 'driver', t: 'Driver change at this rest (' + dA + ' → ' + dB + '): edges by the truck’s gaps, the HOS reset of ' + dA + ' doesn’t apply to ' + dB + '.' });
+          if (hosOk && dA !== dB) bw.push({ i: i, k: 'driver', t: 'Driver change at this rest (' + dA + ' → ' + dB + '): the edge is the truck’s gap; from #' + L[i + 1].id + ' on, HOS come from ' + dB + '.' });
         }
       }
       cuts.push({ after: i, gapH: gapH, fromUtc: maxDo, toUtc: nPu, cut: cut, dA: dA, dB: dB });
@@ -4290,7 +4301,10 @@ export function initApp() {
     // Driver change inside the window (C4/C7, I1)
     var drivers = C.loads.map(function (l) { return l.driverName || driverNow; }).filter(Boolean);
     var dSet = drivers.filter(function (d, ix) { return drivers.indexOf(d) === ix; });
-    if (dSet.length > 1) warnings.push({ k: 'driver', t: 'Driver change inside this cycle (' + dSet.join(' → ') + '). Backward edges by the truck’s gaps; forward edge by the current driver’s HOS (' + (driverNow || '—') + ').' });
+    // Decided 25-nov: a driver change keeps the same route and cabin; from the load where the new driver takes over,
+    // the HOS source is that driver (each load reads the HOS of the driver who ran it).
+    var swaps = []; C.loads.forEach(function (l, ix) { var d = l.driverName || driverNow; if (ix && d && d !== (C.loads[ix - 1].driverName || driverNow)) swaps.push('#' + l.id + ' → ' + d); });
+    if (dSet.length > 1) warnings.push({ k: 'driver', t: 'Driver change inside this cycle — same route and cabin. HOS come from the new driver from that load on: ' + swaps.join(', ') + '.' });
     // Short pauses inside the cycle (shown so 33 h vs 34 h is visible)
     var pauses = cuts.filter(function (c) { return !c.cut && c.gapH >= 20 && C.loads.indexOf(L[c.after]) >= 0 && C.loads.indexOf(L[c.after + 1]) >= 0; })
       .map(function (c) { return Object.assign({ onDuty: c.gapH >= 34 }, c); });
@@ -4355,8 +4369,8 @@ export function initApp() {
       if (inC(l) && recapOf(l)) row.recap = recapOf(l);
       rows.push(row);
     });
-    // Not compatible (proposal 23-nov): two loads of the cycle the truck can't do one after the other
-    // (time overlap, or not enough time to drive between them). One must be chosen; both can't stay.
+    // Not compatible (decided 25-nov): two loads of the cycle whose times OVERLAP (the next pickup is before the
+    // previous dropoff, with real-or-planned hours). Drive time between them is not checked. One must be chosen.
     var cand = rows.filter(function (x) { return x.cls === 'in_this_route' || x.cls === 'cycle' || x.cls === 'fills_gap'; })
       .sort(function (a, b) { return _arPuUtc(a.load) - _arPuUtc(b.load); });
     var conflicts = [];
@@ -4364,12 +4378,9 @@ export function initApp() {
       var A = cand[ci], B = cand[ci + 1];
       if (A.conflict || (A.cls === 'in_this_route' && B.cls === 'in_this_route') || (_arPast(A.load) && _arPast(B.load))) continue;
       var dA0 = _arDoUtc(A.load), pB0 = _arPuUtc(B.load);
-      var driveH = A.load.dest === B.load.origin ? 0 : _arMiles(A.load.dest, B.load.origin) / 50;
-      var slackH = (pB0 - dA0) / 3600e3 - driveH;
-      if (slackH >= 0) continue;
-      var gid = 'nc' + conflicts.length, overlap = pB0 < dA0;
-      var why = overlap ? '#' + B.load.id + ' picks up ' + _arUtcTxt(pB0, B.load.origin) + ', before #' + A.load.id + ' delivers (' + _arUtcTxt(dA0, A.load.dest) + ')'
-        : 'Driving ' + A.load.dest.split(',')[0] + ' → ' + B.load.origin.split(',')[0] + ' takes ~' + Math.round(driveH) + ' h; only ' + Math.max(0, Math.round((pB0 - dA0) / 3600e3)) + ' h between #' + A.load.id + ' and #' + B.load.id;
+      if (pB0 >= dA0) continue;
+      var gid = 'nc' + conflicts.length, overlap = true;
+      var why = '#' + B.load.id + ' picks up ' + _arUtcTxt(pB0, B.load.origin) + ', before #' + A.load.id + ' delivers (' + _arUtcTxt(dA0, A.load.dest) + ')';
       // Suggested pick: the load already in the route; else the one with more income
       var keep = A.cls === 'in_this_route' ? A : B.cls === 'in_this_route' ? B : (A.load.income >= B.load.income ? A : B);
       [A, B].forEach(function (x) { x.conflict = { id: gid, other: x === A ? B : A, kind: overlap ? 'overlap' : 'reach', why: why, suggested: x === keep }; if (x !== keep && x.cls !== 'in_this_route') x.sel = false; });
@@ -4379,11 +4390,15 @@ export function initApp() {
     // Route lanes changed in the TMS (E10) / no longer on this unit (E11)
     rows.forEach(function (x) { if (x.load.tmsChanged) x.tms = x.load.tmsChanged; });
     var goneRows = gone.map(function (l) { return { load: l, st: _arStops(l), cls: 'gone', keep: true, why: l.reassignedTo ? 'Reassigned to unit ' + l.reassignedTo + ' in the TMS' : 'Cancelled in the TMS (' + l.status + ')' }; });
-    // Origin after rebuilding (F2): last dropoff of the previous cycle → first ELD stop → first pickup
-    var prevCycle = cycles[k - 1], origin;
-    if (prevCycle) { var pl = prevCycle.loads[prevCycle.loads.length - 1]; origin = { city: pl.dest, how: 'last dropoff of the previous cycle (#' + pl.id + ')' }; }
-    else if (uc.eldFirstStop) origin = { city: uc.eldFirstStop, how: 'first ELD stop of the cycle' };
-    else origin = { city: C.loads[0].tonu ? (C.loads[0].tonuFrom || C.loads[0].origin) : C.loads[0].origin, how: 'pickup of the first load (no deadhead)' };
+    // Origin + route start (F2 — story «Origen y fecha de inicio desde la primera parada del ciclo», decided 25-nov):
+    // first stop the ELD detects since the cycle start (isStopped) → else the last real dropoff, even if it belongs to
+    // the previous cycle → else (no earlier load at all) the pickup of the first load. _arOriginFor then moves it to
+    // the dropoff of the last load left out when the first loads of the cycle aren't kept.
+    var prevCycle = cycles[k - 1], pl = prevCycle ? prevCycle.loads[prevCycle.loads.length - 1] : null, origin;
+    var f0 = C.loads[0], p0 = _arStops(f0).pu;
+    if (uc.eldFirstStop && _arUtc(uc.eldFirstStop) <= _arPuUtc(f0)) origin = { city: uc.eldFirstStop.city, stop: uc.eldFirstStop, how: 'first stop the ELD detects since the cycle start' + (pl ? ' — the last dropoff (#' + pl.id + ', ' + pl.dest.split(',')[0] + ') is from the previous cycle' : '') };
+    else if (pl) { var pd = _arStops(pl).do; origin = { city: pl.dest, stop: pd, how: 'no ELD stop since the cycle start — last real dropoff (#' + pl.id + ', previous cycle)' }; }
+    else origin = { city: f0.tonu ? (f0.tonuFrom || f0.origin) : f0.origin, stop: p0, how: 'pickup of #' + f0.id + ' (' + (p0.src || 'planned') + '), no earlier load' };
     // Unbooked lanes the cycle covers (F4)
     var cycEnd = Math.max.apply(null, C.loads.map(_arDoUtc));
     var unb = routeLoads.filter(function (l) { return l.status === 'Unbooked'; });
@@ -4413,7 +4428,7 @@ export function initApp() {
     var sum = function (arr, f) { return arr.reduce(function (s, x) { return s + f(x); }, 0); };
     var dh = 0;
     for (var i = 0; i < res.length; i++) {
-      var from = i ? res[i - 1].dest : (e.origin ? e.origin.city : res[0].origin);
+      var og0 = i ? null : _arOriginFor(e, res[0]), from = i ? res[i - 1].dest : (og0 ? og0.city : res[0].origin);
       var to = res[i].tonu ? res[i].origin : res[i].origin;
       if (res[i].tonu) dh += res[i].dhMi || 0; else if (from !== to) dh += _arMiles(from, to);
     }
@@ -4480,7 +4495,8 @@ export function initApp() {
     });
     // F2: the route starts where the truck was at the start of the cycle — unless it keeps a previous-cycle lane first
     var startsWithCycle = real.length && e.cycleLoads.indexOf(real[0]) >= 0;
-    if (e.origin && startsWithCycle) r.cycleOrigin = e.origin.city; else delete r.cycleOrigin;
+    var org = startsWithCycle ? _arOriginFor(e, real[0]) : null;
+    if (org) { r.cycleOrigin = org.city; if (org.stop) r._depUtc = _arUtc(org.stop); } else delete r.cycleOrigin;
     if (r.status === 'Planned' && real.some(function (l) { return l.tonu || _AR_STARTED.indexOf(l.status) >= 0; })) r.status = 'In progress';   // F7
     if (final.length) {
       r.dateStart = _arFmtRoute(final.reduce(function (m, l) { return _arD(l.pickup) < _arD(m) ? l.pickup : m; }, final[0].pickup));
@@ -4499,7 +4515,7 @@ export function initApp() {
     var tonuN = added.filter(function (l) { return l.tonu; }).length;
     _arDone[rId] = {
       note: '<b>' + (added.length || moved.length ? 'Cycle rebuilt.' : 'Plan updated.') + '</b> ' + (parts.length ? parts.join(' · ') + '.' : 'Nothing changed.') +
-        (tonuN ? ' Includes ' + tonuN + ' <b>TONU</b> lane (DH + time on site, fee as income).' : '') + (startsWithCycle && e.origin ? ' Origin: <b>' + e.origin.city + '</b> (' + e.origin.how + ').' : '') + ' Executed lanes are read-only.',
+        (tonuN ? ' Includes ' + tonuN + ' <b>TONU</b> lane (DH + time on site, fee as income).' : '') + (org ? ' Origin: <b>' + org.city + '</b> (' + org.how + ').' : '') + ' Executed lanes are read-only.',
       dividerId: moving ? moving.id : null, built: true
     };
     return { added: added.length, moved: moved.length, removed: ch.remove.length + outIds.length, snap: snap };
@@ -4705,7 +4721,7 @@ export function initApp() {
       var ctx = document.createElement('div');
       ctx.style.cssText = 'display:flex;align-items:center;gap:10px;padding:13px 18px;background:rgba(91,188,203,.05);border-bottom:1px solid rgba(255,255,255,.07);flex:none;flex-wrap:wrap';
       ctx.innerHTML = '<span style="font:900 12px ' + F + ';letter-spacing:.06em;color:#5bbccb;margin-right:2px">CYCLE</span><span style="font:900 9px ' + F + ';color:#141414;background:#5bbccb;padding:2px 6px;border-radius:5px;margin-right:6px">AUTO</span>' +
-        chip('<span style="color:#b3b3b3;display:flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62L18.3 9.38a1 1 0 0 0-.78-.38H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>', 'Unit', _arUnitKey(unit), e.cabins && e.cabins.length > 1 ? 'Cabins: ' + e.cabins.join(', ') + ' — real stops from ' + cab : '') +
+        chip('<span style="color:#b3b3b3;display:flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62L18.3 9.38a1 1 0 0 0-.78-.38H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>', 'Unit', _arUnitKey(unit), '') +
         chip('<span style="width:22px;height:22px;border-radius:50%;background:#7a4f99;color:#f5f5f5;display:grid;place-items:center;font:800 9px ' + F + '">' + _arInitials(driver) + '</span>', 'Driver', driver ? driver.split(' ')[0] : '—', 'Info only — the driver never filters loads (it brings HOS)') +
         (e.empty ? '' : chip('<span style="font-size:14px">📅</span>', 'Pickup from', _arPretty(w0.date)) + chip('<span style="font-size:14px">🏁</span>', 'Dropoff until', _arPretty((w1 || lastDo).date))) + hosC +
         '<div style="flex:1"></div><div style="text-align:right;font:600 12px ' + F + ';color:#b3b3b3;line-height:1.5">' +
@@ -4720,7 +4736,7 @@ export function initApp() {
       if (st.sync === 'changes') bans.push(['#6688cc', 'The TMS has changes for this unit.', '<span class="_ar-upd" style="cursor:pointer;font-weight:800;color:#6688cc;white-space:nowrap">Update cycle →</span>']);
       if (st.conflict) bans.push(['#cc666f', 'The cycle changed while you were reviewing it — nothing was built. Review it and confirm again.', '']);
       e.warnings.filter(function (w) { return w.k !== 'anchor'; }).forEach(function (w) {
-        bans.push(['#d0a038', w.k === 'discrepancy' ? 'Truck stopped ≥ 34 h but the driver’s HOS show no reset — HOS rule applied.' : w.k === 'driver' ? 'Driver change in this cycle — edges by the truck’s rests and the current driver’s HOS.' : 'No reset found in 10 days — using the last 10 days.', '']);
+        bans.push(['#d0a038', w.k === 'discrepancy' ? 'Truck stopped ≥ 34 h but the same driver’s HOS show no reset — HOS win, the cycle isn’t cut.' : w.k === 'driver' ? 'Driver change in this cycle — same route; HOS come from the new driver from the load it takes over.' : 'No reset found in 10 days — using the last 10 days.', '']);
       });
       var hc = holeCheck();
       if (hc) {   // blocks the build and says how to fix it
@@ -4807,7 +4823,7 @@ export function initApp() {
         if ((e.start.method === 'reset_in_load' && e.start.load === l) || (e.end.method === 'reset_in_load' && e.end.load === l))   // UC04
           tg += ' <span title="The 34 h reset happened during this load — it stays in the cycle of its pickup" style="color:#9a7fd1">· split by a reset</span>';
         if (x.tms) tg += (tg ? '<br>' : '') + '<span title="' + x.tms.detail + '" style="color:#d0a038">changed in TMS</span>' + link('_ar-tms', st.tms[l.id] ? 'undo' : 'update', l.id, '#d0a038');
-        var cabTag = e.cabins && e.cabins.length > 1 && _arCabinOf(l) && _arCabinOf(l) !== cab ? ' <span title="Other cabin of unit ' + _arUnitKey(unit) + '" style="font:800 9px ' + F + ';color:#9a7fd1;background:rgba(154,127,209,.14);padding:1px 5px;border-radius:4px">' + _arCabinOf(l) + '</span>' : '';
+        var cabTag = '';   // unit = cabin (1 to 1): no «other cabin» tag
         d.innerHTML = '<div>' + box + '</div>' +
           '<div style="display:flex;align-items:flex-start;gap:7px;min-width:0;padding:10px 6px 10px 0">' + src(l.id) + '<div style="min-width:0"><div style="font:700 12px ' + F + ';color:#e6e6e6;white-space:nowrap">' + l.id + cabTag + '</div>' + (tg ? '<div style="font:700 11px ' + F + ';margin-top:2px;line-height:1.35">' + tg + '</div>' : '') + '</div></div>' +
           '<div style="padding:10px 6px 10px 0;font:600 12px ' + F + ';color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + l.origin + '</div>' +
@@ -4992,7 +5008,7 @@ export function initApp() {
 
   // Assign driver & equipment (unit required; driver optional → HOS). A resource busy in another route
   // that overlaps this route's period blocks Save (T4b/T4c). Changing the CABIN of a route that already
-  // started creates a NEW route for the new cabin (decision «Cambio de cabina», I2); changing only the
+  // started creates a NEW route for the new unit (decision «Cambio de unidad», I2; unit = cabin); changing only the
   // driver keeps the same route (I1).
   function _arOpenAssign(rId, onSave) {
     var ex = document.getElementById('_ef-ar-assign'); if (ex) ex.remove();
@@ -5032,7 +5048,7 @@ export function initApp() {
         sel('driver', 'Driver', '(optional — enables HOS; changing it keeps this route)') + sel('unit', 'Unit', '(required)') + sel('trailer', 'Trailer', '(required)') +
         (conflicts.length ? '<div style="display:flex;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(204,102,111,.1);border:1px solid rgba(204,102,111,.4);font:600 11.5px ' + F + ';color:#e6b3b8;line-height:1.45"><span style="color:#cc666f">⚠</span><div><b style="color:#f5f5f5">Can’t assign this resource.</b> ' +
           conflicts.map(function (c) { return (c.k[0].toUpperCase() + c.k.slice(1)) + ' <b>' + c.o.v + '</b> is already assigned to ' + c.o.busy + ', which overlaps this route’s planned period (' + (r.dateStart || '--') + ' – ' + (r.dateEnd || '--') + ').'; }).join('<br>') + '</div></div>' : '') +
-        (cabinChange ? '<div style="display:flex;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(102,136,204,.1);border:1px solid rgba(102,136,204,.4);font:600 11.5px ' + F + ';color:#b3b3b3;line-height:1.45;margin-top:8px"><span style="color:#6688cc">ⓘ</span><div><b style="color:#f5f5f5">Changing the cabin creates a new route.</b> This route already started with unit ' + r.unit + ' and keeps what was done with it. A new route for unit <b>' + val.unit + '</b> starts after it, and its cycle is calculated with the new unit.</div></div>' : '') +
+        (cabinChange ? '<div style="display:flex;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(102,136,204,.1);border:1px solid rgba(102,136,204,.4);font:600 11.5px ' + F + ';color:#b3b3b3;line-height:1.45;margin-top:8px"><span style="color:#6688cc">ⓘ</span><div><b style="color:#f5f5f5">Changing the unit creates a new route.</b> This route already started with unit ' + r.unit + ' and keeps what was done with it. A new route for unit <b>' + val.unit + '</b> starts after it, and its cycle is calculated with the new unit.</div></div>' : '') +
         '</div>' +
         '<div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid rgba(255,255,255,.08)">' +
         '<button class="_ara-x" style="padding:8px 14px;border-radius:9px;background:transparent;border:1px solid rgba(255,255,255,.14);color:#b3b3b3;font:800 12px ' + F + ';cursor:pointer">Cancel</button>' +
@@ -5046,7 +5062,7 @@ export function initApp() {
           ROUTES.splice(ROUTES.indexOf(r) + 1, 0, { id: nid, name: val.unit + '_' + (val.driver || r.driver || 'Unassigned').split(' ').slice(-1)[0] + '_2026-11-19', dateStart: 'Nov 19 / 2026', dateEnd: 'Nov 19 / 2026', status: 'Planned',
             driver: val.driver || r.driver, unit: val.unit, trailer: val.trailer, equipmentType: r.equipmentType || 'Van', dispatcher: r.dispatcher, routeDeviation: 0, fuelExcess: 0, planAdherence: 100, _depUtc: dep, arCase: r.arCase, prevCabinRoute: r.id });
           _arNotice[r.id] = 'Cabin changed to <b>' + val.unit + '</b>: a new route <b>' + nid + '</b> continues after this one. This route keeps what was done with unit ' + r.unit + '.';
-          _arNotice[nid] = 'New route for cabin <b>' + val.unit + '</b> (cabin change from ' + r.unit + ' in ' + r.name + '). Its cycle is calculated with the new unit — use Auto-rebuild.';
+          _arNotice[nid] = 'New route for unit <b>' + val.unit + '</b> (unit change from ' + r.unit + ' in ' + r.name + '). Its cycle is calculated with the new unit — use Auto-rebuild.';
           setState({ openRoute: nid, view: 'routes', detailTab: 'plan' });
           return;
         }
@@ -5079,13 +5095,11 @@ export function initApp() {
     return b;
   }
 
-  // G7: «Add load» in the Plan of a route with a unit → My Loads filtered by that unit (all its cabins)
+  // G7: «Add load» in the Plan of a route with a unit → My Loads filtered by that unit (unit = cabin)
   function _arMyLoadsForRoute(rId) {
-    var r = routeOf(rId), key = _arUnitKey(r.unit);
-    var cabins = LOADS.filter(function (l) { return l.truck && _arUnitKey(l.truck) === key; }).map(function (l) { return l.truck; });
-    cabins = [r.unit].concat(cabins).filter(function (c, i, a) { return a.indexOf(c) === i; });
+    var r = routeOf(rId);
     var keep = (state.loadFilters || []).filter(function (f) { return f.key !== 'truck'; });
-    setState({ view: 'loads', openRoute: null, page: 1, loadTab: 'All Loads', routeFilterIds: null, loadFilters: keep.concat([{ key: 'truck', operator: 'is_in', value: cabins.join(', ') }]), arLoadsFrom: rId });
+    setState({ view: 'loads', openRoute: null, page: 1, loadTab: 'All Loads', routeFilterIds: null, loadFilters: keep.concat([{ key: 'truck', operator: 'is_in', value: r.unit }]), arLoadsFrom: rId });
   }
   // Unit picker (proposal 23-nov): My Loads without a single-unit filter → choose the unit first
   function _arPickUnit(pre, onPick) {
@@ -5210,7 +5224,7 @@ export function initApp() {
     L('402005', '2047', 'Indianapolis, IN', 'Columbus, OH', 'Booked', S('Indianapolis, IN', dd(20), '07:00'), S('Columbus, OH', dd(20), '11:00'));
     R('S03', 'R-AR03', '2047_Lopez_2026-11-19', '2047', 'Maria Lopez', 'Planned', [U('ef-ar03-u1', '2047', 'Memphis, TN', 'Nashville, TN', dd(19)), U('ef-ar03-u2', '2047', 'Nashville, TN', 'Atlanta, GA', dd(20)), U('ef-ar03-u3', '2047', 'Atlanta, GA', 'Charlotte, NC', dd(23))], { _depUtc: _arUtc(S('Memphis, TN', dd(19), '08:00')) });
     sc('S03', 'Ruta vacía (caso 6)', 'Ruta Planned con unidad 2047 y driver, sin cargas reales: 3 lanes Unbooked. Salida jue 19 08:00 CST. El TMS tiene un ciclo en curso (Memphis→Nashville→Louisville→Indianapolis→Columbus) y un ciclo anterior que terminó en Memphis.',
-      'Usa el banner del estado vacío o el botón de la toolbar. Después del build, mira el final del Plan.', 'Ancla = fecha de salida. Ciclo completo preseleccionado (4 + 1 en tránsito). Aviso: 2 Unbooked cubiertas se borran y 1 posterior se re-encadena desde Columbus. Origin = Memphis (último dropoff del ciclo anterior). Tras construir: lanes por pickup, ruta In progress, acción «Complete with Easy routes» al final.',
+      'Usa el banner del estado vacío o el botón de la toolbar. Después del build, mira el final del Plan.', 'Ancla = fecha de salida. Ciclo completo preseleccionado (4 + 1 en tránsito). Aviso: 2 Unbooked cubiertas se borran y 1 posterior se re-encadena desde Columbus. Origin = Memphis, vie 14 13:00 (sin parada ELD: último dropoff real, del ciclo anterior). Tras construir: lanes por pickup, ruta In progress, acción «Complete with Easy routes» al final.',
       ['D1', 'E1', 'F1', 'F2', 'F4', 'F5', 'G3', 'B5', 'caso 6']);
 
     // S04 · past departure: rebuild that past cycle; Offer/Cancelled excluded; executed lanes read-only
@@ -5318,7 +5332,7 @@ export function initApp() {
     var n2 = L('411003', '2056', 'Albuquerque, NM', 'Phoenix, AZ', 'In Transit', S('Albuquerque, NM', dd(19), '06:00', 'real'), S('Phoenix, AZ', dd(19), '13:00'));
     var n3 = L('411004', '2056', 'Phoenix, AZ', 'Las Vegas, NV', 'Booked', S('Phoenix, AZ', dd(20), '08:00'), S('Las Vegas, NV', dd(20), '13:00'));
     R('S12', 'R-AR12', '2056_Silva_2026-11-18', '2056', 'Ana Silva', 'In progress', [n1, n2, n3]);
-    sc('S12', 'ELD lento (C12)', 'El ELD de la cabina 2056 tarda en responder. Sin HOS el ciclo llega hasta Phoenix→Las Vegas (vie 20); con HOS, el próximo reset de Ana es vie 04:00, así que esa carga es del ciclo siguiente.',
+    sc('S12', 'ELD lento (C12)', 'El ELD de la unidad 2056 tarda en responder. Sin HOS el ciclo llega hasta Phoenix→Las Vegas (vie 20); con HOS, el próximo reset de Ana es vie 04:00, así que esa carga es del ciclo siguiente.',
       'Abre Auto-rebuild y espera. Opción A: «Update cycle» cuando lleguen las HOS. Opción B: construye antes de que lleguen.', '«Checking ELD…» → «Calculated without HOS · retrying» → banner «HOS data available · Update cycle» (decide el usuario). Si confirmas sin HOS, el Plan muestra «HOS data arrived and differ…» con «Reopen Auto-rebuild»; la ruta nunca se corrige sola.',
       ['C10', 'H1']);
     // S13 · ELD down
@@ -5381,26 +5395,26 @@ export function initApp() {
     R('S19', 'R-AR19', '2063_Park_2026-11-19', '2063', 'Joe Park', 'Planned', [U('ef-ar19-u1', '2063', 'Dallas, TX', 'Memphis, TN', dd(19))], { _depUtc: _arUtc(S('Dallas, TX', dd(19), '08:00')) });
     sc('S19', 'Ventana sin cargas', 'La unidad 2063 no tiene cargas en el TMS alrededor de la salida.', 'Abre Auto-rebuild.', 'Estado «Empty cycle» en el modal; el CTA queda deshabilitado. (En Crear ruta el mismo estado sale en el bloque con la unidad 2201.)', ['C11']);
 
-    // S20 · grouped cabins + efRouting manual load + estimated dropoff + partial load
-    unit('2065', { driver: 'Rosa Diaz', hos: { state: 'none' }, cabin: '2065-A' });
-    var z1 = L('418001', '2065-A', 'Dallas, TX', 'Houston, TX', 'Delivered', S('Dallas, TX', dd(17), '06:00', 'real'), S('Houston, TX', dd(17), '10:00', 'real'));
-    L('418002', '2065-B', 'Houston, TX', 'San Antonio, TX', 'Delivered', S('Houston, TX', dd(17), '15:00', 'planned'), S('San Antonio, TX', dd(17), '19:00', 'planned'));
-    L('ef-7c21aa', '2065-A', 'San Antonio, TX', 'Laredo, TX', 'Delivered', S('San Antonio, TX', dd(18), '07:00', 'real'), S('Laredo, TX', dd(18), '10:30', 'real'));
-    var z4 = L('418004', '2065-A', 'Laredo, TX', 'Houston, TX', 'In Transit', S('Laredo, TX', dd(19), '06:00', 'real'), null);
-    L('418005', '2065-A', 'Houston, TX', 'Dallas, TX', 'Booked', S('Houston, TX', dd(20), '08:00', 'estimated'), null, { partial: true });
-    R('S20', 'R-AR20', '2065-A_Diaz_2026-11-17', '2065-A', 'Rosa Diaz', 'In progress', [z1, z4], { cabin: '2065-A' });
-    sc('S20', 'Cabinas agrupadas, carga manual, dropoff estimado y carga parcial', 'La unidad 2065 tiene dos cabinas (2065-A, elegida, con ELD; 2065-B). Hay una carga manual de efRouting, una carga en tránsito sin hora planeada de dropoff y una carga parcial sin ELD ni transacciones.',
-      'Abre Auto-rebuild.', 'Cargas de ambas cabinas agrupadas; la de 2065-B con etiqueta de cabina y horas «planned». La manual con ícono «ef». Dropoff sin hora → «estimated». La parcial con «partial» y millas/fechas estimadas.',
+    // S20 · efRouting manual load + load without real stops + estimated dropoff + partial load
+    unit('2065', { driver: 'Rosa Diaz', hos: { state: 'none' } });
+    var z1 = L('418001', '2065', 'Dallas, TX', 'Houston, TX', 'Delivered', S('Dallas, TX', dd(17), '06:00', 'real'), S('Houston, TX', dd(17), '10:00', 'real'));
+    L('418002', '2065', 'Houston, TX', 'San Antonio, TX', 'Delivered', S('Houston, TX', dd(17), '15:00', 'planned'), S('San Antonio, TX', dd(17), '19:00', 'planned'));
+    L('ef-7c21aa', '2065', 'San Antonio, TX', 'Laredo, TX', 'Delivered', S('San Antonio, TX', dd(18), '07:00', 'real'), S('Laredo, TX', dd(18), '10:30', 'real'));
+    var z4 = L('418004', '2065', 'Laredo, TX', 'Houston, TX', 'In Transit', S('Laredo, TX', dd(19), '06:00', 'real'), null);
+    L('418005', '2065', 'Houston, TX', 'Dallas, TX', 'Booked', S('Houston, TX', dd(20), '08:00', 'estimated'), null, { partial: true });
+    R('S20', 'R-AR20', '2065_Diaz_2026-11-17', '2065', 'Rosa Diaz', 'In progress', [z1, z4]);
+    sc('S20', 'Carga manual, carga sin real stops, dropoff estimado y carga parcial', 'Unidad 2065 sin HOS. Houston→San Antonio no tiene real stops (horas planeadas). Hay una carga manual de efRouting, una carga en tránsito sin hora planeada de dropoff y una carga parcial sin ELD ni transacciones.',
+      'Abre Auto-rebuild.', 'Houston→San Antonio con horas «planned». La manual con ícono «ef». Dropoff sin hora → «estimated». La parcial con «partial» y millas/fechas estimadas.',
       ['A1', 'A2', 'A4', 'B4', 'B6']);
-    // S21 · cabin change creates a new route
+    // S21 · unit change creates a new route
     unit('2066', { driver: 'Omar Reyes', hos: { state: 'none' } });
     unit('2067', { driver: 'Omar Reyes', hos: { state: 'none' }, assignable: true });
     var y1 = L('419001', '2066', 'Atlanta, GA', 'Nashville, TN', 'Delivered', S('Atlanta, GA', dd(18), '06:00', 'real'), S('Nashville, TN', dd(18), '11:00', 'real'));
     var y2 = L('419002', '2066', 'Nashville, TN', 'Memphis, TN', 'In Transit', S('Nashville, TN', dd(19), '06:00', 'real'), S('Memphis, TN', dd(19), '10:00'));
     L('419101', '2067', 'Memphis, TN', 'Little Rock, AR', 'Booked', S('Memphis, TN', dd(19), '16:00'), S('Little Rock, AR', dd(19), '19:00'));
     R('S21', 'R-AR21', '2066_Reyes_2026-11-18', '2066', 'Omar Reyes', 'In progress', [y1, y2]);
-    sc('S21', 'Cambio de cabina dentro del ciclo', 'Omar empezó con la cabina 2066 y en Memphis pasa a la cabina 2067 (que ya tiene una carga Booked).',
-      'Usa «Change driver / unit» de esta ficha, elige la unidad 2067 y guarda. En la ruta nueva usa Auto-rebuild.', 'Aviso «Changing the cabin creates a new route». Se crea una ruta nueva consecutiva para 2067 (avisos en ambas rutas); la anterior conserva sus cargas y su ciclo. El ciclo de la nueva se calcula con 2067.',
+    sc('S21', 'Cambio de unidad dentro del ciclo', 'Omar empezó con la unidad 2066 y en Memphis pasa a la unidad 2067 (que ya tiene una carga Booked).',
+      'Usa «Change driver / unit» de esta ficha, elige la unidad 2067 y guarda. En la ruta nueva usa Auto-rebuild.', 'Aviso «Changing the unit creates a new route». Se crea una ruta nueva consecutiva para 2067 (avisos en ambas rutas); la anterior conserva sus cargas y su ciclo. El ciclo de la nueva se calcula con 2067.',
       ['I2']);
     // S22 · TONU in the missing history (open question vs the doc)
     unit('2068', { driver: 'Ray Cole', hos: { state: 'none' } });
@@ -5410,16 +5424,16 @@ export function initApp() {
     R('S22', 'R-AR22', '2068_Cole_2026-11-19', '2068', 'Ray Cole', 'In progress', [t3]);
     sc('S22', 'TONU en el historial (decisión abierta)', 'Antes de la ruta el camión hizo DH St. Louis→Oklahoma City para una carga cancelada en el pickup (TONU, Invoiced, $300). El entregable dice que TONU queda fuera; en el chat del 23-nov se pidió incluirla.',
       'Abre Auto-rebuild.', 'Hoy: la TONU entra al ciclo (DH + horas en sitio, fee como ingreso). Pendiente de decidir.', ['A3']);
-    // S23 · not compatible (proposal 23-nov): a double-booked pair of free loads + a free load the truck can't reach
+    // S23 · not compatible (decided 25-nov: only when times overlap): a double-booked pair of free loads + a free load that overlaps a route load
     unit('2072', { driver: 'Alex Moore', hos: { state: 'none' } });
     var q1 = L('422001', '2072', 'Dallas, TX', 'Houston, TX', 'Delivered', S('Dallas, TX', dd(18), '06:00', 'real'), S('Houston, TX', dd(18), '11:00', 'real'));
     var q2 = L('422002', '2072', 'Houston, TX', 'San Antonio, TX', 'In Transit', S('Houston, TX', dd(19), '07:00', 'real'), S('San Antonio, TX', dd(19), '11:00'));
     L('422003', '2072', 'San Antonio, TX', 'Laredo, TX', 'Booked', S('San Antonio, TX', dd(20), '06:00'), S('Laredo, TX', dd(20), '09:30'));
     L('422004', '2072', 'San Antonio, TX', 'Dallas, TX', 'Booked', S('San Antonio, TX', dd(20), '07:00'), S('Dallas, TX', dd(20), '12:00'));
     var q5 = L('422005', '2072', 'Laredo, TX', 'Houston, TX', 'Booked', S('Laredo, TX', dd(21), '06:00'), S('Houston, TX', dd(21), '11:00'));
-    L('422006', '2072', 'Dallas, TX', 'Memphis, TN', 'Booked', S('Dallas, TX', dd(21), '14:00'), S('Memphis, TN', dd(21), '22:00'));
+    L('422006', '2072', 'Dallas, TX', 'Memphis, TN', 'Booked', S('Dallas, TX', dd(21), '09:00'), S('Memphis, TN', dd(21), '17:00'));
     R('S23', 'R-AR23', '2072_Moore_2026-11-18', '2072', 'Alex Moore', 'In progress', [q1, q2, q5]);
-    sc('S23', 'Cargas no compatibles (propuesta)', 'El TMS tiene dos cargas del viernes 20 que salen de San Antonio con una hora de diferencia (doble reserva). Además, Dallas→Memphis (sáb 14:00) no se alcanza a hacer después de Laredo→Houston, que termina a las 11:00 y está en la ruta.',
+    sc('S23', 'Cargas no compatibles (se solapan)', 'El TMS tiene dos cargas del viernes 20 que salen de San Antonio con una hora de diferencia (doble reserva). Además, Dallas→Memphis recoge el sáb a las 09:00, antes de que Laredo→Houston (en la ruta) entregue a las 11:00.',
       'Abre Auto-rebuild y elige una carga de cada par.', 'Cada par sale agrupado como «Not compatible» con el motivo en una línea, y solo se puede escoger una carga. Se sugiere la carga de la ruta o la de más ingreso. Si eliges Dallas→Memphis, Laredo→Houston queda marcada para salir de la ruta.', ['J4']);
 
     // S24 · recap hours (proposal 23-nov): loads after the HOS edge that fit with recap hours
@@ -5449,7 +5463,7 @@ export function initApp() {
     L('421001', '2069', 'Columbus, OH', 'Pittsburgh, PA', 'Delivered', S('Columbus, OH', dd(18), '07:00', 'real'), S('Pittsburgh, PA', dd(18), '11:00', 'real'));
     L('421002', '2069', 'Pittsburgh, PA', 'Philadelphia, PA', 'In Transit', S('Pittsburgh, PA', dd(19), '06:00', 'real'), S('Philadelphia, PA', dd(19), '11:30'));
     ['2201', '2058', '5016'].forEach(function (k) { unit(k, { hos: { state: 'none' } }); });
-    unit('5017', { driver: 'Jeremy Davis', hos: { state: 'ok', resets: [{ at: S('San Antonio, TX', dd(15), '20:00'), driver: 'Jeremy Davis' }], nextReset: S('Memphis, TN', dd(21), '09:00'), leftH: 38 } });
+    unit('5017', { driver: 'Jeremy Davis', eldFirstStop: S('San Antonio, TX', dd(16), '05:30', 'real'), hos: { state: 'ok', resets: [{ at: S('San Antonio, TX', dd(15), '20:00'), driver: 'Jeremy Davis' }], nextReset: S('Memphis, TN', dd(21), '09:00'), leftH: 38 } });
     L('387990', '5017', 'Laredo, TX', 'San Antonio, TX', 'Paid', S('Laredo, TX', dd(14), '08:00', 'real'), S('San Antonio, TX', dd(14), '11:00', 'real'));
     L('389770', '5017', 'Houston, TX', 'Houston, TX', 'Invoiced', S('Houston, TX', dd(17), '09:00', 'real'), S('Houston, TX', dd(17), '12:00', 'real'), { miles: 0, income: 300, tonu: true, tonuFrom: 'San Antonio, TX', tonuDest: 'New Orleans, LA', dhMi: 197, waitH: 3, customer: 'TQL' });
     L('390188', '5017', 'Houston, TX', 'Dallas, TX', 'Delivered', S('Houston, TX', dd(18), '06:00', 'real'), S('Dallas, TX', dd(18), '10:30', 'real'), { customer: 'ARCBEST' });
@@ -5467,8 +5481,8 @@ export function initApp() {
     C('caso 8', 'Prototipo', 'Cargas con huecos → fills gap', 'Modal', 'Ofrecido', md('R-AR07'));
     C('caso 9', 'Prototipo', 'Carga del próximo ciclo', 'Modal', 'Ofrecido', md('R-AR08'));
     C('caso 10', 'Prototipo', 'Carga en otra ruta (vecina / bloqueada)', 'Modal', 'Ofrecido', md('R-AR09'));
-    C('A1', 'A · Llave y cargas elegibles', 'Varias cabinas con el mismo número', 'Modal · contexto + etiqueta de cabina', 'Ofrecido', md('R-AR20'));
-    C('A2', 'A · Llave y cargas elegibles', 'Carga de otra cabina del grupo (horas planeadas)', 'Modal · fila', 'Ofrecido', md('R-AR20'));
+    C('A1', 'A · Llave y cargas elegibles', 'La llave del ciclo es la unidad (unidad = cabina, 1 a 1); las cargas de otra unidad nunca entran', 'Modal · contexto', 'Ofrecido', md('R-AR20'));
+    C('A2', 'A · Llave y cargas elegibles', 'Carga sin real stops: usa sus horas planeadas', 'Modal · fila', 'Ofrecido', md('R-AR20'));
     C('A3', 'A · Llave y cargas elegibles', 'Solo los 7 estados elegibles', 'Modal · aviso de excluidas', 'Parcial', md('R-AR04'), 'TONU sigue entrando (pedido del chat) — ver dudas.');
     C('A4', 'A · Llave y cargas elegibles', 'Carga manual de efRouting (ícono ef)', 'Modal · fila', 'Ofrecido', md('R-AR20'));
     C('A5', 'A · Llave y cargas elegibles', 'El driver no filtra (chip informativo)', 'Modal · contexto/filtros', 'Ofrecido', md('R-AR15'));
@@ -5510,7 +5524,7 @@ export function initApp() {
     C('E12', 'E · Clasificación en el modal', 'Ciclo ya completo → «Nothing to add»', 'Modal', 'Ofrecido', md('R-AR01'));
     C('E13', 'E · Clasificación en el modal', 'Carga quitada → Cycle loads de la vecina', 'Modal → Refresh de R-AR08N', 'Ofrecido', md('R-AR08'));
     C('F1', 'F · Construcción y resultado', 'Lanes ordenadas por pickup', 'Plan', 'Ofrecido', rt('R-AR03'));
-    C('F2', 'F · Construcción y resultado', 'Origin = ubicación al inicio del ciclo', 'Modal + Plan (primer DH)', 'Ofrecido', md('R-AR03'));
+    C('F2', 'F · Construcción y resultado', 'Origin y salida siguen a las cargas marcadas (parada ELD del inicio del ciclo → último dropoff real; o el dropoff de la última carga desmarcada al inicio)', 'Modal + Plan (primer DH)', 'Ofrecido', md('R-AR03'));
     C('F3', 'F · Construcción y resultado', 'DH solo entre cargas no contiguas', 'Plan', 'Ofrecido', md('R-AR07'));
     C('F4', 'F · Construcción y resultado', 'Unbooked cubiertas se borran; posteriores se re-encadenan', 'Modal (aviso) + Plan', 'Ofrecido', md('R-AR03'));
     C('F5', 'F · Construcción y resultado', '«Complete with Easy routes» al final del Plan', 'Plan', 'Ofrecido', md('R-AR03'));
@@ -5533,14 +5547,14 @@ export function initApp() {
     C('H3', 'H · Estados y datos del modal', 'Métricas «se agrega» + «ciclo resultante» + HOS', 'Modal · pie', 'Ofrecido', md('R-AR12'));
     C('H4', 'H · Estados y datos del modal', 'Sin HOS: sin bloque de factibilidad', 'Modal · pie', 'Ofrecido', md('R-AR02'));
     C('I1', 'I · Cambios durante el ciclo', 'Cambio de conductor: misma ruta + aviso', 'Modal / Assign', 'Ofrecido', md('R-AR15'));
-    C('I2', 'I · Cambios durante el ciclo', 'Cambio de cabina: ruta nueva consecutiva', 'Assign → ruta nueva', 'Ofrecido', rt('R-AR21'));
+    C('I2', 'I · Cambios durante el ciclo', 'Cambio de unidad: ruta nueva consecutiva', 'Assign → ruta nueva', 'Ofrecido', rt('R-AR21'));
     var J = 'J · Propuestas (reunión 23-nov)';
     C('J1', J, 'My Loads sin unidad → selector de unidad → mismo modal', 'My Loads → selector → modal', 'Decidido', { myloads: '*' }, 'Los filtros del ciclo (unidad y fechas) quedan fijos en el modal.');
     C('J2', J, 'Ciclo: lo ejecutado y lo que viene (línea «Now»)', 'Modal', 'Propuesta', md('R-AR01'));
     C('J3', J, 'Cargas con problema sin tachado: cancelada / reasignada con el motivo', 'Modal', 'Propuesta', md('R-AR11'));
     C('J3b', J, 'TONU sin tachado: destino = pickup + «not delivered»', 'Modal + Crear ruta', 'Propuesta', md('R-AR22'));
-    C('J4', J, 'Not compatible: el par agrupado, con el motivo, y se escoge una', 'Modal', 'Propuesta', md('R-AR23'));
-    C('J5', J, 'Recap hours: indicador + cálculo; al apagarlo pasan al ciclo siguiente', 'Modal · chip Recap', 'Propuesta', md('R-AR24'));
+    C('J4', J, 'Not compatible: el par agrupado, con el motivo, y se escoge una', 'Modal', 'Decidido', md('R-AR23'), '25-nov: solo cuando las horas se solapan; no se valida el tiempo de manejo.');
+    C('J5', J, 'Recap hours: indicador + cálculo; al apagarlo pasan al ciclo siguiente', 'Modal · chip Recap', 'Decidido', md('R-AR24'));
     C('J6', J, 'Carga del próximo ciclo → mover a la ruta que le corresponde (en orden)', 'Modal → R-AR08N', 'Propuesta', md('R-AR08'));
     C('J7', J, 'Cargas en otra ruta: no se cuentan dos veces; mover respeta el orden', 'Modal', 'Propuesta', md('R-AR09'));
     C('J8', J, 'Continuar el siguiente ciclo en la misma ruta (interruptor en «Cycle end»)', 'Modal', 'Propuesta', md('R-AR25'));
@@ -5550,6 +5564,10 @@ export function initApp() {
     C('K2', K, 'Misma regla en Crear ruta: tarjeta del medio desmarcada → Continue bloqueado + arreglos', 'Crear ruta · bloque de ciclo', 'Decidido', { create: '5017' }, 'Desmarca Houston→Dallas (la del medio).');
     C('K3', K, 'Crear ruta va directo al detalle de la ruta (no abre Easy routes)', 'Crear ruta → Plan', 'Decidido', { create: '2201', cont: true });
     C('K4', K, 'Tres puntos de entrada: Plan, Crear ruta y My Loads (se elige la unidad, no una carga)', 'Plan · Crear ruta · My Loads', 'Decidido', { myloads: '*' });
+    C('K5', K, 'Excepción a «hacia atrás manda el camión»: mismo driver con HOS y hueco ≥ 34 h sin reset → mandan las HOS, no corta + aviso', 'Modal · aviso de discrepancia', 'Decidido', md('R-AR16'));
+    C('K6', K, 'Origin y salida siguen a las cargas marcadas: si se desmarcan las primeras, dropoff (lugar y fecha) de la última desmarcada; si no, primera parada que detecta el ELD desde el inicio del ciclo → si no hay, último dropoff real (aunque sea del ciclo anterior) → si no hay cargas antes, pickup de la primera', 'Modal + Plan + Crear ruta', 'Decidido', { create: '5017' }, '5017: con todo marcado, parada ELD San Antonio (lun 16 05:30); desmarca la TONU y Origin pasa a su dropoff. R-AR03 (sin ELD): Origin = último dropoff real, Memphis vie 14; desmarca Memphis→Nashville y construye → Origin Nashville, mar 17.');
+    C('K7', K, 'Cambio de driver: misma ruta y unidad; las HOS salen del driver nuevo desde la carga que toma', 'Modal · aviso', 'Decidido', md('R-AR15'));
+    C('K8', K, 'Recap hours: las calcula el backend con la regla de HOS (no las entrega el ELD)', 'Modal · chip Recap', 'Decidido', md('R-AR24'));
     _arInitUseCases();
     setTimeout(_arMountCaseBtn, 0);
   }
@@ -5572,7 +5590,7 @@ export function initApp() {
       'Abre Auto-rebuild.',
       'Bordes «Cycle start · HOS reset» y «Cycle end · next HOS reset Sat Nov 21 · 06:00 MST». Dallas→Houston queda arriba como «previous cycle · remove». Línea «Now — 1 done · 1 upcoming» antes de la carga en tránsito. Horas locales con huso (CST/MST) y punto de fuente (real/planned). Chip «HOS left 31 h» y métrica «plan needs ~h». CTA «Nothing to add».');
     U('UC03', 'P1', 'Cargas con fechas que se solapan → «Not compatible», se elige una', ['S23'], md('R-AR23'), ['J4'],
-      'Unidad 2072. Vie 20: dos cargas libres salen de San Antonio con una hora de diferencia (doble reserva). Sáb 21: Laredo→Houston (en la ruta) entrega a las 11:00 y Dallas→Memphis (libre) recoge a las 14:00, a ~5 h de manejo.',
+      'Unidad 2072. Vie 20: dos cargas libres salen de San Antonio con una hora de diferencia (doble reserva). Sáb 21: Laredo→Houston (en la ruta) entrega a las 11:00 y Dallas→Memphis (libre) recoge a las 09:00. Solo cuenta el solape de horas; el tiempo de manejo entre cargas no se valida.',
       'Abre Auto-rebuild. En cada par elige la otra carga y vuelve a la sugerida.',
       'Cada par sale bajo «Not compatible · choose one» con el motivo en una línea, y se elige con un radio. Sugerida: la de la ruta, o la de más ingreso (San Antonio→Dallas). Si eliges Dallas→Memphis, Laredo→Houston pasa a «leaves the route» y sale al construir. «Missing loads» cuenta cada par una sola vez.');
     U('UC04', 'P1', 'Carga partida entre dos ciclos (reset durante la carga)', ['S17'], md('R-AR17'), ['C6', 'J9'],
@@ -5583,7 +5601,7 @@ export function initApp() {
       'Unidad 2074 sin HOS. Ciclo actual: Memphis→Nashville y Nashville→Atlanta (en tránsito). Descanso de 44 h. El siguiente ciclo ya empezó en esta ruta (Atlanta→Charlotte, sáb 21) y el TMS tiene dos cargas más de ese ciclo. La unidad no tiene otra ruta después.',
       'Abre Auto-rebuild. Apaga y prende «Next cycle in this route» en la línea «Cycle end». Construye.',
       'Como la ruta ya tiene cargas del siguiente ciclo y no hay otra ruta, el interruptor viene encendido: Atlanta→Charlotte dice «next cycle · in this route», y Charlotte→Pittsburgh y Pittsburgh→Philadelphia salen preseleccionadas como «next cycle». El resumen dice «· 2 from the next cycle». Apagado: las dos libres desaparecen y Atlanta→Charlotte queda como «next cycle · remove». Al construir, las 5 lanes quedan en orden de pickup en la misma ruta.');
-    U('UC06', 'P1', 'Recap hours: agregar con recap o dejar para el siguiente ciclo', ['S24'], md('R-AR24'), ['J5'],
+    U('UC06', 'P1', 'Recap hours: agregar con recap o dejar para el siguiente ciclo', ['S24'], md('R-AR24'), ['J5', 'K8'],
       'Carla Vega (HOS ok, 12 h disponibles) se queda sin horas el vie 20 a las 20:00 (próximo reset). A medianoche recupera 9 h (recap). Columbus→Indianapolis (en la ruta, ~5 h) e Indianapolis→Louisville (libre, ~4 h) caben en esas 9 h; Louisville→Nashville ya no.',
       'Abre Auto-rebuild. Pasa el mouse por el chip «Recap» y apágalo; vuelve a prenderlo.',
       'Con recap: Columbus→Indianapolis «in this route · recap · 5 of 9 h» e Indianapolis→Louisville preseleccionada «recap · 9 of 9 h». Louisville→Nashville no aparece. El tooltip del chip «Recap +9 h · 9 h used» muestra el cálculo; «HOS left» dice «12 h + 9 h recap»; el fin pasa a «after the recap loads». Apagado: ambas pasan a «next cycle · fits with recap» y el fin vuelve a «next HOS reset Fri Nov 20 · 20:00 EST».');
@@ -5591,15 +5609,15 @@ export function initApp() {
     U('UC07', 'P2', 'Ruta vacía → ciclo completo (caso 6)', ['S03'], rt('R-AR03'), ['caso 6', 'D1', 'E1', 'F1', 'F2', 'F4', 'F5', 'G3', 'F10'],
       'Ruta Planned de la unidad 2047 (Maria Lopez, HOS ok) sin cargas reales: 3 lanes Unbooked, salida jue 19 08:00 CST. El TMS tiene el ciclo en curso Memphis→Nashville→Louisville→Indianapolis→Columbus; el ciclo anterior terminó en Memphis.',
       'Usa «Auto-rebuild» del estado vacío del Plan. Construye. Vuelve a abrir Auto-rebuild.',
-      'Ancla = fecha de salida; las 4 cargas salen preseleccionadas y el pie avisa que 2 lanes Unbooked se reemplazan. Tras construir: lanes por pickup, la Unbooked posterior re-encadenada desde Columbus, Origin = Memphis, ruta In progress y «Complete with Easy routes» al final. Al reabrir: «Nothing to add» (no duplica).');
+      'Ancla = fecha de salida; las 4 cargas salen preseleccionadas y el pie avisa que 2 lanes Unbooked se reemplazan. Tras construir: lanes por pickup, la Unbooked posterior re-encadenada desde Columbus, Origin = Memphis, vie 14 13:00 (sin parada ELD: último dropoff real, del ciclo anterior), ruta In progress y «Complete with Easy routes» al final. Al reabrir: «Nothing to add» (no duplica).');
     U('UC08', 'P2', 'Huecos en el ciclo → «fills gap» (caso 8)', ['S07'], md('R-AR07'), ['caso 8', 'E3', 'E9', 'F3', 'G6'],
       'Ruta con Houston→Dallas, OKC→KC (en tránsito), St. Louis→Indianapolis y Columbus→Pittsburgh. El TMS tiene Dallas→OKC y KC→St. Louis; entre Indianapolis y Columbus no hay carga.',
       'Abre Auto-rebuild; desmarca Dallas→OKC y vuelve a marcarla. Construye. Antes de construir, prueba también Refresh ▾ → Cycle loads.',
       'Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso rojo «left out in the middle of the route», el botón de construir queda bloqueado y el aviso ofrece «Check again» o recortar un extremo. Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.');
-    U('UC09', 'P2', 'Crear ruta con una unidad que ya tiene ciclo (caso 2)', [], { create: '5017' }, ['caso 2', 'G1', 'D6'],
+    U('UC09', 'P2', 'Crear ruta con una unidad que ya tiene ciclo (caso 2)', [], { create: '5017' }, ['caso 2', 'G1', 'D6', 'K6'],
       'Crear ruta → Assign unit → unidad 5017 (Jeremy Davis, HOS ok). Ciclo en el TMS: TONU en Houston (mar 17), Houston→Dallas, Dallas→Memphis (en tránsito).',
       'Elige la unidad. Revisa el bloque «Loads in this truck cycle». Cambia la fecha de salida. Abre «View full cycle».',
-      'Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio, el inicio del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.');
+      'Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio y salida lun 16, la primera parada ELD del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.');
     U('UC10', 'P2', 'Unidad sin cargas de ciclo → detalle de la ruta (caso 1)', [], { create: '2201', cont: true }, ['caso 1', 'K3'],
       'Crear ruta con la unidad 2201, que no tiene cargas en el TMS alrededor de hoy.',
       'Continue. En el Plan vacío toca Auto-rebuild y cancela.',
@@ -5629,11 +5647,11 @@ export function initApp() {
       'S12: el ELD de 2056 tarda; con HOS, el próximo reset de Ana es vie 04:00 y Phoenix→Las Vegas pasa al ciclo siguiente. S13: el ELD de 2057 no responde.',
       'Abre Auto-rebuild y espera. A: «Update cycle» cuando lleguen las HOS. B: construye antes.',
       '«Checking ELD…» → chip HOS «Retrying…» → aviso «HOS data available — the cycle may change · Update cycle». Si confirmas sin HOS, el Plan avisa «HOS data arrived and… differs» con «Reopen Auto-rebuild»; la ruta nunca se corrige sola. S13: chip «HOS · Unavailable» y bordes por descansos.');
-    U('UC17', 'P3', 'Cambio de conductor dentro del ciclo', ['S15'], md('R-AR15'), ['C4', 'C7', 'I1', 'A5'],
+    U('UC17', 'P3', 'Cambio de conductor dentro del ciclo', ['S15'], md('R-AR15'), ['C4', 'C7', 'I1', 'A5', 'K7'],
       'Dan Wu hizo Little Rock→Memphis y tomó un reset en Memphis; el camión siguió con Luis Ortega. Dan volvió a manejar Nashville→Louisville. Driver actual: Luis.',
       'Abre Auto-rebuild.',
-      '«Cycle start · 41 h rest» (no el reset de Dan) y un aviso de una línea de cambio de conductor. Nashville→Louisville «fills gap». La ruta sigue siendo la misma.');
-    U('UC18', 'P3', 'Descanso de 34 h o más sin reset en HOS (on duty)', ['S16'], md('R-AR16'), ['C5'],
+      '«Cycle start · 41 h rest» (no el reset de Dan) y un aviso de una línea: misma ruta, y las HOS salen del driver nuevo desde la carga que toma. Nashville→Louisville «fills gap». La ruta sigue siendo la misma.');
+    U('UC18', 'P3', 'Descanso de 34 h o más sin reset en HOS (on duty)', ['S16'], md('R-AR16'), ['C5', 'K5'],
       'El camión estuvo parado 38 h en Denver, pero las HOS de Nina muestran on duty.',
       'Abre Auto-rebuild.',
       'Manda HOS: el descanso no corta y Kansas City→Denver entra como faltante. Aviso de una línea «Truck stopped ≥ 34 h but the driver’s HOS show no reset».');
@@ -5649,10 +5667,10 @@ export function initApp() {
       'Houston→San Antonio es del ciclo pero está en R-AR10P (Finished). Houston→Dallas también, pero en R-AR10X, que no es vecina.',
       'Abre Auto-rebuild → «Show loads in other routes».',
       'Houston→San Antonio: «in previous route · open» con casilla bloqueada (tooltip «route is finished»). Houston→Dallas oculta; al mostrarla, bloqueada con «open».');
-    U('UC22', 'P3', 'Cabinas agrupadas, carga manual y datos incompletos', ['S20'], md('R-AR20'), ['A1', 'A2', 'A4', 'B4', 'B6'],
-      'Unidad 2065 con dos cabinas (2065-A con ELD, 2065-B). Una carga manual de efRouting, una en tránsito sin hora de dropoff y una parcial.',
+    U('UC22', 'P3', 'Carga manual, carga sin real stops y datos incompletos', ['S20'], md('R-AR20'), ['A1', 'A2', 'A4', 'B4', 'B6'],
+      'Unidad 2065. Houston→San Antonio sin real stops, una carga manual de efRouting, una en tránsito sin hora de dropoff y una parcial.',
       'Abre Auto-rebuild.',
-      'Cargas de ambas cabinas juntas; la de 2065-B con su etiqueta. La manual con ícono «ef». Dropoff sin hora → punto «estimated» y «est.». La parcial con millas «est.».');
+      'Houston→San Antonio con horas «planned». La manual con ícono «ef». Dropoff sin hora → punto «estimated» y «est.». La parcial con millas «est.».');
     // P4 · Raro
     U('UC23', 'P4', 'Sin descanso ni reset en 10 días', ['S18'], md('R-AR18'), ['C8'],
       'La unidad 2062 hizo una carga diaria desde el 6-nov sin descansos de 34 h.', 'Abre Auto-rebuild.',
@@ -5660,10 +5678,10 @@ export function initApp() {
     U('UC24', 'P4', 'Ventana sin cargas', ['S19'], md('R-AR19'), ['C11'],
       'La unidad 2063 no tiene cargas en el TMS alrededor de la salida.', 'Abre Auto-rebuild.',
       '«No loads in this cycle» y CTA «Nothing to add» deshabilitado.');
-    U('UC25', 'P4', 'Cambio de cabina → ruta nueva consecutiva', ['S21'], rt('R-AR21'), ['I2'],
-      'Omar empezó con la cabina 2066 y en Memphis pasa a la 2067, que ya tiene una carga Booked.',
+    U('UC25', 'P4', 'Cambio de unidad → ruta nueva consecutiva', ['S21'], rt('R-AR21'), ['I2'],
+      'Omar empezó con la unidad 2066 y en Memphis pasa a la 2067, que ya tiene una carga Booked.',
       '«Change driver / unit…» en la ficha → unidad 2067 → «Create new route». En la nueva usa Auto-rebuild.',
-      'Aviso «Changing the cabin creates a new route». Se crea una ruta consecutiva para 2067, con avisos en ambas; la anterior conserva lo hecho.');
+      'Aviso «Changing the unit creates a new route». Se crea una ruta consecutiva para 2067, con avisos en ambas; la anterior conserva lo hecho.');
     U('UC26', 'P4', 'Concurrencia y error al construir', ['S14'], md('R-AR14'), ['F8', 'F9'],
       'Mientras revisas, el TMS agrega una carga anterior del ciclo. Después, la construcción da timeout una vez.',
       'Rebuild → revisa → Rebuild → Retry.',
@@ -5680,11 +5698,11 @@ export function initApp() {
     var B = function (code, title, rule, ucs, cat) { _AR_BE.push({ code: code, title: title, rule: rule, ucs: ucs, cat: cat }); };
     var rng = function (p, a, b) { var o = []; for (var i = a; i <= b; i++) o.push(p + i); return o; };
     B('BE-1', 'Entrada del motor: cargas de la unidad y hora de cada parada',
-      'Una sola consulta arma el pool de cargas de la unidad: todas sus cabinas (la llave es el número), cualquier driver, solo los estados elegibles (TONU incluida con su fee) y también las cargas manuales de efRouting y las parciales. Cada parada se lleva a UTC con su huso horario, y su fuente es real, planned o estimated, en ese orden.',
+      'Una sola consulta arma el pool de cargas de la unidad (la llave es la unidad; unidad = cabina, 1 a 1), de cualquier driver, solo los estados elegibles (TONU incluida con su fee) y también las cargas manuales de efRouting y las parciales. Cada parada se lleva a UTC con su huso horario, y su fuente es real, planned o estimated, en ese orden.',
       ['UC13', 'UC22'], rng('A', 1, 5).concat(rng('B', 1, 6), ['J3b']));
     B('BE-2', 'Bordes del ciclo, con y sin HOS (incluye recap)',
-      'Una sola función recorre las cargas en orden y decide dónde se corta el ciclo. Con HOS manda el reset de 34 h del mismo driver; si el reset cae durante una carga, esa carga queda en el ciclo de su pickup. Sin HOS corta un descanso de 34 h o más, y la ventana máxima es de 10 días. Hacia adelante, el ciclo corta en el próximo reset del driver actual, que las recap hours pueden correr.',
-      ['UC01', 'UC02', 'UC04', 'UC06', 'UC17', 'UC18', 'UC23'], rng('C', 1, 9).concat(['H4', 'I1', 'J5', 'J9']));
+      'Una sola función recorre las cargas en orden y decide dónde se corta el ciclo. Hacia atrás manda el camión: corta un descanso de 34 h o más, y un reset de HOS solo cuenta si el mismo driver hizo las cargas de los dos lados. Excepción: con el mismo driver y HOS disponibles, si el camión paró 34 h o más pero las HOS no muestran reset (on duty), mandan las HOS: no corta y sale un aviso que no bloquea. Si el reset cae durante una carga, esa carga queda en el ciclo de su pickup. La ventana máxima es de 10 días. Cada carga lee las HOS del driver que la hizo: si cambia el driver, la ruta sigue igual y desde esa carga las HOS salen del driver nuevo. Hacia adelante, el ciclo corta en el próximo reset del driver actual, que las recap hours pueden correr; el backend las calcula con la regla de HOS.',
+      ['UC01', 'UC02', 'UC04', 'UC06', 'UC17', 'UC18', 'UC23'], rng('C', 1, 9).concat(['H4', 'I1', 'J5', 'J9', 'K5', 'K7', 'K8']));
     B('BE-3', 'HOS no disponible (ELD lento o caído)',
       'Si el ELD no responde a tiempo, el ciclo se calcula con la regla sin HOS de BE-2 y el resultado queda marcado como calculado sin HOS. Cuando llegan las HOS, se avisa para recalcular; la ruta nunca se corrige sola.',
       ['UC16'], ['C10', 'H1']);
@@ -5701,16 +5719,16 @@ export function initApp() {
       'Una carga pertenece a una sola ruta y no se cuenta dos veces. Una carga del ciclo que está en una ruta vecina se puede traer. Una carga de esta ruta que pertenece al ciclo vecino se puede mover a esa ruta o quitar. Los movimientos van siempre en bloque contiguo hasta el borde, para respetar el orden de ejecución. Si la ruta está finalizada o no es vecina, la carga queda bloqueada.',
       ['UC11', 'UC12', 'UC21'], ['E4', 'E5', 'E6', 'E7', 'E13', 'J6', 'J7', 'caso 9', 'caso 10']);
     B('BE-8', 'Cargas no compatibles',
-      'Entre cargas consecutivas del ciclo se valida que el camión llegue a tiempo. Si se solapan o no da el tiempo de manejo, el par se devuelve como «not compatible», con el motivo y una carga sugerida.',
+      'Entre cargas consecutivas del ciclo se comparan las horas (real stop o planeada). Si el pickup de una cae antes del dropoff de la anterior, el par se devuelve como «not compatible», con el motivo y una carga sugerida. El tiempo de manejo entre cargas no se valida.',
       ['UC03'], ['J4']);
     B('BE-9', 'Cambios del TMS y Sync',
       'Al leer el ciclo, las cargas de la ruta se comparan con el TMS. Si una carga cambió, se ofrece actualizarla; si se canceló o se reasignó a otra unidad, se ofrece quitarla. El Sync vuelve a leer el TMS y avisa si encontró cambios.',
       ['UC15'], ['E10', 'E11', 'H2', 'J3']);
     B('BE-10', 'Construcción de la ruta (build)',
-      'Un solo POST idempotente aplica los cambios:\n• ordena las cargas por pickup;\n• pone Origin en el inicio del ciclo;\n• crea DH solo entre cargas no contiguas;\n• borra las Unbooked cubiertas y re-encadena las posteriores;\n• deja lo ejecutado en solo lectura;\n• rechaza una ruta que se salta una carga en medio del ciclo (los extremos sí se pueden recortar o ampliar);\n• pasa la ruta a In Progress solo si algo ya empezó.\nSi el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.',
-      ['UC07', 'UC26', 'UC28'], rng('F', 1, 11).concat(['K1', 'K2', 'caso 6']));
-    B('BE-11', 'Cambio de cabina',
-      'Cambiar la cabina de una ruta que ya empezó crea una ruta nueva consecutiva, y su ciclo se calcula con la nueva unidad. Cambiar solo el driver mantiene la ruta.',
+      'Un solo POST idempotente aplica los cambios:\n• ordena las cargas por pickup;\n• pone Origin y la salida según las cargas que entran: si se dejaron fuera las primeras del ciclo, en el dropoff (lugar y fecha) de la última que quedó fuera, donde empieza el DH a la siguiente; si no, en la primera parada que detecta el ELD desde el inicio del ciclo; sin parada ELD, en el último dropoff real aunque sea del ciclo anterior; sin cargas anteriores, en el pickup de la primera carga;\n• crea DH solo entre cargas no contiguas;\n• borra las Unbooked cubiertas y re-encadena las posteriores;\n• deja lo ejecutado en solo lectura;\n• rechaza una ruta que se salta una carga en medio del ciclo (los extremos sí se pueden recortar o ampliar);\n• pasa la ruta a In Progress solo si algo ya empezó.\nSi el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.',
+      ['UC07', 'UC26', 'UC28'], rng('F', 1, 11).concat(['K1', 'K2', 'K6', 'caso 6']));
+    B('BE-11', 'Cambio de unidad',
+      'Cambiar la unidad (la cabina) de una ruta que ya empezó crea una ruta nueva consecutiva, y su ciclo se calcula con la nueva unidad. Cambiar solo el driver mantiene la ruta y la unidad; desde la carga que toma, las HOS salen del driver nuevo.',
       ['UC25'], ['I2']);
     var PR = ['P1', 'P2', 'P3', 'P4'];
     _AR_BE.forEach(function (g) {
