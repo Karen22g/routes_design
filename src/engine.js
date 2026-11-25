@@ -590,6 +590,7 @@ export function initApp() {
       if (!_ue && _ub) { _ue = document.createElement('div'); _ue.id = 'cr-unit-err'; _ue.style.cssText = 'font-size:10.5px;color:#cc666f;margin-top:5px'; _ue.textContent = 'Select a unit — or switch to Any unit. The truck cycle and Auto-rebuild need it.'; _ub.parentNode.appendChild(_ue); }
       return;
     }
+    if (mode === 'assign' && window.crCycleHoles()) return;   // a route never skips a cycle load in the middle
 
     // Form values
     const originVal = (document.getElementById('cr-origin-input') || {}).value || '';
@@ -671,10 +672,8 @@ export function initApp() {
     // Close form modal and show loading overlay while route "initializes"
     setState({ showCreateRoute: false });
     _showCreatingRoute(tmsLoads.length > 0, function () {
+      // Refinement 25-nov: the new flow always lands on the route detail — Easy routes is not opened on its own
       setState({ openRoute: newId, view: 'routes', detailLanesExpanded: false, detailTab: 'plan', controlMode: 'route', controlLane: null });
-      if (tmsLoads.length === 0 && newLoads.length > 0) {
-        setTimeout(function() { _lmSt.origin = newLoads[0].origin; _lmSt.routeId = newId; _doRenderLaneMap(); }, 80);
-      }
     });
   };
 
@@ -1064,15 +1063,35 @@ export function initApp() {
     if (dep && !ed.dep) dep.value = sel.length ? _crIso(_arStops(sel[0].load).pu.date) : '2026-11-19';
     if (sum) sum.querySelectorAll('.cr-cycle-origin').forEach(function (n) { n.remove(); });
     if (sum) sum.insertAdjacentHTML('beforeend', '<div class="cr-cycle-sum-sub cr-cycle-origin">Origin: <b>' + origin + '</b> — ' + how + (ed.origin ? ' (you edited Origin, it isn’t overwritten)' : '') + '</div>');
-    // E9 in the block: a hole between selected loads
-    var idx = sel.map(function (x) { return c.list.indexOf(x); });
-    var hole = idx.some(function (v, k) { return k && v - idx[k - 1] > 1; });
-    if (sum && hole) sum.insertAdjacentHTML('beforeend', '<div class="cr-cycle-sum-sub cr-cycle-origin" style="color:#d0a038">⚠ The unchecked load leaves a hole between selected loads — the route will need a deadhead there.</div>');
+    // E9 (refinement 25-nov): trim at the ends, never skip a load in the middle → Continue is blocked with the fix
+    var hc = window.crCycleHoles();
+    if (sum) sum.querySelectorAll('.cr-cycle-hole').forEach(function (n) { n.remove(); });
+    if (sum && hc) {
+      var ids = hc.holes.map(function (x) { return '#' + x.load.id; }), one = ids.length === 1;
+      var b = function (side, t) { return '<span class="cr-hole-fix" onclick="crCycleFix(\'' + side + '\')">' + t + '</span>'; };
+      sum.insertAdjacentHTML('beforeend', '<div class="cr-cycle-hole"><div><b>' + ids.join(', ') + (one ? ' is' : ' are') + ' left out in the middle.</b> A route can’t skip a load — trim at one end or check ' + (one ? 'it' : 'them') + ' again.</div>' +
+        '<div class="cr-hole-fixes">' + b('back', 'Check ' + (one ? ids[0] : 'them') + ' again') + b('pre', 'Drop the ' + hc.before.length + ' before') + b('post', 'Drop the ' + hc.after.length + ' after') + '</div></div>');
+    }
+    var cbtn = document.querySelector('.cr-btn-continue');
+    if (cbtn) { cbtn.disabled = !!hc; cbtn.style.opacity = hc ? '.45' : ''; cbtn.style.pointerEvents = hc ? 'none' : ''; cbtn.title = hc ? 'Close the hole in the cycle to continue' : ''; }
     var rn = document.getElementById('cr-route-name');
     if (rn && !ed.name && window.CR_PICKER && window.CR_PICKER.cabin) {
       var dItem = (window.CR_DRIVER_LIST || []).find(function (d) { return d.id === window.CR_PICKER.driver; });
       rn.value = window.CR_PICKER.cabin + '_' + (dItem ? dItem.name.split(' ').slice(-1)[0] : 'Unassigned') + '_' + (dep ? dep.value : '');
     }
+  };
+  window.crCycleHoles = function () {
+    var c = window.CR_CYCLE; if (!c || c.e.empty) return null;
+    var kept = c.list.map(function (x) { return !!c.sel[x.load.id]; }), first = kept.indexOf(true), last = kept.lastIndexOf(true);
+    var holes = c.list.filter(function (x, i) { return first >= 0 && i > first && i < last && !kept[i]; });
+    if (!holes.length) return null;
+    var h0 = c.list.indexOf(holes[0]), h1 = c.list.indexOf(holes[holes.length - 1]);
+    return { holes: holes, before: c.list.filter(function (x, i) { return i < h1 && kept[i]; }), after: c.list.filter(function (x, i) { return i > h0 && kept[i]; }) };
+  };
+  window.crCycleFix = function (side) {
+    var c = window.CR_CYCLE, hc = window.crCycleHoles(); if (!hc) return;
+    (side === 'back' ? hc.holes : side === 'pre' ? hc.before : hc.after).forEach(function (x) { c.sel[x.load.id] = side === 'back'; });
+    window.crRenderCycle(c.unit, true);
   };
   window.crDepChanged = function () {
     (window.CR_EDITED = window.CR_EDITED || {}).dep = true;
@@ -3995,7 +4014,7 @@ export function initApp() {
   // ─────────────────────────────────────────────────────────────────────────
   // AUTO-REBUILD (maqueta completa, 23-nov-2026 · entregable «autorebuild_entregable_maqueta.md»).
   // ONE engine (`_arEngine`, the truck-cycle/ motor) feeds every entry point: Create route block,
-  // the Auto-rebuild modal (Plan, Easy routes, My Loads) and Cycle loads (Refresh). Times are
+  // the Auto-rebuild modal (Plan, Create route, My Loads) and Cycle loads (Refresh). Times are
   // computed in UTC and shown per stop in local time with its zone and source (real/planned/estimated).
   // ─────────────────────────────────────────────────────────────────────────
   const _arDone = {};     // rId → { note, dividerId, hosDiffers } after a build (Plan banner + cycle line)
@@ -4532,7 +4551,7 @@ export function initApp() {
     }, 1100);
   }
 
-  // ── THE Auto-rebuild modal (one modal for Plan, Easy routes, My Loads and Create route) ──
+  // ── THE Auto-rebuild modal (one modal for Plan, Create route and My Loads) ──
   // opts: { mode: 'route'|'create', unit, driver, cabin, anchor, preselect:[ids], onPick(sel), onDone(n), onCancel() }
   function _openAutoRebuild(rId, opts) {
     opts = opts || {};
@@ -4545,7 +4564,7 @@ export function initApp() {
       phase: hosCfg === 'none' ? 'ready' : 'eld',       // H1: «Checking ELD…»
       hosOn: hosCfg === 'ok', hosArrived: false,        // C10: slow ELD → HOS arrive later
       widen: false, showHidden: false, sel: {}, remove: {}, move: {}, tms: {}, moveOut: {}, recap: true, cont: null,
-      sync: 'idle', syncMin: uc.syncMin || 4, conflict: false, gapWarn: null
+      sync: 'idle', syncMin: uc.syncMin || 4, conflict: false
     };
     (opts.preselect || []).forEach(function (id) { st.sel[id] = true; });
     var e;
@@ -4557,6 +4576,43 @@ export function initApp() {
       e.outside.forEach(function (x) { x.sel = !!st.sel[x.load.id]; });
     }
     compute();
+    // Refinement 25-nov: the user can trim or extend the cycle at either end, but a route never skips a load
+    // in the middle. A «hole» = a load the route could hold, left out, with route loads before AND after it.
+    // Not holes: the losing side of a «not compatible» pair, gone loads (canceled/reassigned), loads in other
+    // routes (planned there) and free loads of the previous/next cycle (not offered for this route).
+    function inRoute(x) {
+      var id = x.load.id;
+      if (x.conflict) return x.cls === 'in_this_route' ? !st.remove[id] : !!x.sel;
+      if (x.cls === 'in_this_route') return !st.remove[id];
+      if (x.cls === 'next_cycle' || x.cls === 'previous_cycle') return !x.free && !st.remove[id] && !st.moveOut[id];
+      if (x.cls === 'other_route') return !!st.move[id];
+      return !!x.sel;   // cycle · fills_gap · next_add · outside_cycle
+    }
+    function couldHold(x) {
+      if (x.cls === 'gone' || x.cls === 'other_route') return false;
+      if ((x.cls === 'next_cycle' || x.cls === 'previous_cycle') && x.free) return false;
+      if (x.conflict && inRoute(x.conflict.other)) return false;
+      return true;
+    }
+    function holeCheck() {
+      if (e.empty) return null;
+      var all = e.rows.concat(e.outside).filter(function (x) { return inRoute(x) || couldHold(x); })
+        .sort(function (a, b) { return _arPuUtc(a.load) - _arPuUtc(b.load); });
+      var kept = all.map(inRoute), first = kept.indexOf(true), last = kept.lastIndexOf(true);
+      if (first < 0) return null;
+      var holes = all.filter(function (x, i) { return i > first && i < last && !kept[i]; });
+      if (!holes.length) return null;
+      var h0 = all.indexOf(holes[0]), h1 = all.indexOf(holes[holes.length - 1]);
+      var before = all.filter(function (x, i) { return i < h1 && kept[i]; }), after = all.filter(function (x, i) { return i > h0 && kept[i]; });
+      var locked = function (xs) { return xs.some(function (x) { return x.cls === 'in_this_route' && _arPast(x.load); }); };   // executed lanes are read-only
+      return { holes: holes, before: locked(before) ? null : before, after: locked(after) ? null : after };
+    }
+    function setIn(x, on) {
+      var id = x.load.id;
+      if (x.cls === 'in_this_route' || x.cls === 'next_cycle' || x.cls === 'previous_cycle') { if (on) { delete st.remove[id]; delete st.moveOut[id]; } else st.remove[id] = true; }
+      else if (x.cls === 'other_route') { if (on) st.move[id] = true; else delete st.move[id]; }
+      else { x.sel = on; st.sel[id] = on; }
+    }
     var ov = document.createElement('div'); ov.id = '_ef-ar';
     ov.style.cssText = 'position:fixed;inset:0;z-index:9400;background:rgba(10,10,10,.66);display:flex;align-items:center;justify-content:center;padding:20px';
     var modal = document.createElement('div');
@@ -4666,7 +4722,15 @@ export function initApp() {
       e.warnings.filter(function (w) { return w.k !== 'anchor'; }).forEach(function (w) {
         bans.push(['#d0a038', w.k === 'discrepancy' ? 'Truck stopped ≥ 34 h but the driver’s HOS show no reset — HOS rule applied.' : w.k === 'driver' ? 'Driver change in this cycle — edges by the truck’s rests and the current driver’s HOS.' : 'No reset found in 10 days — using the last 10 days.', '']);
       });
-      if (st.gapWarn) bans.push(['#d0a038', st.gapWarn, '']);
+      var hc = holeCheck();
+      if (hc) {   // blocks the build and says how to fix it
+        var ids = hc.holes.map(function (x) { return '#' + x.load.id; }), one = ids.length === 1;
+        var fix = function (cls, txt) { return '<span class="' + cls + '" style="cursor:pointer;font-weight:800;color:#cc666f;white-space:nowrap;padding:3px 9px;border-radius:999px;border:1px solid rgba(204,102,111,.45)">' + txt + '</span>'; };
+        bans.push(['#cc666f', '<b style="color:#e6e6e6">' + ids.join(', ') + (one ? ' is' : ' are') + ' left out in the middle of the route.</b> A route can’t skip a load — trim at one end or check ' + (one ? 'it' : 'them') + ' again.',
+          '<span style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + fix('_ar-h-back', 'Check ' + (one ? ids[0] : 'them') + ' again') +
+          (hc.before && hc.before.length ? fix('_ar-h-pre', 'Drop the ' + hc.before.length + ' before') : '') +
+          (hc.after && hc.after.length ? fix('_ar-h-post', 'Drop the ' + hc.after.length + ' after') : '') + '</span>']);
+      }
       bans = bans.filter(function (b, i, a) { return a.findIndex(function (y) { return y[1] === b[1]; }) === i; });
       if (bans.length) {
         var bw = document.createElement('div'); bw.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:9px 18px 0;flex:none';
@@ -4767,12 +4831,7 @@ export function initApp() {
         });
         else if (toggle) d.addEventListener('click', function (ev) {
           if (ev.target.closest('._ar-rm,._ar-mv,._ar-tms,._ar-open')) return;
-          x.sel = !x.sel; st.sel[l.id] = x.sel;
-          if (!x.sel && x.cls !== 'outside_cycle') {   // E9
-            var ordered = e.rows.filter(function (y) { return y.cls !== 'next_cycle' && y.cls !== 'previous_cycle' && y.cls !== 'next_add'; });
-            var ix = ordered.indexOf(x), kept = function (y) { return y.cls === 'in_this_route' || ((y.cls === 'cycle' || y.cls === 'fills_gap') && y.sel); };
-            st.gapWarn = ordered.slice(0, ix).some(kept) && ordered.slice(ix + 1).some(kept) ? 'Unchecking #' + l.id + ' leaves a gap in the cycle.' : null;
-          } else st.gapWarn = null;
+          x.sel = !x.sel; st.sel[l.id] = x.sel;   // E9: a hole is checked on every render (holeCheck)
           render();
         });
         return d;
@@ -4845,6 +4904,7 @@ export function initApp() {
           (e.covered.length ? ' ' + e.covered.length + ' planned (Unbooked) lane' + (e.covered.length === 1 ? '' : 's') + ' will be replaced.' : '');
       var lbl = st.phase === 'eld' ? 'Checking ELD…' : e.empty ? 'Nothing to add' : mode === 'create' ? 'Use selection (' + nAdd + ') →' : nAdd || moveRows.length ? 'Rebuild route (' + (nAdd + moveRows.length) + ') →' : remN || tmsN ? 'Update route →' : 'Nothing to add';
       var enabled = st.phase !== 'eld' && !e.empty && (mode === 'create' || any);
+      if (enabled && holeCheck()) { enabled = false; note = '<span style="color:#cc666f">Close the hole in the middle of the route to continue.</span>'; }
       cta.innerHTML = '<span style="flex:1;font:600 12px ' + F + ';color:#b3b3b3">' + note + '</span>' +
         '<button class="_ar-x" style="padding:10px 20px;border-radius:999px;background:#242424;border:1px solid rgba(255,255,255,.12);color:#e6e6e6;font:800 13px ' + F + ';cursor:pointer">Cancel</button>' +
         '<button class="_ar-go" style="padding:10px 22px;border-radius:999px;border:none;background:#5bbccb;color:#141414;font:800 13px ' + F + ';cursor:pointer;white-space:nowrap;' + (enabled ? '' : 'opacity:.45;pointer-events:none') + '">' + lbl + '</button>';
@@ -4857,6 +4917,15 @@ export function initApp() {
       q('._ar-widen', function () { st.widen = !st.widen; render(); });
       q('._ar-rm', function (b) { var id = b.dataset.id; delete st.moveOut[id]; if (st.remove[id]) delete st.remove[id]; else st.remove[id] = true; render(); });
       q('._ar-recap', function () { st.recap = !st.recap; compute(); render(); });
+      var hfix = function (side) {
+        var hc = holeCheck(); if (!hc) return;
+        if (side === 'back') hc.holes.forEach(function (x) { setIn(x, true); if (x.conflict && !x.conflict.suggested) { setIn(x, false); setIn(x.conflict.other, true); } });
+        else (side === 'pre' ? hc.before : hc.after).forEach(function (x) { setIn(x, false); });
+        render();
+      };
+      q('._ar-h-back', function () { hfix('back'); });
+      q('._ar-h-pre', function () { hfix('pre'); });
+      q('._ar-h-post', function () { hfix('post'); });
       q('._ar-cont', function () { st.cont = !st.cont; compute(); render(); });
       q('._ar-mo', function (b) {   // to the neighbor route of its cycle, as a contiguous block (execution order)
         var id = b.dataset.id, x = e.rows.find(function (y) { return y.load.id === id; });
@@ -5390,10 +5459,10 @@ export function initApp() {
     // ── Case catalog (doc §3 + prototype casos 1–10) → screen + status + how to get there ──
     var C = function (id, group, title, screen, status, go, note) { _AR_CATALOG.push({ id: id, group: group, title: title, screen: screen, status: status, go: go, note: note || '' }); };
     var rt = function (rid) { return { route: rid }; }, md = function (rid) { return { route: rid, modal: true }; };
-    C('caso 1', 'Prototipo', 'Crear ruta · Assign unit · unidad sin cargas de ciclo → Easy routes', 'Crear ruta (bloque vacío) → Easy routes', 'Ofrecido', { create: '2201' });
+    C('caso 1', 'Prototipo', 'Crear ruta · Assign unit · unidad sin cargas de ciclo → detalle de la ruta', 'Crear ruta (bloque vacío) → Plan', 'Ofrecido', { create: '2201' });
     C('caso 2', 'Prototipo', 'Crear ruta · Assign unit · unidad con cargas de ciclo', 'Crear ruta · bloque de ciclo', 'Ofrecido', { create: '5017' });
-    C('caso 4', 'Prototipo', 'Any unit → Easy routes con Auto-rebuild deshabilitado', 'Easy routes (barra Auto-rebuild)', 'Ofrecido', { create: 'any', cont: true });
-    C('caso 5', 'Prototipo', 'Assigned equipment → Easy routes → Auto-rebuild', 'Easy routes (barra Auto-rebuild)', 'Ofrecido', { create: '2201', cont: true });
+    C('caso 4', 'Prototipo', 'Any unit → Easy routes con Auto-rebuild deshabilitado', 'Easy routes (barra Auto-rebuild)', 'Fuera', { create: 'any', cont: true }, 'Refinamiento 25-nov: Easy routes ya no es punto de entrada.');
+    C('caso 5', 'Prototipo', 'Assigned equipment → Easy routes → Auto-rebuild', 'Easy routes (barra Auto-rebuild)', 'Fuera', { create: '2201', cont: true }, 'Refinamiento 25-nov: Easy routes ya no es punto de entrada.');
     C('caso 6', 'Prototipo', 'Plan de ruta vacía → Auto-rebuild', 'Plan · estado vacío + modal', 'Ofrecido', rt('R-AR03'));
     C('caso 7', 'Prototipo', 'Ruta con cargas → completar hacia atrás', 'Modal', 'Ofrecido', md('R-AR02'));
     C('caso 8', 'Prototipo', 'Cargas con huecos → fills gap', 'Modal', 'Ofrecido', md('R-AR07'));
@@ -5436,7 +5505,7 @@ export function initApp() {
     C('E6', 'E · Clasificación en el modal', 'Mover desde el borde de la vecina (bloque; deshabilitado si Finished)', 'Modal + aviso en la vecina', 'Ofrecido', md('R-AR09'));
     C('E7', 'E · Clasificación en el modal', 'Carga en medio / ruta no vecina: oculta, bloqueada con enlace', 'Modal', 'Ofrecido', md('R-AR10'));
     C('E8', 'E · Clasificación en el modal', 'Filtros ampliados → «Outside the detected cycle»', 'Modal', 'Ofrecido', md('R-AR02'));
-    C('E9', 'E · Clasificación en el modal', 'Desmarcar una intermedia → aviso de hueco', 'Modal', 'Ofrecido', md('R-AR07'));
+    C('E9', 'E · Clasificación en el modal', 'Desmarcar una intermedia → bloquea la construcción + cómo arreglarlo', 'Modal', 'Ofrecido', md('R-AR07'));
     C('E10', 'E · Clasificación en el modal', 'Cambió en el TMS → «Update from TMS»', 'Modal', 'Ofrecido', md('R-AR11'));
     C('E11', 'E · Clasificación en el modal', 'Cancelada o reasignada → «no longer on this unit»', 'Modal', 'Ofrecido', md('R-AR11'));
     C('E12', 'E · Clasificación en el modal', 'Ciclo ya completo → «Nothing to add»', 'Modal', 'Ofrecido', md('R-AR01'));
@@ -5455,8 +5524,8 @@ export function initApp() {
     C('G1', 'G · Puntos de entrada', 'Crear ruta · Assign unit: bloque resumen + «View full cycle»; Origin = inicio del ciclo de la ruta', 'Crear ruta', 'Ofrecido', { create: '5017' }, 'Cambia la fecha (D6) para ver cómo Origin sigue al ciclo.');
     C('G2', 'G · Puntos de entrada', 'Crear ruta · Any unit: sin bloque', 'Crear ruta', 'Ofrecido', { create: 'any' });
     C('G3', 'G · Puntos de entrada', 'Plan: toolbar + estado vacío; solo con unidad', 'Plan', 'Ofrecido', rt('R-AR03'));
-    C('G4', 'G · Puntos de entrada', 'Easy routes con unidad: modal; cancelar → Plan vacío', 'Easy routes', 'Ofrecido', { create: '2201', cont: true });
-    C('G5', 'G · Puntos de entrada', 'Easy routes sin unidad: deshabilitado + asignar (solape bloquea Save)', 'Easy routes + Assign', 'Ofrecido', { create: 'any', cont: true });
+    C('G4', 'G · Puntos de entrada', 'Easy routes con unidad: modal; cancelar → Plan vacío', 'Easy routes', 'Fuera', { create: '2201', cont: true }, 'Refinamiento 25-nov: Easy routes ya no es punto de entrada.');
+    C('G5', 'G · Puntos de entrada', 'Easy routes sin unidad: deshabilitado + asignar (solape bloquea Save)', 'Easy routes + Assign', 'Fuera', { create: 'any', cont: true }, 'Refinamiento 25-nov: Easy routes ya no es punto de entrada.');
     C('G6', 'G · Puntos de entrada', 'Cycle loads (Refresh) con el mismo motor', 'Plan · Refresh ▾', 'Ofrecido', rt('R-AR07'), 'Abre Refresh ▾ en la toolbar del Plan.');
     C('G7', 'G · Puntos de entrada', '«Add» en el Plan → My Loads filtrado por la unidad', 'Plan → My Loads', 'Ofrecido', rt('R-AR01'), 'Usa «Add» al final de las lanes → «Add load».');
     C('G8', 'G · Puntos de entrada', 'My Loads filtrado por una unidad → «Auto-rebuild cycle»', 'My Loads', 'Ofrecido', { myloads: '2069' }, 'Con 2069 crea una ruta vacía; prueba también con 2045 (abre su ruta).');
@@ -5467,7 +5536,7 @@ export function initApp() {
     C('I1', 'I · Cambios durante el ciclo', 'Cambio de conductor: misma ruta + aviso', 'Modal / Assign', 'Ofrecido', md('R-AR15'));
     C('I2', 'I · Cambios durante el ciclo', 'Cambio de cabina: ruta nueva consecutiva', 'Assign → ruta nueva', 'Ofrecido', rt('R-AR21'));
     var J = 'J · Propuestas (reunión 23-nov)';
-    C('J1', J, 'My Loads sin unidad → selector de unidad → mismo modal', 'My Loads → selector → modal', 'Propuesta', { myloads: '*' }, 'Los filtros del ciclo (unidad y fechas) quedan fijos en el modal.');
+    C('J1', J, 'My Loads sin unidad → selector de unidad → mismo modal', 'My Loads → selector → modal', 'Decidido', { myloads: '*' }, 'Los filtros del ciclo (unidad y fechas) quedan fijos en el modal.');
     C('J2', J, 'Ciclo: lo ejecutado y lo que viene (línea «Now»)', 'Modal', 'Propuesta', md('R-AR01'));
     C('J3', J, 'Cargas con problema sin tachado: cancelada / reasignada con el motivo', 'Modal', 'Propuesta', md('R-AR11'));
     C('J3b', J, 'TONU sin tachado: destino = pickup + «not delivered»', 'Modal + Crear ruta', 'Propuesta', md('R-AR22'));
@@ -5477,6 +5546,11 @@ export function initApp() {
     C('J7', J, 'Cargas en otra ruta: no se cuentan dos veces; mover respeta el orden', 'Modal', 'Propuesta', md('R-AR09'));
     C('J8', J, 'Continuar el siguiente ciclo en la misma ruta (interruptor en «Cycle end»)', 'Modal', 'Propuesta', md('R-AR25'));
     C('J9', J, 'Carga partida por un reset: etiqueta «split by a reset»', 'Modal', 'Propuesta', md('R-AR17'));
+    var K = 'K · Refinamiento 25-nov (decidido)';
+    C('K1', K, 'Se ajustan los extremos (recortar o ampliar), nunca se salta una carga en medio: Build bloqueado + «Check again» / «Drop the N before» / «Drop the N after»', 'Modal', 'Decidido', md('R-AR07'), 'Desmarca Dallas→OKC (en medio) y prueba los tres arreglos.');
+    C('K2', K, 'Misma regla en Crear ruta: tarjeta del medio desmarcada → Continue bloqueado + arreglos', 'Crear ruta · bloque de ciclo', 'Decidido', { create: '5017' }, 'Desmarca Houston→Dallas (la del medio).');
+    C('K3', K, 'Crear ruta va directo al detalle de la ruta (no abre Easy routes)', 'Crear ruta → Plan', 'Decidido', { create: '2201', cont: true });
+    C('K4', K, 'Tres puntos de entrada: Plan, Crear ruta y My Loads (se elige la unidad, no una carga)', 'Plan · Crear ruta · My Loads', 'Decidido', { myloads: '*' });
     _arInitUseCases();
     setTimeout(_arMountCaseBtn, 0);
   }
@@ -5522,15 +5596,15 @@ export function initApp() {
     U('UC08', 'P2', 'Huecos en el ciclo → «fills gap» (caso 8)', ['S07'], md('R-AR07'), ['caso 8', 'E3', 'E9', 'F3', 'G6'],
       'Ruta con Houston→Dallas, OKC→KC (en tránsito), St. Louis→Indianapolis y Columbus→Pittsburgh. El TMS tiene Dallas→OKC y KC→St. Louis; entre Indianapolis y Columbus no hay carga.',
       'Abre Auto-rebuild; desmarca Dallas→OKC y vuelve a marcarla. Construye. Antes de construir, prueba también Refresh ▾ → Cycle loads.',
-      'Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso de una línea «leaves a gap in the cycle» (no bloquea). Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.');
+      'Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso rojo «left out in the middle of the route», el botón de construir queda bloqueado y el aviso ofrece «Check again» o recortar un extremo. Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.');
     U('UC09', 'P2', 'Crear ruta con una unidad que ya tiene ciclo (caso 2)', [], { create: '5017' }, ['caso 2', 'G1', 'D6'],
       'Crear ruta → Assign unit → unidad 5017 (Jeremy Davis, HOS ok). Ciclo en el TMS: TONU en Houston (mar 17), Houston→Dallas, Dallas→Memphis (en tránsito).',
       'Elige la unidad. Revisa el bloque «Loads in this truck cycle». Cambia la fecha de salida. Abre «View full cycle».',
       'Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio, el inicio del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.');
-    U('UC10', 'P2', 'Unidad sin cargas de ciclo → Easy routes (casos 1 y 5)', [], { create: '2201', cont: true }, ['caso 1', 'caso 5', 'G4'],
+    U('UC10', 'P2', 'Unidad sin cargas de ciclo → detalle de la ruta (caso 1)', [], { create: '2201', cont: true }, ['caso 1', 'K3'],
       'Crear ruta con la unidad 2201, que no tiene cargas en el TMS alrededor de hoy.',
-      'Continúa a Easy routes. Usa la barra Auto-rebuild y cancela.',
-      'El bloque de ciclo dice que no hay cargas. En Easy routes la barra Auto-rebuild está activa; el modal muestra «No loads in this cycle» y cancelar vuelve al Plan vacío.');
+      'Continue. En el Plan vacío toca Auto-rebuild y cancela.',
+      'El bloque de ciclo dice que no hay cargas. Continue abre el detalle de la ruta (Plan vacío), no Easy routes. Auto-rebuild muestra «No loads in this cycle» y cancelar vuelve al Plan vacío.');
     U('UC11', 'P2', 'Cargas en el borde de la ruta anterior → «move here» (caso 10)', ['S09'], md('R-AR09'), ['caso 10', 'E6', 'J7'],
       'La ruta anterior de la unidad 2053 (R-AR09P) termina con Jacksonville→Tampa y Tampa→Atlanta, que son del ciclo en curso de esta ruta.',
       'Abre Auto-rebuild → «move here» en Jacksonville→Tampa → confirma. Construye y abre R-AR09P.',
@@ -5595,10 +5669,14 @@ export function initApp() {
       'Mientras revisas, el TMS agrega una carga anterior del ciclo. Después, la construcción da timeout una vez.',
       'Rebuild → revisa → Rebuild → Retry.',
       '1.º: no construye, «The cycle changed while you were reviewing it» y el modal recargado con la carga nueva. 2.º: «Building route…» → «Couldn’t build the route» con Retry. Retry → Plan + toast con Undo.');
-    U('UC27', 'P4', 'Ruta o Crear ruta sin unidad', [], { create: 'any', cont: true }, ['A6', 'G2', 'G5', 'caso 4'],
+    U('UC27', 'P4', 'Ruta o Crear ruta sin unidad', [], { create: 'any', cont: true }, ['A6', 'G2'],
       'Crear ruta en modo Any unit (sin unidad). En Rutas, R-2602 no tiene unidad.',
-      'Continúa a Easy routes y toca Auto-rebuild. Elige un recurso ocupado en «Assign driver & equipment».',
-      'Sin bloque de ciclo. Auto-rebuild deshabilitado con candado y el motivo; al tocarlo se abre «Assign driver & equipment». Un recurso ocupado en otra ruta que se solapa bloquea Save.');
+      'Continue: abre el detalle de la ruta. Toca Auto-rebuild en el Plan. Elige un recurso ocupado en «Assign driver & equipment».',
+      'Sin bloque de ciclo; el Plan abre sin pasar por Easy routes. Auto-rebuild deshabilitado con candado y el motivo; al tocarlo se abre «Assign driver & equipment». Un recurso ocupado en otra ruta que se solapa bloquea Save.');
+    U('UC28', 'P2', 'Ajustar los extremos del ciclo sin saltarse una carga en medio', ['S07'], md('R-AR07'), ['K1', 'K2', 'E9'],
+      'Misma ruta de UC08: el ciclo tiene 6 cargas y 2 «fills gap» en medio. En Crear ruta, la unidad 5017 tiene 3 cargas de ciclo.',
+      'En el modal desmarca la primera carga libre del extremo: construye. Luego desmarca Dallas→OKC (en medio) y prueba «Check again», «Drop the N before» y «Drop the N after». En Crear ruta (5017) desmarca la tarjeta del medio.',
+      'Recortar un extremo se permite. Una carga desmarcada en medio pone el aviso rojo y bloquea el botón; cada arreglo deja la selección contigua y vuelve a habilitarlo. Si un lado tiene lanes ya ejecutadas, ese arreglo no se ofrece. En Crear ruta, Continue queda bloqueado con los mismos arreglos.');
     // ── BACKEND GROUPS: use cases the backend solves with the SAME handling (one story per group) ──
     var B = function (code, title, rule, ucs, cat) { _AR_BE.push({ code: code, title: title, rule: rule, ucs: ucs, cat: cat }); };
     var rng = function (p, a, b) { var o = []; for (var i = a; i <= b; i++) o.push(p + i); return o; };
@@ -5612,8 +5690,8 @@ export function initApp() {
       'Si el ELD no responde a tiempo, el ciclo se calcula con la regla sin HOS de BE-2 y el resultado queda marcado como calculado sin HOS. Cuando llegan las HOS, se avisa para recalcular; la ruta nunca se corrige sola.',
       ['UC16'], ['C10', 'H1']);
     B('BE-4', 'Ancla y puntos de entrada (mismo endpoint)',
-      'Todas las entradas llaman al mismo endpoint con la unidad, la ruta (opcional) y el ancla; lo único que cambia es el ancla. El ancla es, en este orden: la carga en movimiento, la carga más antigua, la salida de la ruta, o ahora / la fecha elegida. Si el ancla cae en un descanso se toma el ciclo siguiente, o el anterior si no hay siguiente. Sin unidad no se calcula.',
-      ['UC09', 'UC10', 'UC14', 'UC19', 'UC20', 'UC24', 'UC27'], rng('D', 1, 6).concat(['G1', 'G2', 'G3', 'G4', 'G5', 'G7', 'G8', 'A6', 'C11', 'E8', 'J1', 'caso 1', 'caso 2', 'caso 4', 'caso 5']));
+      'Las entradas son tres: Plan, Crear ruta y My Loads (con la unidad elegida, nunca una carga suelta). Todas llaman al mismo endpoint con la unidad, la ruta (opcional) y el ancla; lo único que cambia es el ancla. El ancla es, en este orden: la carga en movimiento, la carga más antigua, la salida de la ruta, o ahora / la fecha elegida. Si el ancla cae en un descanso se toma el ciclo siguiente, o el anterior si no hay siguiente. Sin unidad no se calcula.',
+      ['UC09', 'UC10', 'UC14', 'UC19', 'UC20', 'UC24', 'UC27'], rng('D', 1, 6).concat(['G1', 'G2', 'G3', 'G4', 'G5', 'G7', 'G8', 'A6', 'C11', 'E8', 'J1', 'K3', 'K4', 'caso 1', 'caso 2', 'caso 4', 'caso 5']));
     B('BE-5', 'Faltantes del ciclo frente a la ruta',
       'Compara el ciclo con la ruta. Lo que está en los dos queda como «in this route». Lo que falta se propone preseleccionado, y lo que cae entre cargas de la ruta se marca como «fills gap». Cada carga dice si ya se ejecutó. El resultado es el mismo para el modal y para Cycle loads (Refresh).',
       ['UC08'], ['E1', 'E2', 'E3', 'E9', 'E12', 'G6', 'H3', 'J2', 'caso 7', 'caso 8']);
@@ -5630,8 +5708,8 @@ export function initApp() {
       'Al leer el ciclo, las cargas de la ruta se comparan con el TMS. Si una carga cambió, se ofrece actualizarla; si se canceló o se reasignó a otra unidad, se ofrece quitarla. El Sync vuelve a leer el TMS y avisa si encontró cambios.',
       ['UC15'], ['E10', 'E11', 'H2', 'J3']);
     B('BE-10', 'Construcción de la ruta (build)',
-      'Un solo POST idempotente aplica los cambios:\n• ordena las cargas por pickup;\n• pone Origin en el inicio del ciclo;\n• crea DH solo entre cargas no contiguas;\n• borra las Unbooked cubiertas y re-encadena las posteriores;\n• deja lo ejecutado en solo lectura;\n• pasa la ruta a In Progress solo si algo ya empezó.\nSi el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.',
-      ['UC07', 'UC26'], rng('F', 1, 11).concat(['caso 6']));
+      'Un solo POST idempotente aplica los cambios:\n• ordena las cargas por pickup;\n• pone Origin en el inicio del ciclo;\n• crea DH solo entre cargas no contiguas;\n• borra las Unbooked cubiertas y re-encadena las posteriores;\n• deja lo ejecutado en solo lectura;\n• rechaza una ruta que se salta una carga en medio del ciclo (los extremos sí se pueden recortar o ampliar);\n• pasa la ruta a In Progress solo si algo ya empezó.\nSi el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.',
+      ['UC07', 'UC26', 'UC28'], rng('F', 1, 11).concat(['K1', 'K2', 'caso 6']));
     B('BE-11', 'Cambio de cabina',
       'Cambiar la cabina de una ruta que ya empezó crea una ruta nueva consecutiva, y su ciclo se calcula con la nueva unidad. Cambiar solo el driver mantiene la ruta.',
       ['UC25'], ['I2']);
@@ -5680,7 +5758,7 @@ export function initApp() {
     var F = _AR_F, q = '';
     var pn = document.createElement('div'); pn.id = '_ef-ar-cases';
     pn.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:500px;max-width:96vw;z-index:9360;background:#161616;border-left:1px solid rgba(255,255,255,.1);box-shadow:-20px 0 60px rgba(0,0,0,.6);display:flex;flex-direction:column;font-family:' + F;
-    var stc = { 'Ofrecido': '#47b26b', 'Parcial': '#d0a038', 'Falta': '#cc666f', 'Propuesta': '#9a7fd1' };
+    var stc = { 'Ofrecido': '#47b26b', 'Parcial': '#d0a038', 'Falta': '#cc666f', 'Propuesta': '#9a7fd1', 'Decidido': '#5bbccb', 'Fuera': '#808080' };
     var PCOL = { P1: '#47b26b', P2: '#6688cc', P3: '#d0a038', P4: '#808080' };
     var PDESC = { P1: 'empieza aquí · pasa todos los días', P2: 'flujos diarios de armado', P3: 'pasa de vez en cuando', P4: 'casos de borde' };
     var goBtn = function (cls, ix) { return '<span class="' + cls + '" data-ix="' + ix + '" style="flex:none;cursor:pointer;font:800 11px ' + F + ';color:#141414;background:#2e9975;padding:3px 9px;border-radius:999px">Ir →</span>'; };
@@ -9144,34 +9222,8 @@ export function initApp() {
     });
 
     modal.appendChild(hdr); modal.appendChild(tabs);
-    // Auto-rebuild option (casos 4–5): shown when this screen comes right after Create route.
-    // Enabled with a unit; locked — with the reason and an "Assign unit" shortcut — on Any unit.
-    if (_lmSt.routeId) (function () {
-      var rid = _lmSt.routeId, rr = routeOf(rid), FB = "'General Sans', Nunito, system-ui";
-      var bar = document.createElement('div');
-      bar.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 20px;background:#1a1a1a;border-bottom:1px solid rgba(255,255,255,.07);flex:none';
-      var txt = document.createElement('div');
-      txt.style.cssText = 'flex:1;min-width:0;font:600 11.5px ' + FB + ';color:#808080;line-height:1.45';
-      if (_arHasUnit(rr)) {
-        txt.innerHTML = 'Can’t find what you’re looking for? Try these other options — <b style="color:#b3b3b3">Auto-rebuild</b> pulls Unit <b style="color:#e6e6e6">' + rr.unit + '</b>’s cycle from My Loads, independent of the destination you pick.';
-        bar.appendChild(txt);
-        // G4: the route already exists (empty) → open the modal over its Plan; Cancel leaves the empty Plan
-        bar.appendChild(_arButton(rid, { margin: '0', anchor: rr._depUtc ? { type: 'departure', at: rr._depUtc, label: 'Easy routes date' } : undefined, onOpen: function () {
-          _lmSt.origin = null; _lmSt.routeId = null; var lm = document.getElementById('_ef-lane-map'); if (lm) lm.remove();
-          setState({ openRoute: rid, view: 'routes', detailTab: 'plan' });
-        } }));
-      } else {
-        txt.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;color:#b3b3b3;font-weight:800;margin-right:4px">' + _AR_LOCK + 'Auto-rebuild</span> Assign a unit first. A unit is the minimum Auto-rebuild needs to reconstruct a cycle, and <b style="color:#b3b3b3">Any unit</b> doesn’t assign one. The driver is optional — adding it lets us pull Hours of Service from the TMS.';
-        bar.appendChild(txt);
-        var asg = document.createElement('div');
-        asg.className = 'hoverable';
-        asg.style.cssText = 'padding:7px 13px;border-radius:999px;border:1px solid rgba(102,136,204,.45);color:#6688cc;font:800 12px ' + FB + ';cursor:pointer;white-space:nowrap;flex-shrink:0';
-        asg.textContent = 'Assign unit';
-        asg.addEventListener('click', function () { _arOpenAssign(rid, function () { setState({}); _doRenderLaneMap(); }); });
-        bar.appendChild(asg);
-      }
-      modal.appendChild(bar);
-    })();
+    // Refinement 25-nov: Easy routes is no longer an Auto-rebuild entry point (casos 4–5, G4/G5 out of scope).
+    // Only Plan, Create route and My Loads open the modal.
     var body = document.createElement('div');
     body.style.cssText = 'flex:1;overflow:hidden;min-height:0;display:flex;flex-direction:column';
 

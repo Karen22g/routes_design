@@ -6,6 +6,16 @@ Entrega sobre `autorebuild_entregable_maqueta.md` (23-nov-2026). La maqueta es l
 
 «Ahora» de la maqueta: **jue 19-nov-2026 10:00 CST**. Los textos, IDs y montos son ilustrativos.
 
+### Decisiones del refinamiento (25-nov)
+
+| Tema | Decisión | En la maqueta |
+|---|---|---|
+| Objetivo | Reconstruir el ciclo en curso del camión con las cargas reales de My Loads y preseleccionar las que van en la ruta. La detección del ciclo y la selección de cargas viven en el backend. | Sin cambios: el modal muestra el resultado, no el razonamiento. |
+| Puntos de entrada | Un solo modal para tres entradas: **Plan de la ruta, Crear ruta y My Loads**. Desde My Loads se elige la **unidad**, nunca una carga suelta. Easy routes deja de ser punto de entrada. | Se quitó la barra Auto-rebuild de Easy routes (casos 4 y 5, G4 y G5 pasan a «Fuera»). J1 pasa a «Decidido». |
+| Selección | El usuario puede ajustar los **extremos** del ciclo: recortar o ampliar por el inicio o por el final. Nunca puede crear una ruta que se salte una carga **en medio**. | Si una carga queda fuera entre dos cargas de la ruta, aviso rojo y botón de construir bloqueado, con tres arreglos: «Check #X again», «Drop the N before» y «Drop the N after». Un arreglo que quitaría lanes ya ejecutadas no se ofrece. La misma regla aplica en el modal (K1) y en las tarjetas de Crear ruta (K2, bloquea Continue). |
+| Excepciones del bloqueo | No cuentan como hueco: la carga descartada de un par «Not compatible», las canceladas o reasignadas, las cargas planeadas en otra ruta y las cargas libres del ciclo anterior o siguiente. | Ampliar por un extremo exige marcar también las cargas que quedan entre la nueva y el ciclo. |
+| Crear ruta y Easy routes | El flujo nuevo va directo al detalle de la ruta, así que no aplica la validación de fechas de Easy routes contra driver, trailer y cabina. No se reutiliza la implementación anterior de Easy routes / Auto-rebuild: el equipo estima que empezar de cero tarda menos. | Continue en Crear ruta abre siempre el Plan (antes, sin cargas de ciclo, abría Easy routes). «Complete with Easy routes» (F5) se mantiene como acción opcional después de construir. |
+
 ## 0. Casos de uso por prioridad — empezar por P1
 
 Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes y al final los rebuscados. En la maqueta, el selector «Casos Auto-rebuild» abre en la pestaña **Casos de uso**, con este mismo orden. La pestaña «Auto-rebuild cases» de Rutas también ordena por prioridad, y la ficha del Plan muestra el caso con su prioridad, escenario, prueba y resultado esperado.
@@ -13,7 +23,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 | Prioridad | Criterio |
 |---|---|
 | **P1 · Común** | Pasa todos los días y define el resultado del ciclo: con o sin HOS, cargas que se solapan, una carga partida entre dos ciclos, continuar el siguiente ciclo en la misma ruta, y recap contra dejar para el siguiente ciclo. |
-| **P2 · Frecuente** | Flujos diarios de armado: ruta vacía, huecos, Crear ruta, Easy routes, rutas vecinas, TONU, My Loads. |
+| **P2 · Frecuente** | Flujos diarios de armado: ruta vacía, huecos, ajustar los extremos sin saltarse cargas, Crear ruta, rutas vecinas, TONU, My Loads. |
 | **P3 · Ocasional** | Pasa de vez en cuando: cambios del TMS, ELD lento, cambio de conductor, discrepancias de HOS, fechas pasadas, ancla en un descanso, datos incompletos. |
 | **P4 · Raro** | Casos de borde: 10 días sin reset, ventana vacía, cambio de cabina, concurrencia y errores, sin unidad. |
 
@@ -28,7 +38,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 | UC07 | P2 · Frecuente | Ruta vacía → ciclo completo (caso 6) | BE-10 | R-AR03 | caso 6, D1, E1, F1, F2, F4, F5, G3, F10 |
 | UC08 | P2 · Frecuente | Huecos en el ciclo → «fills gap» (caso 8) | BE-5 | R-AR07 | caso 8, E3, E9, F3, G6 |
 | UC09 | P2 · Frecuente | Crear ruta con una unidad que ya tiene ciclo (caso 2) | BE-4 | Crear ruta · unidad 5017 | caso 2, G1, D6 |
-| UC10 | P2 · Frecuente | Unidad sin cargas de ciclo → Easy routes (casos 1 y 5) | BE-4 | Crear ruta · unidad 2201 | caso 1, caso 5, G4 |
+| UC10 | P2 · Frecuente | Unidad sin cargas de ciclo → detalle de la ruta (caso 1) | BE-4 | Crear ruta · unidad 2201 | caso 1, K3 |
 | UC11 | P2 · Frecuente | Cargas en el borde de la ruta anterior → «move here» (caso 10) | BE-7 | R-AR09P, R-AR09 | caso 10, E6, J7 |
 | UC12 | P2 · Frecuente | Carga del próximo ciclo con una ruta siguiente → moverla o quitarla (caso 9) | BE-7 | R-AR08, R-AR08N | caso 9, E4, E13, J6 |
 | UC13 | P2 · Frecuente | TONU dentro del ciclo | BE-1 | R-AR22 | A3, J3b |
@@ -45,7 +55,8 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 | UC24 | P4 · Raro | Ventana sin cargas | BE-4 | R-AR19 | C11 |
 | UC25 | P4 · Raro | Cambio de cabina → ruta nueva consecutiva | BE-11 | R-AR21 | I2 |
 | UC26 | P4 · Raro | Concurrencia y error al construir | BE-10 | R-AR14 | F8, F9 |
-| UC27 | P4 · Raro | Ruta o Crear ruta sin unidad | BE-4 | Crear ruta · Any unit | A6, G2, G5, caso 4 |
+| UC27 | P4 · Raro | Ruta o Crear ruta sin unidad | BE-4 | Crear ruta · Any unit | A6, G2 |
+| UC28 | P2 · Frecuente | Ajustar los extremos del ciclo sin saltarse una carga en medio | BE-10 | R-AR07 | K1, K2, E9 |
 
 #### P1 · Común
 
@@ -98,7 +109,7 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 
 - **Escenario:** Ruta con Houston→Dallas, OKC→KC (en tránsito), St. Louis→Indianapolis y Columbus→Pittsburgh. El TMS tiene Dallas→OKC y KC→St. Louis; entre Indianapolis y Columbus no hay carga.
 - **Prueba:** Abre Auto-rebuild; desmarca Dallas→OKC y vuelve a marcarla. Construye. Antes de construir, prueba también Refresh ▾ → Cycle loads.
-- **Esperado:** Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso de una línea «leaves a gap in the cycle» (no bloquea). Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.
+- **Esperado:** Dos filas «fills gap» preseleccionadas (borde ámbar). Al desmarcar una: aviso rojo «left out in the middle of the route», el botón de construir queda bloqueado y el aviso ofrece «Check again» o recortar un extremo. Tras construir: lanes encadenadas y un DH Indianapolis→Columbus. Refresh ▾ lista las mismas 2 cargas y permite agregarlas sueltas.
 
 **UC09 · Crear ruta con una unidad que ya tiene ciclo (caso 2)** — BE-4 · Crear ruta · unidad 5017 · cubre caso 2, G1, D6
 
@@ -106,11 +117,11 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Elige la unidad. Revisa el bloque «Loads in this truck cycle». Cambia la fecha de salida. Abre «View full cycle».
 - **Esperado:** Bloque con el resumen del ciclo y las tarjetas preseleccionadas (la TONU sin tachado: «Not delivered to New Orleans»). Origin = San Antonio, el inicio del ciclo. Cambiar la fecha recalcula sin pisar lo que editaste. «View full cycle» abre el mismo modal en modo Crear ruta.
 
-**UC10 · Unidad sin cargas de ciclo → Easy routes (casos 1 y 5)** — BE-4 · Crear ruta · unidad 2201 · cubre caso 1, caso 5, G4
+**UC10 · Unidad sin cargas de ciclo → detalle de la ruta (caso 1)** — BE-4 · Crear ruta · unidad 2201 · cubre caso 1, K3
 
 - **Escenario:** Crear ruta con la unidad 2201, que no tiene cargas en el TMS alrededor de hoy.
-- **Prueba:** Continúa a Easy routes. Usa la barra Auto-rebuild y cancela.
-- **Esperado:** El bloque de ciclo dice que no hay cargas. En Easy routes la barra Auto-rebuild está activa; el modal muestra «No loads in this cycle» y cancelar vuelve al Plan vacío.
+- **Prueba:** Continue. En el Plan vacío toca Auto-rebuild y cancela.
+- **Esperado:** El bloque de ciclo dice que no hay cargas. Continue abre el detalle de la ruta (Plan vacío), no Easy routes. Auto-rebuild muestra «No loads in this cycle» y cancelar vuelve al Plan vacío.
 
 **UC11 · Cargas en el borde de la ruta anterior → «move here» (caso 10)** — BE-7 · R-AR09P, R-AR09 (S09) · cubre caso 10, E6, J7
 
@@ -135,6 +146,12 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Escenario:** My Loads sin filtro de unidad. Unidad 2069 (Lena Fox) con cargas libres y sin ruta.
 - **Prueba:** Toca «Auto-rebuild cycle» → busca «lena» → elige 2069. Prueba también desde un Plan: «Add» → «Add load».
 - **Esperado:** Sin unidad, primero se abre el selector (unidad, driver, «on the road», número de cargas). La unidad queda como filtro y se conservan los demás. Con 2069 se crea una ruta vacía y se abre el mismo modal con «Trucks» fijo. Desde el Plan, «Add load» abre My Loads filtrado por la unidad, con «← Back to route».
+
+**UC28 · Ajustar los extremos del ciclo sin saltarse una carga en medio** — BE-10 · R-AR07 (S07) · cubre K1, K2, E9
+
+- **Escenario:** Misma ruta de UC08: el ciclo tiene 6 cargas y 2 «fills gap» en medio. En Crear ruta, la unidad 5017 tiene 3 cargas de ciclo.
+- **Prueba:** En el modal desmarca la primera carga libre del extremo: construye. Luego desmarca Dallas→OKC (en medio) y prueba «Check again», «Drop the N before» y «Drop the N after». En Crear ruta (5017) desmarca la tarjeta del medio.
+- **Esperado:** Recortar un extremo se permite. Una carga desmarcada en medio pone el aviso rojo y bloquea el botón; cada arreglo deja la selección contigua y vuelve a habilitarlo. Si un lado tiene lanes ya ejecutadas, ese arreglo no se ofrece. En Crear ruta, Continue queda bloqueado con los mismos arreglos.
 
 
 #### P3 · Ocasional
@@ -214,12 +231,11 @@ Los casos se ordenan por **frecuencia × importancia**. Primero van los comunes 
 - **Prueba:** Rebuild → revisa → Rebuild → Retry.
 - **Esperado:** 1.º: no construye, «The cycle changed while you were reviewing it» y el modal recargado con la carga nueva. 2.º: «Building route…» → «Couldn’t build the route» con Retry. Retry → Plan + toast con Undo.
 
-**UC27 · Ruta o Crear ruta sin unidad** — BE-4 · Crear ruta · Any unit · cubre A6, G2, G5, caso 4
+**UC27 · Ruta o Crear ruta sin unidad** — BE-4 · Crear ruta · Any unit · cubre A6, G2
 
 - **Escenario:** Crear ruta en modo Any unit (sin unidad). En Rutas, R-2602 no tiene unidad.
-- **Prueba:** Continúa a Easy routes y toca Auto-rebuild. Elige un recurso ocupado en «Assign driver & equipment».
-- **Esperado:** Sin bloque de ciclo. Auto-rebuild deshabilitado con candado y el motivo; al tocarlo se abre «Assign driver & equipment». Un recurso ocupado en otra ruta que se solapa bloquea Save.
-
+- **Prueba:** Continue: abre el detalle de la ruta. Toca Auto-rebuild en el Plan. Elige un recurso ocupado en «Assign driver & equipment».
+- **Esperado:** Sin bloque de ciclo; el Plan abre sin pasar por Easy routes. Auto-rebuild deshabilitado con candado y el motivo; al tocarlo se abre «Assign driver & equipment». Un recurso ocupado en otra ruta que se solapa bloquea Save.
 
 ## 0b. Grupos de manejo en backend — una historia por grupo
 
@@ -230,13 +246,13 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 | BE-1 · Entrada del motor: cargas de la unidad y hora de cada parada | P2 | UC13 (P2), UC22 (P3) | A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, B6, J3b |
 | BE-2 · Bordes del ciclo, con y sin HOS (incluye recap) | P1 | UC01 (P1), UC02 (P1), UC04 (P1), UC06 (P1), UC17 (P3), UC18 (P3), UC23 (P4) | C1, C2, C3, C4, C5, C6, C7, C8, C9, H4, I1, J5, J9 |
 | BE-3 · HOS no disponible (ELD lento o caído) | P3 | UC16 (P3) | C10, H1 |
-| BE-4 · Ancla y puntos de entrada (mismo endpoint) | P2 | UC09 (P2), UC10 (P2), UC14 (P2), UC19 (P3), UC20 (P3), UC24 (P4), UC27 (P4) | D1, D2, D3, D4, D5, D6, G1, G2, G3, G4, G5, G7, G8, A6, C11, E8, J1, caso 1, caso 2, caso 4, caso 5 |
+| BE-4 · Ancla y puntos de entrada (mismo endpoint) | P2 | UC09 (P2), UC10 (P2), UC14 (P2), UC19 (P3), UC20 (P3), UC24 (P4), UC27 (P4) | D1, D2, D3, D4, D5, D6, G1, G2, G3, G4, G5, G7, G8, A6, C11, E8, J1, K3, K4, caso 1, caso 2, caso 4, caso 5 |
 | BE-5 · Faltantes del ciclo frente a la ruta | P2 | UC08 (P2) | E1, E2, E3, E9, E12, G6, H3, J2, caso 7, caso 8 |
 | BE-6 · Siguiente ciclo en la misma ruta | P1 | UC05 (P1) | J8 |
 | BE-7 · Cargas fuera del ciclo y entre rutas vecinas | P2 | UC11 (P2), UC12 (P2), UC21 (P3) | E4, E5, E6, E7, E13, J6, J7, caso 9, caso 10 |
 | BE-8 · Cargas no compatibles | P1 | UC03 (P1) | J4 |
 | BE-9 · Cambios del TMS y Sync | P3 | UC15 (P3) | E10, E11, H2, J3 |
-| BE-10 · Construcción de la ruta (build) | P2 | UC07 (P2), UC26 (P4) | F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, caso 6 |
+| BE-10 · Construcción de la ruta (build) | P2 | UC07 (P2), UC26 (P4), UC28 (P2) | F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, K1, K2, caso 6 |
 | BE-11 · Cambio de cabina | P4 | UC25 (P4) | I2 |
 
 **BE-1 · Entrada del motor: cargas de la unidad y hora de cada parada** (P2)
@@ -256,8 +272,8 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 
 **BE-4 · Ancla y puntos de entrada (mismo endpoint)** (P2)
 
-- **Mismo manejo:** Todas las entradas llaman al mismo endpoint con la unidad, la ruta (opcional) y el ancla; lo único que cambia es el ancla. El ancla es, en este orden: la carga en movimiento, la carga más antigua, la salida de la ruta, o ahora / la fecha elegida. Si el ancla cae en un descanso se toma el ciclo siguiente, o el anterior si no hay siguiente. Sin unidad no se calcula.
-- **Casos de uso:** UC09 Crear ruta con una unidad que ya tiene ciclo (caso 2) · UC10 Unidad sin cargas de ciclo → Easy routes (casos 1 y 5) · UC14 Desde My Loads (con y sin unidad filtrada) · UC19 Fecha de salida pasada · UC20 Ancla dentro de un descanso · UC24 Ventana sin cargas · UC27 Ruta o Crear ruta sin unidad
+- **Mismo manejo:** Las entradas son tres: Plan, Crear ruta y My Loads (con la unidad elegida, nunca una carga suelta). Todas llaman al mismo endpoint con la unidad, la ruta (opcional) y el ancla; lo único que cambia es el ancla. El ancla es, en este orden: la carga en movimiento, la carga más antigua, la salida de la ruta, o ahora / la fecha elegida. Si el ancla cae en un descanso se toma el ciclo siguiente, o el anterior si no hay siguiente. Sin unidad no se calcula.
+- **Casos de uso:** UC09 Crear ruta con una unidad que ya tiene ciclo (caso 2) · UC10 Unidad sin cargas de ciclo → detalle de la ruta (caso 1) · UC14 Desde My Loads (con y sin unidad filtrada) · UC19 Fecha de salida pasada · UC20 Ancla dentro de un descanso · UC24 Ventana sin cargas · UC27 Ruta o Crear ruta sin unidad
 
 **BE-5 · Faltantes del ciclo frente a la ruta** (P2)
 
@@ -286,8 +302,8 @@ Agrupa los casos de uso que el backend resuelve **con el mismo manejo**: la mism
 
 **BE-10 · Construcción de la ruta (build)** (P2)
 
-- **Mismo manejo:** Un solo POST idempotente aplica los cambios: • ordena las cargas por pickup; • pone Origin en el inicio del ciclo; • crea DH solo entre cargas no contiguas; • borra las Unbooked cubiertas y re-encadena las posteriores; • deja lo ejecutado en solo lectura; • pasa la ruta a In Progress solo si algo ya empezó. Si el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.
-- **Casos de uso:** UC07 Ruta vacía → ciclo completo (caso 6) · UC26 Concurrencia y error al construir
+- **Mismo manejo:** Un solo POST idempotente aplica los cambios: • ordena las cargas por pickup; • pone Origin en el inicio del ciclo; • crea DH solo entre cargas no contiguas; • borra las Unbooked cubiertas y re-encadena las posteriores; • deja lo ejecutado en solo lectura; • rechaza una ruta que se salta una carga en medio del ciclo (los extremos sí se pueden recortar o ampliar); • pasa la ruta a In Progress solo si algo ya empezó. Si el ciclo cambió mientras se revisaba, rechaza el cambio, y siempre se puede deshacer.
+- **Casos de uso:** UC07 Ruta vacía → ciclo completo (caso 6) · UC26 Concurrencia y error al construir · UC28 Ajustar los extremos del ciclo sin saltarse una carga en medio
 
 **BE-11 · Cambio de cabina** (P4)
 
@@ -316,7 +332,7 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | T5a (modal) | Todos los grupos con señal en el modal | Una señal mínima por grupo: línea «Now» (BE-5), «Not compatible · choose one» (BE-8), «split by a reset» y chip «Recap» (BE-2), interruptor «Next cycle in this route» (BE-6), «move to next/previous route» (BE-7). Sin tachado y sin filas de pausa. |
 | Construcción (build) | BE-10 | Un solo POST idempotente con orden por pickup, Origin, DH, Unbooked, solo lectura, In Progress, concurrencia y deshacer. |
 | T4a (botón) | BE-4 | My Loads: el botón siempre está activo; sin unidad, primero abre el selector. |
-| T4b (asignar desde Easy routes) | BE-4 | Sin cambios de alcance. |
+| T4b (asignar desde Easy routes) | BE-4 | Easy routes ya no abre Auto-rebuild (refinamiento 25-nov); revisar si la tarea sigue aplicando. |
 | T4c (conflicto de recursos) | BE-4, BE-11 | Sin cambios. |
 | CR · Crear ruta con cargas pasadas | BE-4, BE-10 | Origin = inicio del ciclo; tarjetas TONU sin tachado. |
 | Origin y fecha según la ubicación real | BE-10 | Sin cambios (decisión del 23-nov ya aplicada). |
@@ -327,11 +343,11 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 ### Prototipo `2026-11-23_autorebuild_prototipo.html`
 | Caso | Pantalla |
 |---|---|
-| 1 | Crear ruta · Assign unit · unidad sin cargas de ciclo → Easy routes |
+| 1 | Crear ruta · Assign unit · unidad sin cargas de ciclo → Easy routes (25-nov: ahora → detalle de la ruta) |
 | 2 | Crear ruta · Assign unit · unidad con cargas de ciclo → ruta con cargas |
 | 3 | (eliminado el 23-nov: Any unit) |
-| 4 | Easy routes con Any unit → Auto-rebuild deshabilitado |
-| 5 | Easy routes con equipo asignado → opción Auto-rebuild |
+| 4 | Easy routes con Any unit → Auto-rebuild deshabilitado (25-nov: fuera de alcance) |
+| 5 | Easy routes con equipo asignado → opción Auto-rebuild (25-nov: fuera de alcance) |
 | 6 | Plan de ruta vacía → botón Auto-rebuild |
 | 7 | Ruta con cargas → completar hacia atrás |
 | 8 | Cargas con huecos → rellenar el ciclo |
@@ -342,24 +358,24 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | Pantalla / componente | Qué hace con Auto-rebuild |
 |---|---|
 | **Motor único** `_arEngine` (truck-cycle/) | Llave = número de unidad normalizado (agrupa cabinas). Horas en UTC y cada parada en su hora local con huso y fuente (real / planned / estimated). Bordes por hueco ≥ 34 h o reset de HOS (mismo driver), discrepancia, reset dentro de una carga y ventana de 10 días. Ancla por contexto, clasificación, vecinas, cambios del TMS, Origin y Unbooked cubiertas. |
-| **Crear ruta** (Any unit / Assign unit) | Bloque «Loads in this truck cycle»: resumen del ciclo (bordes, ancla, HOS), tarjetas con horas, huso y fuente, **View full cycle** (mismo modal, la selección vuelve al bloque), Origin = inicio del ciclo de la ruta (sigue al ciclo, no a la selección), cambiar la fecha recalcula el ciclo sin pisar lo editado, y aviso de hueco. |
-| **Easy routes** (lane map post-create) | Barra de Auto-rebuild: con unidad abre el modal sobre el Plan vacío (cancelar deja el Plan); sin unidad, bloqueada con «Assign unit». |
+| **Crear ruta** (Any unit / Assign unit) | Bloque «Loads in this truck cycle»: resumen del ciclo (bordes, ancla, HOS), tarjetas con horas, huso y fuente, **View full cycle** (mismo modal, la selección vuelve al bloque), Origin = inicio del ciclo de la ruta (sigue al ciclo, no a la selección), cambiar la fecha recalcula el ciclo sin pisar lo editado. Una tarjeta desmarcada en medio bloquea Continue y ofrece los arreglos (K2). Continue abre siempre el detalle de la ruta. |
+| **Easy routes** (lane map) | Ya no es punto de entrada de Auto-rebuild (25-nov): se quitó su barra. Se llega desde «Complete with Easy routes» o «Search loads» del Plan. |
 | **Plan** | Pill en la toolbar y estado vacío. Lanes con hora local, huso y fuente, candado en tramos ejecutados, DH con millas reales entre ciudades, línea «Cycle continues from here» sobre la carga en movimiento, banner de resultado, aviso «HOS differ» con «Reopen Auto-rebuild», aviso en la ruta vecina, «Complete with Easy routes» y «Add» → My Loads filtrado. |
 | **Refresh ▾ → Cycle loads** | Misma respuesta del motor: lista las cargas del ciclo que faltan y «+ Add» inserta una sola sin reorganizar. |
 | **Modal Auto-rebuild** (único) | Estados ELD (Checking / sin HOS / HOS disponible), frescura + Sync, contexto (unidad/cabinas, driver informativo, ancla, ventana, Origin, HOS), avisos, filtros ampliables, marcadores de inicio y fin, pausas, secciones ciclo anterior / próximo / fuera del ciclo / otras rutas / ya no es de la unidad, acciones por fila (quitar, mover, actualizar desde TMS), métricas «Will be added» + «Resulting cycle» + HOS, y CTA según el estado. |
 | **Building route…** | Asíncrono, error con Retry (idempotente) y concurrencia («the cycle changed», sin construir, modal recargado). Toast con Undo. |
 | **Assign driver & equipment** | Unidad obligatoria, conflicto por solape que bloquea Save, cambio de driver en la misma ruta y cambio de cabina que crea una ruta nueva consecutiva. |
-| **My Loads** | Barra «Auto-rebuild cycle» (solo con filtro de una unidad), banner «Back to route» cuando viene de «Add load». |
+| **My Loads** | Barra «Auto-rebuild cycle» siempre activa: con una unidad filtrada abre su ciclo; sin ella, primero el selector de unidad (J1), banner «Back to route» cuando viene de «Add load». |
 | **On Road / Report** | Renderizan las rutas reconstruidas (sin cambios funcionales de Auto-rebuild). |
 
 ## 2. Matriz de cobertura final
 
 | Caso | Qué cubre | Grupo backend | Pantalla / componente | Estado | Cómo recorrerlo |
 |---|---|---|---|---|---|
-| caso 1 | Crear ruta · Assign unit · unidad sin cargas de ciclo → Easy routes | BE-4 | Crear ruta (bloque vacío) → Easy routes | Ofrecido | Crear ruta · unidad 2201 |
+| caso 1 | Crear ruta · Assign unit · unidad sin cargas de ciclo → detalle de la ruta | BE-4 | Crear ruta (bloque vacío) → Plan | Ofrecido | Crear ruta · unidad 2201 |
 | caso 2 | Crear ruta · Assign unit · unidad con cargas de ciclo | BE-4 | Crear ruta · bloque de ciclo | Ofrecido | Crear ruta · unidad 5017 |
-| caso 4 | Any unit → Easy routes con Auto-rebuild deshabilitado | BE-4 | Easy routes (barra Auto-rebuild) | Ofrecido | Crear ruta · Any unit → Continue |
-| caso 5 | Assigned equipment → Easy routes → Auto-rebuild | BE-4 | Easy routes (barra Auto-rebuild) | Ofrecido | Crear ruta · unidad 2201 → Continue |
+| caso 4 | Any unit → Easy routes con Auto-rebuild deshabilitado | BE-4 | Easy routes (barra Auto-rebuild) | Fuera | Crear ruta · Any unit → Continue — Refinamiento 25-nov: Easy routes ya no es punto de entrada. |
+| caso 5 | Assigned equipment → Easy routes → Auto-rebuild | BE-4 | Easy routes (barra Auto-rebuild) | Fuera | Crear ruta · unidad 2201 → Continue — Refinamiento 25-nov: Easy routes ya no es punto de entrada. |
 | caso 6 | Plan de ruta vacía → Auto-rebuild | BE-10 | Plan · estado vacío + modal | Ofrecido | S03 · R-AR03 |
 | caso 7 | Ruta con cargas → completar hacia atrás | BE-5 | Modal | Ofrecido | S02 · R-AR02 (modal) |
 | caso 8 | Cargas con huecos → fills gap | BE-5 | Modal | Ofrecido | S07 · R-AR07 (modal) |
@@ -402,7 +418,7 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | E6 | Mover desde el borde de la vecina (bloque; deshabilitado si Finished) | BE-7 | Modal + aviso en la vecina | Ofrecido | S09 · R-AR09 (modal) |
 | E7 | Carga en medio / ruta no vecina: oculta, bloqueada con enlace | BE-7 | Modal | Ofrecido | S10 · R-AR10 (modal) |
 | E8 | Filtros ampliados → «Outside the detected cycle» | BE-4 | Modal | Ofrecido | S02 · R-AR02 (modal) |
-| E9 | Desmarcar una intermedia → aviso de hueco | BE-5 | Modal | Ofrecido | S07 · R-AR07 (modal) |
+| E9 | Desmarcar una intermedia → bloquea la construcción + cómo arreglarlo | BE-5 | Modal | Ofrecido | S07 · R-AR07 (modal) |
 | E10 | Cambió en el TMS → «Update from TMS» | BE-9 | Modal | Ofrecido | S11 · R-AR11 (modal) |
 | E11 | Cancelada o reasignada → «no longer on this unit» | BE-9 | Modal | Ofrecido | S11 · R-AR11 (modal) |
 | E12 | Ciclo ya completo → «Nothing to add» | BE-5 | Modal | Ofrecido | S01 · R-AR01 (modal) |
@@ -421,8 +437,8 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | G1 | Crear ruta · Assign unit: bloque resumen + «View full cycle»; Origin = inicio del ciclo de la ruta | BE-4 | Crear ruta | Ofrecido | Crear ruta · unidad 5017 — Cambia la fecha (D6) para ver cómo Origin sigue al ciclo. |
 | G2 | Crear ruta · Any unit: sin bloque | BE-4 | Crear ruta | Ofrecido | Crear ruta · Any unit |
 | G3 | Plan: toolbar + estado vacío; solo con unidad | BE-4 | Plan | Ofrecido | S03 · R-AR03 |
-| G4 | Easy routes con unidad: modal; cancelar → Plan vacío | BE-4 | Easy routes | Ofrecido | Crear ruta · unidad 2201 → Continue |
-| G5 | Easy routes sin unidad: deshabilitado + asignar (solape bloquea Save) | BE-4 | Easy routes + Assign | Ofrecido | Crear ruta · Any unit → Continue |
+| G4 | Easy routes con unidad: modal; cancelar → Plan vacío | BE-4 | Easy routes | Fuera | Crear ruta · unidad 2201 → Continue — Refinamiento 25-nov: Easy routes ya no es punto de entrada. |
+| G5 | Easy routes sin unidad: deshabilitado + asignar (solape bloquea Save) | BE-4 | Easy routes + Assign | Fuera | Crear ruta · Any unit → Continue — Refinamiento 25-nov: Easy routes ya no es punto de entrada. |
 | G6 | Cycle loads (Refresh) con el mismo motor | BE-5 | Plan · Refresh ▾ | Ofrecido | S07 · R-AR07 — Abre Refresh ▾ en la toolbar del Plan. |
 | G7 | «Add» en el Plan → My Loads filtrado por la unidad | BE-4 | Plan → My Loads | Ofrecido | S01 · R-AR01 — Usa «Add» al final de las lanes → «Add load». |
 | G8 | My Loads filtrado por una unidad → «Auto-rebuild cycle» | BE-4 | My Loads | Ofrecido | My Loads · unidad 2069 — Con 2069 crea una ruta vacía; prueba también con 2045 (abre su ruta). |
@@ -432,7 +448,7 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | H4 | Sin HOS: sin bloque de factibilidad | BE-2 | Modal · pie | Ofrecido | S02 · R-AR02 (modal) |
 | I1 | Cambio de conductor: misma ruta + aviso | BE-2 | Modal / Assign | Ofrecido | S15 · R-AR15 (modal) |
 | I2 | Cambio de cabina: ruta nueva consecutiva | BE-11 | Assign → ruta nueva | Ofrecido | S21 · R-AR21 |
-| J1 | My Loads sin unidad → selector de unidad → mismo modal | BE-4 | My Loads → selector → modal | Propuesta | My Loads · sin filtro de unidad — Los filtros del ciclo (unidad y fechas) quedan fijos en el modal. |
+| J1 | My Loads sin unidad → selector de unidad → mismo modal | BE-4 | My Loads → selector → modal | Decidido | My Loads · sin filtro de unidad — Los filtros del ciclo (unidad y fechas) quedan fijos en el modal. |
 | J2 | Ciclo: lo ejecutado y lo que viene (línea «Now») | BE-5 | Modal | Propuesta | S01 · R-AR01 (modal) |
 | J3 | Cargas con problema sin tachado: cancelada / reasignada con el motivo | BE-9 | Modal | Propuesta | S11 · R-AR11 (modal) |
 | J3b | TONU sin tachado: destino = pickup + «not delivered» | BE-1 | Modal + Crear ruta | Propuesta | S22 · R-AR22 (modal) |
@@ -442,6 +458,10 @@ Qué cambiaría en cada tarea cuando se pase a Notion, en el orden P1 → P4:
 | J7 | Cargas en otra ruta: no se cuentan dos veces; mover respeta el orden | BE-7 | Modal | Propuesta | S09 · R-AR09 (modal) |
 | J8 | Continuar el siguiente ciclo en la misma ruta (interruptor en «Cycle end») | BE-6 | Modal | Propuesta | S25 · R-AR25 (modal) |
 | J9 | Carga partida por un reset: etiqueta «split by a reset» | BE-2 | Modal | Propuesta | S17 · R-AR17 (modal) |
+| K1 | Se ajustan los extremos (recortar o ampliar), nunca se salta una carga en medio: Build bloqueado + «Check again» / «Drop the N before» / «Drop the N after» | BE-10 | Modal | Decidido | S07 · R-AR07 (modal) — Desmarca Dallas→OKC (en medio) y prueba los tres arreglos. |
+| K2 | Misma regla en Crear ruta: tarjeta del medio desmarcada → Continue bloqueado + arreglos | BE-10 | Crear ruta · bloque de ciclo | Decidido | Crear ruta · unidad 5017 — Desmarca Houston→Dallas (la del medio). |
+| K3 | Crear ruta va directo al detalle de la ruta (no abre Easy routes) | BE-4 | Crear ruta → Plan | Decidido | Crear ruta · unidad 2201 → Continue |
+| K4 | Tres puntos de entrada: Plan, Crear ruta y My Loads (se elige la unidad, no una carga) | BE-4 | Plan · Crear ruta · My Loads | Decidido | My Loads · sin filtro de unidad |
 
 ### Propuestas de la reunión del 23-nov (grupo J, estado «Propuesta»)
 
@@ -499,7 +519,7 @@ Son propuestas, no decisiones cerradas. Están en la maqueta para poder probarla
 10. **Horas que necesita el plan (H3).** No está definido cómo se calculan (¿solo manejo?, ¿on-duty?). La maqueta usa millas futuras / 50 + 30 % del DH.
 11. **Cambio de cabina (I2).** No está claro dónde se dispara en el producto (¿Edit route?, ¿Assign?). La maqueta usa «Assign driver & equipment» (botón en la ficha de S21). Además falta decidir qué pasa con las cargas Booked futuras de la ruta anterior: hoy se quedan donde están.
 12. **Cycle loads (Refresh) y Unbooked.** Al agregar una carga suelta «sin reorganizar», puede quedar solapada con un Unbooked. ¿Se borra el placeholder que cubre o se deja?
-13. **Ancla desde Easy routes.** La decisión dice «la fecha del filtro», pero la pantalla de Easy routes de la maqueta no tiene filtro de fecha. Usa la fecha de salida de la ruta (que en Crear ruta es «ahora» o la fecha que eligió el usuario).
+13. ~~**Ancla desde Easy routes.**~~ **Ya no aplica (25-nov):** Easy routes dejó de ser punto de entrada. Texto original: la decisión dice «la fecha del filtro», pero la pantalla de Easy routes de la maqueta no tiene filtro de fecha. Usa la fecha de salida de la ruta (que en Crear ruta es «ahora» o la fecha que eligió el usuario).
 14. **G8 con varias rutas.** Si el ciclo toca varias rutas de la unidad, ¿cuál se abre? La maqueta abre la de la primera carga del ciclo que esté en una ruta.
 15. **Unbooked «cubiertas» (F4).** Falta definirlas. La maqueta trata como cubiertas las que tienen pickup hasta el fin del ciclo; las posteriores se re-encadenan desde la última carga.
 16. **Cancelada o reasignada (E11).** Al quitarla de la ruta, la maqueta la deja libre en My Loads. Para una reasignada a otra unidad, ¿debería desaparecer del todo?

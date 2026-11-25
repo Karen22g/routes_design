@@ -275,6 +275,10 @@ input[type="date"] { color-scheme: dark; }
 #cr-root .cr-load-meta.cr-load-times { white-space: normal; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; color: var(--cr-text-dim); }
 #cr-root .cr-cab-tag { flex-shrink: 0; padding: 1px 6px; border-radius: 999px; font-size: 8.5px; font-weight: 800; text-transform: uppercase; color: #9a7fd1; background: rgba(154,127,209,.12); border: 1px solid rgba(154,127,209,.4); }
 #cr-root .cr-cycle-full { color: #6688cc; font-weight: 800; cursor: pointer; white-space: nowrap; }
+#cr-root .cr-cycle-hole { margin-top: 8px; padding: 8px 10px; border-radius: 9px; background: rgba(204,102,111,.08); border: 1px solid rgba(204,102,111,.4); font-size: 11px; color: var(--cr-text-muted); line-height: 1.45; }
+#cr-root .cr-cycle-hole b { color: #e6e6e6; }
+#cr-root .cr-hole-fixes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+#cr-root .cr-hole-fix { color: #cc666f; font-weight: 800; cursor: pointer; white-space: nowrap; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(204,102,111,.45); }
 /* TONU cycle card: struck consignee, TONU tag, fee caption */
 #cr-root .cr-load-tonu .cr-load-route s { color: var(--cr-text-muted); }
 #cr-root .cr-tonu-tag { flex-shrink: 0; padding: 1px 6px; border-radius: 5px; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #e8a33d; background: rgba(232,163,61,.1); border: 1px solid rgba(232,163,61,.55); }
