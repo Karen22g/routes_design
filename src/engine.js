@@ -5069,8 +5069,7 @@ export function initApp() {
       : (r.status === 'Completed' ? 'This route is finished — nothing to rebuild.' : 'Assign a unit first. The unit is the key of the cycle; the driver is optional (it only brings HOS).');
     b.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:' + (opts.big ? '8px 14px' : '6px 12px') + ';margin:' + (opts.margin || '6px 0') + ';border-radius:999px;font:800 12px ' + F + ';white-space:nowrap;flex-shrink:0;' +
       (ok ? 'cursor:pointer;color:#141414;background:#2e9975;border:1px solid #2e9975' : 'cursor:not-allowed;color:#666666;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)');
-    b.innerHTML = (ok ? _AR_ICON : _AR_LOCK) + '<span>Auto-rebuild</span>' +
-      '<span style="font:900 8.5px ' + F + ';letter-spacing:.04em;padding:2px 5px;border-radius:5px;' + (ok ? 'background:#141414;color:#47b26b' : 'background:rgba(255,255,255,.08);color:#808080') + '">NEW</span>';
+    b.innerHTML = (ok ? _AR_ICON : _AR_LOCK) + '<span>Auto-rebuild</span>';
     if (ok) b.addEventListener('click', function (e) { e.stopPropagation(); if (opts.onOpen) opts.onOpen(); _openAutoRebuild(rId, opts); });
     else if (r.status !== 'Completed') {
       b.style.cursor = 'pointer';
