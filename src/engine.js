@@ -347,15 +347,14 @@ export function initApp() {
     const l = ls[i];
     const from = i === 0 ? (l.tonuFrom || r.cycleOrigin || l.origin) : ls[i - 1].dest;
     if (l.tonu && l.dhMi) return { from: from, mi: l.dhMi };
-    // Decided 26-nov: a deadhead exists only when the address changes. Same city → real local miles between the two
-    // stops, or none when it's the same address (the first lane starts at the route origin: no DH in the same city).
-    if (!from || from === l.origin) { var lm = i ? _arLocalDh(ls[i - 1], l) : 0; return lm ? { from: from || l.origin, mi: lm, local: true } : null; }
+    // Decided 26-nov: there is ALWAYS a DH lane between a dropoff and the next pickup (and from the Origin to the first
+    // pickup), even when it's very short — same city → the real local miles between the two stops.
+    if (!from || from === l.origin) return { from: from || l.origin, mi: _arLocalDh(i ? ls[i - 1] : { id: 'origin-' + r.id }, l), local: true };
     return { from: from, mi: _arMiles(from, l.origin) };
   }
-  // Stop address of a load (pu/do). Seeded loads have no street address → a stable facility index per city.
+  // Local deadhead inside a city (seeded loads have no street address → stable local miles per pair of stops)
   function _arMix(s) { var h = _arHash(s); h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; return (h ^ (h >>> 13)) >>> 0; }
-  function _arAddr(l, side) { return l[side + 'Addr'] || (side === 'do' ? l.dest : l.origin) + ' #' + (_arMix(l.id + side) % 3); }
-  function _arLocalDh(prev, l) { return !prev || _arAddr(prev, 'do') === _arAddr(l, 'pu') ? 0 : 5 + (_arMix(prev.id + '>' + l.id) % 16); }
+  function _arLocalDh(prev, l) { return 2 + (_arMix((prev ? prev.id : '') + '>' + l.id) % 19); }
   // Route days from driving time (HOS: 11 h of driving per day) — the same formula in the Plan and the modal
   function _routeDays(driveMin) { var n = Math.max(1, Math.ceil(driveMin / 60 / 11)); return n + (n === 1 ? ' day' : ' days'); }
   function routeDhMiles(r) {
@@ -4461,7 +4460,7 @@ export function initApp() {
     for (var i = 0; i < res.length; i++) {
       var og0 = i ? null : _arOriginFor(e, res[0]), from = i ? res[i - 1].dest : (og0 ? og0.city : res[0].origin);
       var to = res[i].tonu ? res[i].origin : res[i].origin;
-      if (res[i].tonu) dh += res[i].dhMi || 0; else if (from !== to) dh += _arMiles(from, to); else if (i) dh += _arLocalDh(res[i - 1], res[i]);
+      if (res[i].tonu) dh += res[i].dhMi || 0; else if (from !== to) dh += _arMiles(from, to); else dh += _arLocalDh(i ? res[i - 1] : { id: 'origin-' + (e.route ? e.route.id : '') }, res[i]);   // always a DH lane, even if short
     }
     var loaded = sum(res, function (l) { return l.miles; }), inc = sum(res, function (l) { return l.income; });
     // Same duration as the Plan: driving minutes (55 mph) over 11 h of driving per day (HOS)

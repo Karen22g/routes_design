@@ -28,7 +28,7 @@ Revisión de todos los flujos de Auto-rebuild en la maqueta: barrido automático
 |---|---|---|---|---|
 | 8 | La interfaz explica el razonamiento del motor (HOS reset, ancla, «first stop the ELD detects», #IDs, «Same engine as Auto-rebuild»). | G1 / F6 / G3 | **Ajustar** | Create route: «Cycle · Nov 16 – Nov 21 · 3 loads» + «Origin: ciudad · fecha». Banner del Plan: «Cycle rebuilt · n loads added · n Unbooked replaced» + Undo. Plan vacío: solo la invitación a Auto-rebuild. Sin tooltip con la explicación. |
 | 9 | Controles decorativos en el modal. | todos | **Ajustar (parcial)** | Se quitan el buscador, las pestañas de estado (incluida Offer) y el paginador. **Se dejan** «Full cycle computed →» y las columnas Driver/Truck. |
-| 10 | Deadheads dentro de la misma ciudad (Dallas → Dallas 64 mi, Houston → Houston 47 mi) entre cada par de cargas encadenadas. Inflan el DH%, el costo y el profit. | F6 / G1 | **Ajustar** | Hay DH si la dirección de entrega ≠ la dirección del siguiente pickup, con las millas reales entre ambas. Misma dirección → sin DH. Resuelve la duda 2 de `autorebuild_cobertura.md`. |
+| 10 | Deadheads dentro de la misma ciudad (Dallas → Dallas 64 mi, Houston → Houston 47 mi) entre cada par de cargas encadenadas. Inflan el DH%, el costo y el profit. | F6 / G1 | **Ajustar** | Siempre hay un lane DH entre un dropoff y el siguiente pickup (y desde el Origin hasta el primer pickup), aunque la distancia sea muy corta; en la misma ciudad lleva las millas reales locales entre los dos stops, no una distancia fija estimada. Resuelve la duda 2 de `autorebuild_cobertura.md`. |
 | 11 | Que falten cargas del ciclo solo se nota por un punto diminuto en la flecha ▾ de Refresh. | G6 | **Ajustar** | Banner en el Plan: «n loads of this truck's cycle are missing · Auto-rebuild», que se puede cerrar. |
 | 12 | El toggle «Auto-add from My Loads» en Refresh ▾ se pisa con Auto-rebuild. | G6 | **Dejar** | Sin cambios. |
 | 13 | Cambio de unidad: a) la ruta nueva nace vacía y el usuario abre Auto-rebuild a mano; b) el Trailer es obligatorio aquí y opcional en Create route. | I2 | **Dejar** | Sin cambios (a y b). |
@@ -72,4 +72,4 @@ Revisión de todos los flujos de Auto-rebuild en la maqueta: barrido automático
   - **Otras rutas:** C1 y D1.
   - **TMS / Sync:** 1 y C2.
   - **Cambio de unidad:** C3.
-  - **Backend:** 10 (regla de DH por dirección), C1 y C2.
+  - **Backend:** 10 (DH siempre, con millas reales locales), C1 y C2.
